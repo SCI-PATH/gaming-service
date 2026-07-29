@@ -1,0 +1,176 @@
+{
+  "title": "Grade 6 Science Escape Room — Lesson 1",
+  "startSceneId": "main_room",
+  "maxInventorySlots": 8,
+  "scenes": [
+    {
+      "id": "main_room",
+      "name": "Overgrown Conservatory",
+      "backgroundPath": "/assets/scenes/main_room.png",
+      "nextSceneId": "workbench_closeup",
+      "completionCtaLabel": "Unlock Next Room →",
+      "isFinalScene": false,
+      "hotspots": [
+        {
+          "id": "hotspot_workbench",
+          "label": "Examine Workbench",
+          "x": 8,
+          "y": 58,
+          "width": 28,
+          "height": 32,
+          "targetSceneId": "workbench_closeup"
+        },
+        {
+          "id": "hotspot_vault_door",
+          "label": "Inspect Vault Door",
+          "x": 36,
+          "y": 18,
+          "width": 28,
+          "height": 55,
+          "targetSceneId": "workbench_closeup"
+        }
+      ],
+      "items": [
+        {
+          "id": "fern_specimen_01",
+          "name": "Bioluminescent Fern Specimen",
+          "iconPath": "/assets/items/fern_specimen_jar.png",
+          "x": 2,
+          "y": 76,
+          "width": 8,
+          "height": 14,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "What process do plants use to make their own food using sunlight?",
+            "options": ["Respiration", "Photosynthesis", "Digestion", "Fermentation"],
+            "correctIndex": 1,
+            "hint": "Plants take in carbon dioxide and release oxygen when they make food."
+          }
+        },
+        {
+          "id": "seed_jar_01",
+          "name": "Seed Specimen Jar",
+          "iconPath": "/assets/items/seed_jar.png",
+          "x": 84,
+          "y": 74,
+          "width": 8,
+          "height": 13,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "Which part of a plant absorbs water and minerals from the soil?",
+            "options": ["Leaves", "Flowers", "Roots", "Stem"],
+            "correctIndex": 2,
+            "hint": "Look underground — this part anchors the plant and drinks for it."
+          }
+        },
+        {
+          "id": "nav_compass_01",
+          "name": "Navigator's Compass",
+          "iconPath": "/assets/items/nav_compass.png",
+          "x": 72,
+          "y": 10,
+          "width": 8,
+          "height": 12,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "A compass needle points toward which geographic direction?",
+            "options": ["East", "West", "South", "North"],
+            "correctIndex": 3,
+            "hint": "Earth acts like a giant magnet with poles that guide the needle."
+          }
+        }
+      ]
+    },
+    {
+      "id": "workbench_closeup",
+      "name": "Ancient Science Chamber",
+      "backgroundPath": "/assets/scenes/workbench_closeup.png",
+      "parentSceneId": "main_room",
+      "completionCtaLabel": "Proceed to Final Escape Door →",
+      "isFinalScene": true,
+      "hotspots": [],
+      "items": [
+        {
+          "id": "copper_coil_01",
+          "name": "Copper-Coiled Vial",
+          "iconPath": "/assets/items/copper_coiled_vial.png",
+          "x": 10,
+          "y": 60,
+          "width": 8,
+          "height": 14,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "Which of the following materials is a good conductor of electricity?",
+            "options": ["Rubber", "Copper", "Wood", "Plastic"],
+            "correctIndex": 1,
+            "hint": "Metals usually allow electric currents to flow freely!"
+          }
+        },
+        {
+          "id": "plasma_lamp_01",
+          "name": "Vintage Filament Bulb",
+          "iconPath": "/assets/items/plasma_lamp.png",
+          "x": 40,
+          "y": 66,
+          "width": 8,
+          "height": 14,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "An electric bulb converts electrical energy mainly into:",
+            "options": ["Sound energy", "Light and heat energy", "Magnetic energy", "Chemical energy"],
+            "correctIndex": 1,
+            "hint": "Feel a lit bulb carefully — it glows and also gets warm."
+          }
+        },
+        {
+          "id": "prism_crystal_01",
+          "name": "Frost-Core Prism",
+          "iconPath": "/assets/items/prism_crystal.png",
+          "x": 68,
+          "y": 58,
+          "width": 9,
+          "height": 14,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "When light passes through a prism, it splits into colors because of:",
+            "options": ["Reflection", "Refraction", "Absorption", "Evaporation"],
+            "correctIndex": 1,
+            "hint": "Light bends when it changes speed entering a new material."
+          }
+        },
+        {
+          "id": "magnifying_glass_01",
+          "name": "Magnifying Glass",
+          "iconPath": "/assets/items/magnifying_glass.png",
+          "x": 78,
+          "y": 36,
+          "width": 9,
+          "height": 14,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "A convex lens is thicker in the middle and can be used to:",
+            "options": ["Scatter light only", "Magnify nearby objects", "Block all light", "Create shadows only"],
+            "correctIndex": 1,
+            "hint": "Detective tools and reading glasses use this curved glass shape."
+          }
+        },
+        {
+          "id": "tesla_coil_01",
+          "name": "Mini Tesla Coil",
+          "iconPath": "/assets/items/tesla_coil.png",
+          "x": 44,
+          "y": 26,
+          "width": 10,
+          "height": 15,
+          "isDiscovered": false,
+          "quiz": {
+            "question": "Matter that has a fixed shape and volume is called a:",
+            "options": ["Gas", "Liquid", "Solid", "Plasma"],
+            "correctIndex": 2,
+            "hint": "Ice keeps its shape; water in a cup does not — think about that difference."
+          }
+        }
+      ]
+    }
+  ]
+}
