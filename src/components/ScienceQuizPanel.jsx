@@ -1,11 +1,12 @@
 import { useState } from 'react';
 
-/** Side-panel science quiz that drives the Escape-the-Dragon tension loop */
+/** Science quiz modal body — Grade 6–9 curriculum with RP feedback */
 export default function ScienceQuizPanel({
   question,
   disabled = false,
   onCorrect,
   onIncorrect,
+  successMessage = 'Correct!',
 }) {
   const [selected, setSelected] = useState(null);
   const [resolved, setResolved] = useState(null);
@@ -28,7 +29,10 @@ export default function ScienceQuizPanel({
   return (
     <section className="escape-quiz">
       <header className="escape-quiz-head">
-        <p className="escape-quiz-topic">{question.topic}</p>
+        <p className="escape-quiz-topic">
+          {question.topic}
+          {question.grade ? ` · Grade ${question.grade}` : ''}
+        </p>
         <h3>Science Challenge</h3>
       </header>
 
@@ -58,9 +62,7 @@ export default function ScienceQuizPanel({
       )}
 
       {resolved === 'correct' && (
-        <p className="escape-quiz-success">
-          Correct! Overhead trap released — clear the path!
-        </p>
+        <p className="escape-quiz-success">{successMessage}</p>
       )}
     </section>
   );

@@ -14,14 +14,14 @@ export default class GuideScene extends Phaser.Scene {
     this.add.text(
       400,
       415,
-      'Kill enemies quickly with as few arrows as you can.',
+      'Press E on empty ground — answer a science quiz to plant.',
       bodyStyle,
     ).setOrigin(0.5);
 
     this.add.text(
       400,
       450,
-      'Get 6 kills or more to open the mountain door.',
+      'Sell with Q — earn $100 to unlock the forest bridge.',
       bodyStyle,
     ).setOrigin(0.5);
 

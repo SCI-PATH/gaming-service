@@ -1,106 +1,210 @@
-import { useCallback, useState } from 'react';
-import ForestGameCanvas, {
-  emitScienceCorrect,
-  emitScienceIncorrect,
-} from './components/ForestGameCanvas.jsx';
-import ScienceQuizPanel from './components/ScienceQuizPanel.jsx';
-import { SCIENCE_QUESTIONS } from './data/scienceQuestions.js';
+import { useCallback, useMemo, useState } from 'react';
+import ForestRPGCanvas, {
+  emitSellCrops,
+  emitPlantCrop,
+} from './components/ForestRPGCanvas.jsx';
+import ScienceQuizModal from './components/ScienceQuizModal.jsx';
+import { getFarmLevel } from './data/farmLevels.js';
+
+const DEFAULT_LEVEL = getFarmLevel(1);
 
 /**
- * ForestRPG (Phaser 3) + Science Quiz overlay.
+ * ForestRPG + Science-Gated Planting loop UI.
+ * Phaser canvas stays clean — all HUD lives in React overlays.
  */
 export default function App() {
   const [gameReady, setGameReady] = useState(false);
-  const [quizOpen, setQuizOpen] = useState(true);
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [quizKey, setQuizKey] = useState(0);
+  const [farm, setFarm] = useState({
+    earnings: 0,
+    target: DEFAULT_LEVEL.targetEarnings,
+    inventory: 0,
+    harvestedCount: 0,
+    plantedCount: 0,
+    levelId: DEFAULT_LEVEL.id,
+    cropName: DEFAULT_LEVEL.cropName,
+    cropValue: DEFAULT_LEVEL.cropValue,
+    goalText: DEFAULT_LEVEL.goalText,
+    forestUnlocked: false,
+  });
+  const [quizPayload, setQuizPayload] = useState(null);
   const [ddaMisses, setDdaMisses] = useState(0);
-  const [lastInteraction, setLastInteraction] = useState(null);
-  const [answeredCorrectly, setAnsweredCorrectly] = useState(false);
+  const [rpEarned, setRpEarned] = useState(0);
+  const [banner, setBanner] = useState(null);
+  const [hint, setHint] = useState(null);
 
-  const question =
-    SCIENCE_QUESTIONS[questionIndex % SCIENCE_QUESTIONS.length];
+  const progressPct = useMemo(() => {
+    if (!farm.target) return 0;
+    return Math.min(100, Math.round((farm.earnings / farm.target) * 100));
+  }, [farm.earnings, farm.target]);
+
+  const bagCount = farm.harvestedCount ?? farm.inventory ?? 0;
 
   const handleReady = useCallback(() => setGameReady(true), []);
 
-  const handleInteraction = useCallback((detail) => {
-    setLastInteraction(detail);
+  const handleFarmState = useCallback((state) => {
+    setFarm((prev) => ({
+      ...prev,
+      ...state,
+      earnings: state.earnings ?? state.currentMoney ?? prev.earnings,
+      harvestedCount:
+        state.harvestedItemsCount ??
+        state.harvestedCount ??
+        state.inventory ??
+        prev.harvestedCount,
+      inventory:
+        state.harvestedItemsCount ??
+        state.inventory ??
+        state.harvestedCount ??
+        prev.inventory,
+    }));
   }, []);
 
-  const handleCorrect = () => {
-    setAnsweredCorrectly(true);
-    emitScienceCorrect();
-    setQuizOpen(false);
-  };
+  const handleTriggerQuiz = useCallback((payload) => {
+    setQuizPayload(payload);
+  }, []);
 
-  const handleIncorrect = (selectedIndex) => {
-    setDdaMisses((n) => n + 1);
-    emitScienceIncorrect(question.id, selectedIndex);
-    window.setTimeout(() => {
-      setQuestionIndex((i) => i + 1);
-      setQuizKey((k) => k + 1);
-    }, 800);
-  };
+  const handleTargetReached = useCallback((payload) => {
+    setFarm((prev) => ({
+      ...prev,
+      goalText:
+        payload.goalText ||
+        'Target Reached ($100)! Proceed to the Forest Entrance!',
+      forestUnlocked: true,
+      earnings: payload.earnings ?? payload.currentMoney ?? prev.earnings,
+    }));
+    setBanner(
+      `Target Reached ($${payload.earnings ?? payload.currentMoney})! Proceed to the Forest Entrance!`,
+    );
+  }, []);
+
+  const handleInteraction = useCallback((detail) => {
+    if (detail?.type === 'plant_fail') {
+      setDdaMisses((n) => n + 1);
+    }
+    if (detail?.type === 'plant_success' && detail.rp) {
+      setRpEarned((n) => n + detail.rp);
+    }
+    if (detail?.type === 'sell') {
+      setHint(`Sold for $${detail.coinsEarned ?? detail.gained}!`);
+      window.setTimeout(() => setHint(null), 1800);
+    }
+    if (detail?.type === 'plant_blocked') {
+      const msg =
+        detail.reason === 'tile_occupied'
+          ? 'Tile planted — walk to another row/column and press E.'
+          : detail.reason === 'target_reached'
+            ? 'Goal reached — head to the forest gate!'
+            : 'Cannot plant here.';
+      setHint(msg);
+      window.setTimeout(() => setHint(null), 2200);
+    }
+    if (detail?.type === 'sell_blocked') {
+      setHint('Harvest ready crops with E before selling (Q).');
+      window.setTimeout(() => setHint(null), 2200);
+    }
+  }, []);
+
+  const handleQuizClose = useCallback(() => {
+    setQuizPayload(null);
+  }, []);
+
+  const handleSell = useCallback(() => {
+    emitSellCrops();
+  }, []);
 
   return (
     <div className="app-shell forest-app">
       <header className="forest-header">
         <div>
-          <h1>Forest RPG</h1>
+          <h1>Forest RPG — Farm &amp; Unlock</h1>
           <p>
-            Explore the forest — answer science questions to heal and earn
-            score.
+            Quiz to plant a 3×10 flower patch · run over ready crops to harvest ·
+            sell with Q · reach ${DEFAULT_LEVEL.targetEarnings}
           </p>
         </div>
         <div className="forest-stats">
           <span className="forest-chip">
-            {gameReady ? 'Game Ready' : 'Loading…'}
+            {gameReady ? 'Playing' : 'Loading…'}
           </span>
+          <span>RP: {rpEarned}</span>
           <span>DDA misses: {ddaMisses}</span>
-          {lastInteraction?.type && (
-            <span>Last: {lastInteraction.type}</span>
-          )}
+          <span>Planted: {farm.plantedCount ?? 0}</span>
+          <span>Bag: {bagCount}</span>
         </div>
       </header>
 
       <div className="forest-stage-wrap">
-        <ForestGameCanvas
+        <div className="farm-goal-hud" aria-live="polite">
+          <strong>Level {farm.levelId} Goal</strong>
+          <span>{farm.goalText}</span>
+        </div>
+
+        <div className="farm-progress-hud" aria-live="polite">
+          <div className="farm-progress-label">
+            ${farm.earnings} / ${farm.target}
+          </div>
+          <div className="farm-progress-track">
+            <div
+              className="farm-progress-fill"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+
+        <ForestRPGCanvas
           onReady={handleReady}
+          onFarmState={handleFarmState}
+          onTriggerQuiz={handleTriggerQuiz}
+          onTargetReached={handleTargetReached}
           onInteraction={handleInteraction}
         />
 
-        {/* Science Quiz overlay — sits above the Phaser canvas */}
-        {quizOpen && (
-          <div className="science-quiz-overlay" role="dialog" aria-modal="true">
-            <div className="science-quiz-card">
-              <ScienceQuizPanel
-                key={`${question.id}-${quizKey}`}
-                question={question}
-                disabled={!gameReady || answeredCorrectly}
-                onCorrect={handleCorrect}
-                onIncorrect={handleIncorrect}
-              />
-              <button
-                type="button"
-                className="quiz-dismiss"
-                onClick={() => setQuizOpen(false)}
-              >
-                Play without answering
-              </button>
-            </div>
+        <div className="farm-controls">
+          <button
+            type="button"
+            onClick={() => emitPlantCrop()}
+            disabled={
+              !gameReady ||
+              Boolean(quizPayload) ||
+              farm.earnings >= farm.target
+            }
+          >
+            Plant (E) — Quiz first
+          </button>
+          <button
+            type="button"
+            onClick={handleSell}
+            disabled={!gameReady || bagCount < 1 || Boolean(quizPayload)}
+          >
+            Sell Inventory (Q) — ${farm.cropValue}/ea
+          </button>
+        </div>
+
+        {hint && <div className="farm-hint">{hint}</div>}
+
+        {banner && (
+          <div className="farm-banner">
+            {banner}
+            <button type="button" onClick={() => setBanner(null)}>
+              OK
+            </button>
           </div>
         )}
 
-        {!quizOpen && !answeredCorrectly && (
-          <button
-            type="button"
-            className="quiz-reopen"
-            onClick={() => setQuizOpen(true)}
-          >
-            Science Quiz
-          </button>
+        {quizPayload && (
+          <ScienceQuizModal
+            questionData={quizPayload.questionData || quizPayload.question}
+            cropId={quizPayload.cropId}
+            onClose={handleQuizClose}
+          />
         )}
       </div>
+
+      <p className="forest-help">
+        Arrow keys move · Walk across rows/columns · <kbd>E</kbd> quiz-plant
+        empty tiles · run over ready crops to harvest · <kbd>Q</kbd> sell bag ·
+        Reach ${farm.target}
+      </p>
     </div>
   );
 }

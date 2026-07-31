@@ -42,6 +42,12 @@ export default class LoadScene extends Phaser.Scene {
     this.load.image('mute', '/assets/sprites/mute.png');
     this.load.image('sound', '/assets/sprites/sound.png');
     this.load.image('exit', '/assets/environment/exit-open.png');
+
+    // Custom crop PNGs (visible on top of tilemap after science-quiz plant)
+    this.load.image('crop_corn', '/assets/crops/corn_crop.png');
+    this.load.image('crop_flower', '/assets/crops/flower_crop.png');
+    this.load.image('crop_corn_sprout', '/assets/crops/corn_crop_sprout.png');
+    this.load.image('crop_flower_sprout', '/assets/crops/flower_crop_sprout.png');
   }
 
   loadAudio() {

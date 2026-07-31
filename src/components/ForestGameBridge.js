@@ -3,4 +3,4 @@ export {
   EventBus,
   FARM_EVENTS,
   SCIENCE_EVENTS,
-} from './ForestGameBridge.js';
+} from '../game/ForestGameBridge.js';
