@@ -87,7 +87,7 @@ export default function ForestRPGCanvas({
   return (
     <div className="forest-stage">
       <div ref={hostRef} className="phaser-host" id="forest-game-root" />
-      {!ready && <div className="forest-loading">Loading Forest RPG…</div>}
+      {!ready && <div className="forest-loading">Loading SCI_PATH…</div>}
     </div>
   );
 }

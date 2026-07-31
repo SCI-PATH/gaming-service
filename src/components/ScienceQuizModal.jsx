@@ -1,10 +1,17 @@
+import { useEffect, useRef } from 'react';
 import { ForestGameBridge } from '../game/ForestGameBridge.js';
 
 /**
- * Harvest-lock science quiz modal.
- * Emits SCIENCE_CORRECT / SCIENCE_INCORRECT on the game bridge.
+ * Science quiz modal — times how long the student takes to answer.
+ * Timing + correctness feed this level's mastery record (for the next level's cash goal).
  */
 export default function ScienceQuizModal({ questionData, cropId, onClose }) {
+  const openedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    openedAtRef.current = Date.now();
+  }, [questionData?.id, questionData?.prompt, questionData?.question]);
+
   if (!questionData) return null;
 
   const options = questionData.options.map((opt, idx) => {
@@ -18,19 +25,23 @@ export default function ScienceQuizModal({ questionData, cropId, onClose }) {
   });
 
   const handleAnswer = (isCorrect, selectedIndex) => {
+    const responseTimeMs = Math.max(0, Date.now() - openedAtRef.current);
+
     if (isCorrect) {
       ForestGameBridge.emit('SCIENCE_CORRECT', {
         cropId,
         rp: questionData.rp ?? 0,
+        responseTimeMs,
       });
     } else {
       ForestGameBridge.emit('SCIENCE_INCORRECT', {
         cropId,
         questionId: questionData.id,
         selectedIndex,
+        responseTimeMs,
       });
     }
-    onClose?.(isCorrect);
+    onClose?.(isCorrect, responseTimeMs);
   };
 
   return (

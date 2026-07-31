@@ -14,6 +14,18 @@ import {
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
 import { getFarmLevel, pickScienceQuestion } from '../../data/farmLevels';
+import {
+  DDA_CONFIG,
+  averageScore,
+  formatResponseTime,
+  scoreAttempt,
+} from '../../data/dda';
+import {
+  cropValueFromMastery,
+  getMasteryForLevelStart,
+  goalTextFromMastery,
+  saveLevelPerformance,
+} from '../../data/masteryModel';
 
 const MOLE_GID = 6;
 const TREANT_GID = 5;
@@ -29,18 +41,43 @@ export default class GameScene extends Phaser.Scene {
 
   create() {
     this.farmLevel = getFarmLevel(this.levelId);
-    this.currentMoney = 0; // earnings / progress toward $100
-    this.earnings = 0; // alias kept for React HUD
+    this.baseCropValue = this.farmLevel.cropValue;
+    this.currentMoney = 0;
+    this.earnings = 0;
     this.harvestedItemsCount = 0;
-    this.inventory = 0; // alias of harvestedItemsCount
+    this.inventory = 0;
     this.forestUnlocked = false;
     this.farmInputLocked = false;
     this.currentTargetTile = null;
     this.pendingGridKey = null;
     this.pendingPatchCells = [];
     this.plantedCrops = [];
-    this.plantedGridKeys = new Set(); // multi-row/column occupancy: "x_y"
+    this.plantedGridKeys = new Set();
     this.lastQuestionId = null;
+
+    // Quiz telemetry for this level (saved for the *next* level's mastery)
+    this.quizCorrect = 0;
+    this.quizIncorrect = 0;
+    this.attemptScores = [];
+    this.responseTimesMs = [];
+    this.levelAttempts = [];
+    this.quizOpenedAt = 0;
+
+    // Cash goal at level start from previous mastery / external model
+    const prior = getMasteryForLevelStart(this.levelId);
+    this.mastery = prior.mastery;
+    this.masterySource = prior.source;
+    this.masteryFromLevelId = prior.fromLevelId;
+    this.performanceBand = prior.band;
+    this.cashTarget = prior.cashGoal;
+    this.ddaCalibrated = true; // goal is known from the start
+
+    this.farmLevel = {
+      ...this.farmLevel,
+      targetEarnings: this.cashTarget,
+      cropValue: cropValueFromMastery(this.baseCropValue, this.mastery),
+      goalText: goalTextFromMastery(this.cashTarget, this.mastery),
+    };
 
     this.addAudios();
     this.createMap();
@@ -56,6 +93,17 @@ export default class GameScene extends Phaser.Scene {
     this.bindWindowKeys();
     this.focusGameCanvas();
     this.emitFarmState();
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'mastery_goal_set',
+      mastery: this.mastery,
+      masteryPercent: Math.round(this.mastery * 100),
+      performanceBand: this.performanceBand,
+      target: this.cashTarget,
+      source: this.masterySource,
+      fromLevelId: this.masteryFromLevelId,
+      levelId: this.levelId,
+    });
   }
 
   createGroups() {
@@ -160,10 +208,19 @@ export default class GameScene extends Phaser.Scene {
   emitFarmState() {
     this.syncMoneyAliases();
     const activePlanted = this.plantedCrops.filter((c) => c?.active);
+    const answered = this.quizCorrect + this.quizIncorrect;
+    const perfScore = Math.round(averageScore(this.attemptScores));
+    const avgMs =
+      this.responseTimesMs.length > 0
+        ? Math.round(
+            this.responseTimesMs.reduce((a, b) => a + b, 0) /
+              this.responseTimesMs.length,
+          )
+        : 0;
     ForestGameBridge.emit(FARM_EVENTS.FARM_STATE, {
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
-      target: this.farmLevel.targetEarnings,
+      target: this.cashTarget,
       inventory: this.harvestedItemsCount,
       harvestedCount: this.harvestedItemsCount,
       harvestedItemsCount: this.harvestedItemsCount,
@@ -175,6 +232,21 @@ export default class GameScene extends Phaser.Scene {
       farmInputLocked: this.farmInputLocked,
       plantedCount: activePlanted.length,
       gridOccupied: this.plantedGridKeys.size,
+      performanceBand: this.performanceBand,
+      mastery: this.mastery,
+      masteryPercent: Math.round((this.mastery || 0) * 100),
+      masterySource: this.masterySource,
+      quizCorrect: this.quizCorrect,
+      quizIncorrect: this.quizIncorrect,
+      questionsAnswered: answered,
+      ddaCalibrated: true,
+      accuracy:
+        answered > 0
+          ? Math.round((this.quizCorrect / answered) * 100)
+          : 50,
+      performanceScore: perfScore,
+      avgResponseMs: avgMs,
+      avgResponseLabel: avgMs ? formatResponseTime(avgMs) : '—',
     });
   }
 
@@ -186,9 +258,101 @@ export default class GameScene extends Phaser.Scene {
       harvestedItemsCount: this.harvestedItemsCount,
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
-      target: this.farmLevel.targetEarnings,
+      target: this.cashTarget,
       cropValue: this.farmLevel.cropValue,
+      performanceBand: this.performanceBand,
+      mastery: this.mastery,
     });
+    this.emitFarmState();
+  }
+
+  /**
+   * Record this level's quiz attempt (for next level mastery).
+   * Cash goal stays fixed from level-start mastery.
+   */
+  recordQuizAttempt(wasCorrect, responseTimeMs = 0) {
+    const ms =
+      responseTimeMs > 0
+        ? responseTimeMs
+        : this.quizOpenedAt
+          ? Date.now() - this.quizOpenedAt
+          : DDA_CONFIG.moderateMs;
+
+    if (wasCorrect) this.quizCorrect += 1;
+    else this.quizIncorrect += 1;
+
+    const attempt = { wasCorrect, responseTimeMs: ms };
+    this.levelAttempts.push(attempt);
+
+    const attemptScore = scoreAttempt(attempt);
+    this.attemptScores.push(attemptScore);
+    this.responseTimesMs.push(ms);
+    if (this.attemptScores.length > DDA_CONFIG.windowSize) {
+      this.attemptScores.shift();
+    }
+    if (this.responseTimesMs.length > DDA_CONFIG.windowSize) {
+      this.responseTimesMs.shift();
+    }
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'quiz_attempt',
+      wasCorrect,
+      responseTimeMs: ms,
+      responseLabel: formatResponseTime(ms),
+      attemptScore,
+      performanceScore: Math.round(averageScore(this.attemptScores)),
+      performanceBand: this.performanceBand,
+      target: this.cashTarget,
+      mastery: this.mastery,
+      quizCorrect: this.quizCorrect,
+      quizIncorrect: this.quizIncorrect,
+    });
+  }
+
+  persistLevelMastery() {
+    const avgMs =
+      this.responseTimesMs.length > 0
+        ? Math.round(
+            this.responseTimesMs.reduce((a, b) => a + b, 0) /
+              this.responseTimesMs.length,
+          )
+        : null;
+
+    return saveLevelPerformance(this.levelId, {
+      attempts: this.levelAttempts,
+      quizCorrect: this.quizCorrect,
+      quizIncorrect: this.quizIncorrect,
+      avgResponseMs: avgMs,
+    });
+  }
+
+  canPlantMore() {
+    return this.currentMoney < this.cashTarget;
+  }
+
+  checkTargetReached() {
+    if (this.forestUnlocked) return;
+    if (this.cashTarget == null || this.cashTarget <= 0) return;
+    if (this.currentMoney < this.cashTarget) return;
+
+    this.forestUnlocked = true;
+    this.persistLevelMastery();
+    this.farmLevel = {
+      ...this.farmLevel,
+      goalText: `Target Reached ($${this.cashTarget})! Proceed to the Forest Entrance!`,
+    };
+    this.openForestGate();
+
+    const payload = {
+      earnings: this.currentMoney,
+      currentMoney: this.currentMoney,
+      target: this.cashTarget,
+      levelId: this.farmLevel.id,
+      goalText: this.farmLevel.goalText,
+      performanceBand: this.performanceBand,
+      mastery: this.mastery,
+    };
+    ForestGameBridge.emit(FARM_EVENTS.GOAL_COMPLETED, payload);
     this.emitFarmState();
   }
 
@@ -275,10 +439,6 @@ export default class GameScene extends Phaser.Scene {
     return cells;
   }
 
-  canPlantMore() {
-    return this.currentMoney < this.farmLevel.targetEarnings;
-  }
-
   /** Debounce shared by window + Phaser key paths (avoids double plant/sell). */
   guardFarmAction(action) {
     const now = this.time?.now ?? performance.now();
@@ -347,6 +507,7 @@ export default class GameScene extends Phaser.Scene {
     const question = pickScienceQuestion(this.farmLevel, this.lastQuestionId);
     this.lastQuestionId = question.id;
 
+    this.quizOpenedAt = Date.now();
     ForestGameBridge.emit(FARM_EVENTS.TRIGGER_SCIENCE_QUIZ, {
       mode: 'plant',
       tileX: cell.gridX,
@@ -360,6 +521,7 @@ export default class GameScene extends Phaser.Scene {
       questionData: question,
       rp: question.rp,
       levelId: this.farmLevel.id,
+      openedAt: this.quizOpenedAt,
     });
 
     this.emitFarmState();
@@ -547,6 +709,7 @@ export default class GameScene extends Phaser.Scene {
 
   onScienceCorrect(payload = {}) {
     try {
+      this.recordQuizAttempt(true, payload.responseTimeMs);
       const crops = this.spawnCropAtTarget();
       const planted = Array.isArray(crops) ? crops : crops ? [crops] : [];
 
@@ -560,6 +723,8 @@ export default class GameScene extends Phaser.Scene {
           plantedCount: this.plantedCrops.filter((c) => c?.active).length,
           patchPlanted: planted.length,
           rp: payload.rp ?? 0,
+          performanceBand: this.performanceBand,
+          target: this.cashTarget,
         });
       } else {
         this.pendingGridKey = null;
@@ -573,6 +738,7 @@ export default class GameScene extends Phaser.Scene {
 
   onScienceIncorrect(payload = {}) {
     try {
+      this.recordQuizAttempt(false, payload.responseTimeMs);
       this.currentTargetTile = null;
       this.pendingGridKey = null;
       this.pendingPatchCells = [];
@@ -586,6 +752,8 @@ export default class GameScene extends Phaser.Scene {
         dda: true,
         questionId: payload.questionId,
         selectedIndex: payload.selectedIndex,
+        performanceBand: this.performanceBand,
+        target: this.cashTarget,
       });
 
       this.emitFarmState();
@@ -637,28 +805,6 @@ export default class GameScene extends Phaser.Scene {
   /** @deprecated Use handleSellInventory */
   sellInventory() {
     this.handleSellInventory();
-  }
-
-  checkTargetReached() {
-    if (this.forestUnlocked) return;
-    if (this.currentMoney < this.farmLevel.targetEarnings) return;
-
-    this.forestUnlocked = true;
-    this.farmLevel = {
-      ...this.farmLevel,
-      goalText: 'Target Reached ($100)! Proceed to the Forest Entrance!',
-    };
-    this.openForestGate();
-
-    const payload = {
-      earnings: this.currentMoney,
-      currentMoney: this.currentMoney,
-      target: this.farmLevel.targetEarnings,
-      levelId: this.farmLevel.id,
-      goalText: this.farmLevel.goalText,
-    };
-    ForestGameBridge.emit(FARM_EVENTS.GOAL_COMPLETED, payload);
-    this.emitFarmState();
   }
 
   openForestGate() {

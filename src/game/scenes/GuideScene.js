@@ -21,7 +21,7 @@ export default class GuideScene extends Phaser.Scene {
     this.add.text(
       400,
       450,
-      'Sell with Q — earn $100 to unlock the forest bridge.',
+      'Your cash goal is set from prior mastery — sell with Q to reach it.',
       bodyStyle,
     ).setOrigin(0.5);
 

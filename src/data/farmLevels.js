@@ -6,13 +6,13 @@ export const FARM_LEVELS = [
     id: 1,
     cropId: 'flowers',
     cropName: 'Flowers',
-    cropValue: 20,
-    targetEarnings: 100,
+    cropValue: 10,
+    targetEarnings: 1200, // overridden at level start from mastery model
     growMs: 2000,
     /** One correct quiz plants this many columns × rows of crops */
     plantPatchCols: 10,
     plantPatchRows: 3,
-    goalText: 'Pass quizzes to plant flower patches — harvest & sell to reach $100',
+    goalText: 'Harvest & sell to reach your mastery-based cash goal',
     tint: 0xff66aa,
     questions: [
       {
@@ -54,12 +54,12 @@ export const FARM_LEVELS = [
     id: 2,
     cropId: 'corn',
     cropName: 'Corn',
-    cropValue: 25,
-    targetEarnings: 100,
+    cropValue: 12,
+    targetEarnings: 1200, // overridden at level start from prior-level mastery
     growMs: 2000,
     plantPatchCols: 10,
     plantPatchRows: 3,
-    goalText: 'Pass quizzes to plant corn patches — harvest & sell to reach $100',
+    goalText: 'Harvest & sell to reach your mastery-based cash goal',
     tint: 0xffcc33,
     questions: [
       {

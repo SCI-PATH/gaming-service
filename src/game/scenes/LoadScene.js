@@ -6,7 +6,17 @@ export default class LoadScene extends Phaser.Scene {
   }
 
   preload() {
-    this.add.image(400, 200, 'logo');
+    this.add
+      .text(400, 200, 'SCI_PATH', {
+        fontFamily: 'Impact, Haettenschweiler, Arial Black, sans-serif',
+        fontSize: '64px',
+        fontStyle: 'bold',
+        color: '#5aaf45',
+        stroke: '#0a1208',
+        strokeThickness: 8,
+      })
+      .setOrigin(0.5)
+      .setShadow(3, 3, '#000000', 0, false, true);
     this.createLoadBar();
     this.loadImages();
     this.loadMaps();
