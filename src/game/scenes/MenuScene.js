@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { menuStyle, brandTitleStyle, brandTaglineStyle } from '../ui/textStyles';
+import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
 
 export default class MenuScene extends Phaser.Scene {
   constructor() {
@@ -7,6 +8,7 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     this.soundtrack = this.game.registry.get('soundtrack');
 
     this.add.tileSprite(400, 300, 800, 600, 'title-bg');
@@ -31,16 +33,12 @@ export default class MenuScene extends Phaser.Scene {
     this.syncMuteIcon();
 
     this.add.text(400, 500, "Press 'L' for the local leaderboard", menuStyle).setOrigin(0.5);
-    this.add.text(400, 540, "Press 'M' to mute · 'C' for credits", menuStyle).setOrigin(0.5);
+    this.add.text(400, 540, "Press 'M' to mute", menuStyle).setOrigin(0.5);
 
-    this.menuKeys = this.input.keyboard.addKeys('enter, m, c, l');
+    this.menuKeys = this.input.keyboard.addKeys('enter, m, l');
   }
 
   update() {
-    if (Phaser.Input.Keyboard.JustDown(this.menuKeys.c)) {
-      this.scene.start('CreditsScene');
-    }
-
     if (Phaser.Input.Keyboard.JustDown(this.menuKeys.m)) {
       this.toggleMusic();
     }

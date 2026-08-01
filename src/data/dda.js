@@ -1,6 +1,6 @@
 /**
  * Quiz attempt scoring for SCI_PATH (correctness + response time).
- * Cash goals are assigned at level start via masteryModel.js from
+ * Time targets are assigned at level start via masteryModel.js from
  * previous-level / external mastery — not mid-level calibration.
  */
 
@@ -11,16 +11,21 @@ export const DDA_BANDS = {
 };
 
 export const DDA_CONFIG = {
-  /** Must answer this many quizzes before a cash goal is assigned / forest unlock */
+  /** Maximum science questions per level (also the completion count). */
+  maxQuestions: 20,
+  /** @deprecated alias — level completes after this many questions */
   minQuestions: 20,
+
   /**
-   * Cash goals after calibration (3×10 patch ≈ 30 crops).
-   * Sized so unlock still needs sustained harvesting, not 1–2 sells.
+   * Average response-time targets (ms) by band when no prior level exists.
+   * Faster / stronger students get a tighter target next time.
    */
-  minTarget: 800, // emerging — more reachable
-  midTarget: 1200, // developing
-  maxTarget: 1800, // strong — higher bar
-  step: 100,
+  fastTargetMs: 8000,
+  midTargetMs: 12000,
+  slowTargetMs: 18000,
+  minTargetMs: 5000,
+  maxTargetMs: 30000,
+
   fastMs: 8000,
   moderateMs: 18000,
   slowMs: 30000,
@@ -62,58 +67,77 @@ export function classifyPerformance(attemptScores) {
   return DDA_BANDS.DEVELOPING;
 }
 
-export function bandTarget(band) {
+/** Default avg-response target (ms) for a performance band. */
+export function bandTimeTarget(band) {
   switch (band) {
     case DDA_BANDS.STRONG:
-      return DDA_CONFIG.maxTarget;
+      return DDA_CONFIG.fastTargetMs;
     case DDA_BANDS.EMERGING:
-      return DDA_CONFIG.minTarget;
+      return DDA_CONFIG.slowTargetMs;
     default:
-      return DDA_CONFIG.midTarget;
+      return DDA_CONFIG.midTargetMs;
   }
 }
 
-export function adjustCashTarget(currentTarget, band) {
-  const ideal = bandTarget(band);
-  const { step, minTarget, maxTarget } = DDA_CONFIG;
+/**
+ * Nudge a previous-level avg time into the next level's target.
+ * Strong → slightly tighter; emerging → slightly more time.
+ */
+export function adjustTimeTarget(previousAvgMs, band) {
+  const { minTargetMs, maxTargetMs } = DDA_CONFIG;
+  const base =
+    previousAvgMs > 0 ? Number(previousAvgMs) : bandTimeTarget(band);
 
-  // First real goal after calibration — snap to band ideal
-  if (currentTarget == null || currentTarget <= 0) {
-    return ideal;
-  }
+  let next = base;
+  if (band === DDA_BANDS.STRONG) next = base * 0.9;
+  else if (band === DDA_BANDS.EMERGING) next = base * 1.1;
 
-  let next = currentTarget;
-  if (ideal > currentTarget) next = Math.min(ideal, currentTarget + step);
-  else if (ideal < currentTarget) next = Math.max(ideal, currentTarget - step);
-  else next = ideal;
-
-  return Math.max(minTarget, Math.min(maxTarget, next));
+  return Math.round(
+    Math.max(minTargetMs, Math.min(maxTargetMs, next)),
+  );
 }
 
 export function questionsAnswered(correct, incorrect) {
   return (correct || 0) + (incorrect || 0);
 }
 
+export function isLevelQuestionCapReached(
+  correct,
+  incorrect,
+  maxQuestions = DDA_CONFIG.maxQuestions,
+) {
+  return questionsAnswered(correct, incorrect) >= maxQuestions;
+}
+
+/** @deprecated use isLevelQuestionCapReached */
 export function isCalibrated(
   correct,
   incorrect,
-  minQuestions = DDA_CONFIG.minQuestions,
+  minQuestions = DDA_CONFIG.maxQuestions,
 ) {
-  return questionsAnswered(correct, incorrect) >= minQuestions;
+  return isLevelQuestionCapReached(correct, incorrect, minQuestions);
 }
 
-export function goalTextForCalibration(answered, minQuestions) {
-  return `Calibrating: answer science questions (${answered}/${minQuestions}) — cash goal unlocks after that`;
+export function goalTextForQuestions(answered, maxQuestions, targetMs) {
+  const remaining = Math.max(0, maxQuestions - answered);
+  const targetSec = (targetMs / 1000).toFixed(1);
+  if (remaining <= 0) {
+    return `Level complete — target avg was ${targetSec}s per question`;
+  }
+  return `Answer ${remaining} more question${
+    remaining === 1 ? '' : 's'
+  } (${answered}/${maxQuestions}) · target avg ${targetSec}s`;
 }
 
-export function goalTextForTarget(target, band) {
+export function goalTextForTarget(targetMs, band) {
+  const targetSec = (targetMs / 1000).toFixed(1);
   const bandLabel =
     band === DDA_BANDS.STRONG
       ? 'Challenge mode (fast & accurate)'
       : band === DDA_BANDS.EMERGING
         ? 'Supported mode (take your time)'
         : 'Standard mode';
-  return `${bandLabel}: harvest & sell to reach $${target}`;
+  return `${bandLabel}: finish ${DDA_CONFIG.maxQuestions} questions · target avg ${targetSec}s`;
 }
 
 export function cropValueForBand(baseValue, band) {

@@ -23,10 +23,19 @@ export const FARM_EVENTS = {
   SELL_INVENTORY_ACTION: 'SELL_INVENTORY_ACTION',
   INVENTORY_UPDATED: 'INVENTORY_UPDATED',
   FARM_STATE: 'FARM_STATE',
+  /** Live player pin for the farm map HUD (fractional tile coords) */
+  PLAYER_MAP_POS: 'PLAYER_MAP_POS',
+  /** true while GameScene (farm) is active — hide map on menu/opening */
+  FARM_SCENE_ACTIVE: 'FARM_SCENE_ACTIVE',
   TARGET_REACHED: 'TARGET_REACHED',
   LEVEL_GOAL_REACHED: 'LEVEL_GOAL_REACHED',
   GOAL_COMPLETED: 'GOAL_COMPLETED',
   INTERACTION: 'GAME_INTERACTION',
+  /** Spend cash on unlock shop item (React → Phaser) */
+  PURCHASE_UNLOCK: 'PURCHASE_UNLOCK',
+  /** Lock farm input while unlock shop is open */
+  UNLOCK_SHOP_OPEN: 'UNLOCK_SHOP_OPEN',
+  UNLOCK_SHOP_CLOSE: 'UNLOCK_SHOP_CLOSE',
 };
 
 export const SCIENCE_EVENTS = {

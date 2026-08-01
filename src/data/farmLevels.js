@@ -7,12 +7,13 @@ export const FARM_LEVELS = [
     cropId: 'flowers',
     cropName: 'Flowers',
     cropValue: 10,
-    targetEarnings: 1200, // overridden at level start from mastery model
+    targetEarnings: null, // cash is for unlock shop only
+    timeTargetMs: 12000, // overridden at level start from prior mastery / avg time
     growMs: 2000,
     /** One correct quiz plants this many columns × rows of crops */
-    plantPatchCols: 10,
+    plantPatchCols: 4,
     plantPatchRows: 3,
-    goalText: 'Harvest & sell to reach your mastery-based cash goal',
+    goalText: 'Finish 20 science questions · plant only in marked beds',
     tint: 0xff66aa,
     questions: [
       {
@@ -55,11 +56,12 @@ export const FARM_LEVELS = [
     cropId: 'corn',
     cropName: 'Corn',
     cropValue: 12,
-    targetEarnings: 1200, // overridden at level start from prior-level mastery
+    targetEarnings: null,
+    timeTargetMs: 12000, // from previous level avg response time
     growMs: 2000,
-    plantPatchCols: 10,
+    plantPatchCols: 4,
     plantPatchRows: 3,
-    goalText: 'Harvest & sell to reach your mastery-based cash goal',
+    goalText: 'Finish 20 science questions · plant only in marked beds',
     tint: 0xffcc33,
     questions: [
       {

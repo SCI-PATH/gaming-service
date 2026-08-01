@@ -1,7 +1,7 @@
 export const GAME_WIDTH = 800;
 export const GAME_HEIGHT = 600;
 
-export const PLAYER_SPEED = 50;
+export const PLAYER_SPEED = 110;
 export const ARROW_SPEED = 270;
 export const ENEMY_SPEED = 60;
 

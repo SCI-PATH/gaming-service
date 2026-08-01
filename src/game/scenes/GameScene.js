@@ -18,6 +18,7 @@ import {
   DDA_CONFIG,
   averageScore,
   formatResponseTime,
+  goalTextForQuestions,
   scoreAttempt,
 } from '../../data/dda';
 import {
@@ -26,6 +27,20 @@ import {
   goalTextFromMastery,
   saveLevelPerformance,
 } from '../../data/masteryModel';
+import {
+  getOwnedUnlockIds,
+  getUnlockItem,
+  isUnlocked,
+  markUnlocked,
+  shopBandFromPerformance,
+  UNLOCK_WORLD_SLOTS,
+} from '../../data/unlockShop.js';
+import {
+  findPlotAt,
+  freeCellsInPlotAt,
+  isPlantableTile,
+  PLANT_PLOTS,
+} from '../../data/plantPlots.js';
 
 const MOLE_GID = 6;
 const TREANT_GID = 5;
@@ -63,26 +78,33 @@ export default class GameScene extends Phaser.Scene {
     this.levelAttempts = [];
     this.quizOpenedAt = 0;
 
-    // Cash goal at level start from previous mastery / external model
+    // Time target at level start from previous level avg / mastery (no cash goal)
     const prior = getMasteryForLevelStart(this.levelId);
     this.mastery = prior.mastery;
     this.masterySource = prior.source;
     this.masteryFromLevelId = prior.fromLevelId;
     this.performanceBand = prior.band;
-    this.cashTarget = prior.cashGoal;
-    this.ddaCalibrated = true; // goal is known from the start
+    this.timeTargetMs = prior.timeTargetMs;
+    this.cashTarget = null; // cash is for unlock shop only, not level completion
+    this.ddaCalibrated = true;
 
     this.farmLevel = {
       ...this.farmLevel,
-      targetEarnings: this.cashTarget,
+      targetEarnings: null,
+      timeTargetMs: this.timeTargetMs,
+      maxQuestions: DDA_CONFIG.maxQuestions,
       cropValue: cropValueFromMastery(this.baseCropValue, this.mastery),
-      goalText: goalTextFromMastery(this.cashTarget, this.mastery),
+      goalText: goalTextFromMastery(this.timeTargetMs, this.mastery),
     };
 
     this.addAudios();
     this.createMap();
     this.createGroups();
     this.createExit();
+    // Starting level = plain background; owned unlocks appear only after purchase
+    this.placedUnlockIds = new Set();
+    this.placeOwnedUnlocks();
+    this.createPlantPlotMarkers();
     this.populateEnemies();
     this.createPlayer();
     this.bindKeys();
@@ -93,13 +115,21 @@ export default class GameScene extends Phaser.Scene {
     this.bindWindowKeys();
     this.focusGameCanvas();
     this.emitFarmState();
+    this.emitPlayerMapPos();
+
+    ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
+    });
 
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
       type: 'mastery_goal_set',
       mastery: this.mastery,
       masteryPercent: Math.round(this.mastery * 100),
       performanceBand: this.performanceBand,
-      target: this.cashTarget,
+      timeTargetMs: this.timeTargetMs,
+      timeTargetLabel: formatResponseTime(this.timeTargetMs),
+      maxQuestions: DDA_CONFIG.maxQuestions,
       source: this.masterySource,
       fromLevelId: this.masteryFromLevelId,
       levelId: this.levelId,
@@ -144,6 +174,7 @@ export default class GameScene extends Phaser.Scene {
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (event.target?.closest?.('.science-quiz-overlay')) return;
+      if (event.target?.closest?.('.unlock-shop-overlay')) return;
 
       if (event.code === 'KeyQ') {
         event.preventDefault();
@@ -180,23 +211,48 @@ export default class GameScene extends Phaser.Scene {
       if (!this.sys?.isActive()) return;
       this.handleSellInventory();
     };
+    this._onPurchaseUnlock = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.handlePurchaseUnlock(payload);
+    };
+    this._onShopOpen = () => {
+      if (!this.sys?.isActive()) return;
+      this.farmInputLocked = true;
+      this.player?.setVelocity(0);
+      this.physics.world.pause();
+    };
+    this._onShopClose = () => {
+      if (!this.sys?.isActive()) return;
+      this.farmInputLocked = false;
+      this.physics.world.resume();
+      this.focusGameCanvas();
+    };
 
     // Drop stale handlers from HMR / StrictMode so dead scenes cannot eat events
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PLANT_CROP);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SCIENCE_QUIZ_FAILURE);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SELL_INVENTORY_ACTION);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.PURCHASE_UNLOCK);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.UNLOCK_SHOP_OPEN);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.UNLOCK_SHOP_CLOSE);
 
     ForestGameBridge.on(FARM_EVENTS.PLANT_CROP, this._onPlant);
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, this._onQuizSuccess);
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
     ForestGameBridge.on(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
+    ForestGameBridge.on(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
+    ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
+    ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       ForestGameBridge.off(FARM_EVENTS.PLANT_CROP, this._onPlant);
       ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, this._onQuizSuccess);
       ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
       ForestGameBridge.off(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
+      ForestGameBridge.off(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
+      ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
+      ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
     });
   }
 
@@ -217,10 +273,14 @@ export default class GameScene extends Phaser.Scene {
               this.responseTimesMs.length,
           )
         : 0;
+    const levelAvgMs = this.levelAvgResponseMs();
     ForestGameBridge.emit(FARM_EVENTS.FARM_STATE, {
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
-      target: this.cashTarget,
+      target: this.timeTargetMs,
+      timeTargetMs: this.timeTargetMs,
+      timeTargetLabel: formatResponseTime(this.timeTargetMs),
+      maxQuestions: DDA_CONFIG.maxQuestions,
       inventory: this.harvestedItemsCount,
       harvestedCount: this.harvestedItemsCount,
       harvestedItemsCount: this.harvestedItemsCount,
@@ -245,9 +305,48 @@ export default class GameScene extends Phaser.Scene {
           ? Math.round((this.quizCorrect / answered) * 100)
           : 50,
       performanceScore: perfScore,
-      avgResponseMs: avgMs,
-      avgResponseLabel: avgMs ? formatResponseTime(avgMs) : '—',
+      avgResponseMs: levelAvgMs || avgMs,
+      avgResponseLabel:
+        levelAvgMs || avgMs
+          ? formatResponseTime(levelAvgMs || avgMs)
+          : '—',
+      beatTimeTarget:
+        levelAvgMs > 0 ? levelAvgMs <= this.timeTargetMs : null,
+      playerTileX: this.player
+        ? Math.floor(this.player.x / TILE_SIZE)
+        : 48,
+      playerTileY: this.player
+        ? Math.floor(this.player.y / TILE_SIZE)
+        : 32,
+      mapWidth: this.map?.width ?? 100,
+      mapHeight: this.map?.height ?? 75,
     });
+  }
+
+  /** Live map pin — also mirrors to window so the React map cannot miss updates. */
+  emitPlayerMapPos() {
+    if (!this.player) return;
+    const mapW = this.map?.widthInPixels ?? 100 * TILE_SIZE;
+    const mapH = this.map?.heightInPixels ?? 75 * TILE_SIZE;
+    const x = Phaser.Math.Clamp(this.player.x, 0, mapW);
+    const y = Phaser.Math.Clamp(this.player.y, 0, mapH);
+    const payload = {
+      playerMapX: x / TILE_SIZE,
+      playerMapY: y / TILE_SIZE,
+      playerTileX: Math.floor(x / TILE_SIZE),
+      playerTileY: Math.floor(y / TILE_SIZE),
+      mapWidth: this.map?.width ?? 100,
+      mapHeight: this.map?.height ?? 75,
+    };
+
+    ForestGameBridge.emit(FARM_EVENTS.PLAYER_MAP_POS, payload);
+    try {
+      window.dispatchEvent(
+        new CustomEvent('scipath-player-map', { detail: payload }),
+      );
+    } catch {
+      // ignore
+    }
   }
 
   emitInventoryUpdated() {
@@ -258,7 +357,7 @@ export default class GameScene extends Phaser.Scene {
       harvestedItemsCount: this.harvestedItemsCount,
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
-      target: this.cashTarget,
+      timeTargetMs: this.timeTargetMs,
       cropValue: this.farmLevel.cropValue,
       performanceBand: this.performanceBand,
       mastery: this.mastery,
@@ -267,8 +366,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Record this level's quiz attempt (for next level mastery).
-   * Cash goal stays fixed from level-start mastery.
+   * Record this level's quiz attempt (saved for next level's time target).
+   * Time target stays fixed from level-start mastery / previous avg.
    */
   recordQuizAttempt(wasCorrect, responseTimeMs = 0) {
     const ms =
@@ -302,57 +401,302 @@ export default class GameScene extends Phaser.Scene {
       attemptScore,
       performanceScore: Math.round(averageScore(this.attemptScores)),
       performanceBand: this.performanceBand,
-      target: this.cashTarget,
+      timeTargetMs: this.timeTargetMs,
       mastery: this.mastery,
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
+      questionsAnswered: this.quizCorrect + this.quizIncorrect,
     });
+
+    const answered = this.quizCorrect + this.quizIncorrect;
+    this.farmLevel = {
+      ...this.farmLevel,
+      goalText: goalTextForQuestions(
+        answered,
+        DDA_CONFIG.maxQuestions,
+        this.timeTargetMs,
+      ),
+    };
+  }
+
+  /** Full-level avg response time (not the rolling DDA window). */
+  levelAvgResponseMs() {
+    if (!this.levelAttempts.length) return 0;
+    const sum = this.levelAttempts.reduce(
+      (a, att) => a + (Number(att.responseTimeMs) || 0),
+      0,
+    );
+    return Math.round(sum / this.levelAttempts.length);
+  }
+
+  /** Full-level attempt scores for unlock-shop pricing. */
+  levelAttemptScores() {
+    return this.levelAttempts.map((att) => scoreAttempt(att));
+  }
+
+  buildShopPerformance() {
+    const attemptScores = this.levelAttemptScores();
+    const avgResponseMs = this.levelAvgResponseMs();
+    const performanceScore = Math.round(averageScore(attemptScores));
+    const shopBand = shopBandFromPerformance({
+      attemptScores,
+      performanceBand: this.performanceBand,
+      avgResponseMs,
+    });
+    return {
+      attemptScores,
+      avgResponseMs,
+      performanceScore,
+      performanceBand: shopBand,
+      questionsAnswered: this.quizCorrect + this.quizIncorrect,
+    };
   }
 
   persistLevelMastery() {
-    const avgMs =
-      this.responseTimesMs.length > 0
-        ? Math.round(
-            this.responseTimesMs.reduce((a, b) => a + b, 0) /
-              this.responseTimesMs.length,
-          )
-        : null;
+    const avgMs = this.levelAvgResponseMs() || null;
 
     return saveLevelPerformance(this.levelId, {
       attempts: this.levelAttempts,
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
       avgResponseMs: avgMs,
+      timeTargetMs: this.timeTargetMs,
     });
   }
 
   canPlantMore() {
-    return this.currentMoney < this.cashTarget;
+    // Max 20 questions — stop planting once level is complete
+    if (this.forestUnlocked) return false;
+    const answered = this.quizCorrect + this.quizIncorrect;
+    return answered < DDA_CONFIG.maxQuestions;
   }
 
+  /** Level complete after max questions (no cash goal). */
   checkTargetReached() {
     if (this.forestUnlocked) return;
-    if (this.cashTarget == null || this.cashTarget <= 0) return;
-    if (this.currentMoney < this.cashTarget) return;
+
+    const answered = this.quizCorrect + this.quizIncorrect;
+    if (answered < DDA_CONFIG.maxQuestions) {
+      this.farmLevel = {
+        ...this.farmLevel,
+        goalText: goalTextForQuestions(
+          answered,
+          DDA_CONFIG.maxQuestions,
+          this.timeTargetMs,
+        ),
+      };
+      this.emitFarmState();
+      return;
+    }
 
     this.forestUnlocked = true;
     this.persistLevelMastery();
+    // Unharvested plants do not carry into the next level
+    this.clearAllCrops({ silent: true });
+    const avgMs = this.levelAvgResponseMs();
+    const beat =
+      avgMs > 0 ? avgMs <= this.timeTargetMs : null;
+    const timeNote =
+      beat == null
+        ? ''
+        : beat
+          ? ` You beat the ${formatResponseTime(this.timeTargetMs)} target!`
+          : ` Target was ${formatResponseTime(this.timeTargetMs)} avg.`;
+
     this.farmLevel = {
       ...this.farmLevel,
-      goalText: `Target Reached ($${this.cashTarget})! Proceed to the Forest Entrance!`,
+      goalText: `Level complete!${timeNote} Unlock shop is open — bought items stay on your farm.`,
     };
     this.openForestGate();
+    this.decorateNextLevelGround();
 
+    const shopPerf = this.buildShopPerformance();
     const payload = {
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
-      target: this.cashTarget,
+      target: this.timeTargetMs,
+      timeTargetMs: this.timeTargetMs,
+      timeTargetLabel: formatResponseTime(this.timeTargetMs),
+      beatTimeTarget: beat,
+      maxQuestions: DDA_CONFIG.maxQuestions,
       levelId: this.farmLevel.id,
       goalText: this.farmLevel.goalText,
-      performanceBand: this.performanceBand,
+      performanceBand: shopPerf.performanceBand,
       mastery: this.mastery,
+      openUnlockShop: true,
+      ...shopPerf,
     };
     ForestGameBridge.emit(FARM_EVENTS.GOAL_COMPLETED, payload);
+    this.emitFarmState();
+  }
+
+  /**
+   * Draw marked tillable beds so students know where planting is allowed.
+   */
+  createPlantPlotMarkers() {
+    if (this.plantPlotMarkers) {
+      this.plantPlotMarkers.destroy(true);
+    }
+    this.plantPlotMarkers = this.add.container(0, 0);
+    this.plantPlotMarkers.setDepth(1.5);
+
+    PLANT_PLOTS.forEach((plot) => {
+      const px = plot.x * TILE_SIZE;
+      const py = plot.y * TILE_SIZE;
+      const pw = plot.w * TILE_SIZE;
+      const ph = plot.h * TILE_SIZE;
+
+      const g = this.add.graphics();
+      g.fillStyle(0x5a3a1a, 0.38);
+      g.fillRect(px, py, pw, ph);
+      g.lineStyle(1.5, 0xe8c56a, 0.85);
+      g.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+      // Inner dashed feel via second lighter rect
+      g.lineStyle(1, 0x9ccc6a, 0.35);
+      g.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+
+      const label = this.add
+        .text(px + pw / 2, py - 4, 'PLANT', {
+          fontFamily: 'Courier New, monospace',
+          fontSize: '8px',
+          color: '#e8c56a',
+          stroke: '#1a1208',
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(1.6);
+
+      this.plantPlotMarkers.add([g, label]);
+
+      this.tweens.add({
+        targets: g,
+        alpha: { from: 0.75, to: 1 },
+        duration: 1100,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    });
+  }
+
+  /** Remove every crop — unharvested plants never carry to the next level. */
+  clearAllCrops({ silent = true } = {}) {
+    const crops = [...(this.plantedCrops || [])];
+    crops.forEach((crop) => {
+      if (!crop) return;
+      try {
+        crop.destroy?.();
+      } catch {
+        // ignore
+      }
+    });
+    this.plantedCrops = [];
+    this.plantedGridKeys = new Set();
+    this.pendingGridKey = null;
+    this.pendingPatchCells = [];
+    this.currentTargetTile = null;
+    this.cropsGroup?.clear(true, true);
+    if (!silent) this.emitFarmState();
+  }
+
+  placeOwnedUnlocks() {
+    for (const id of getOwnedUnlockIds()) {
+      this.placeUnlockSprite(id);
+    }
+  }
+
+  placeUnlockSprite(itemId) {
+    if (!itemId || this.placedUnlockIds?.has(itemId)) return null;
+    const item = getUnlockItem(itemId);
+    if (!item || !this.textures.exists(item.textureKey)) return null;
+
+    const owned = getOwnedUnlockIds();
+    const index = Math.max(0, owned.indexOf(itemId));
+    const slot = UNLOCK_WORLD_SLOTS[index % UNLOCK_WORLD_SLOTS.length];
+    const x = slot.tileX * TILE_SIZE + TILE_SIZE / 2;
+    const y = slot.tileY * TILE_SIZE + TILE_SIZE / 2;
+
+    const sprite = item.frameWidth
+      ? this.add.sprite(x, y, item.textureKey, 0)
+      : this.add.image(x, y, item.textureKey);
+
+    sprite.setScale(item.displayScale ?? 1);
+    sprite.setDepth(item.category === 'building' ? 6 : 5);
+    sprite.setData('unlockId', itemId);
+
+    this.placedUnlockIds.add(itemId);
+    return sprite;
+  }
+
+  decorateNextLevelGround() {
+    if (this._nextLevelGround) return;
+    this._nextLevelGround = true;
+
+    const tiles = [
+      ['ground_01', 44, 27],
+      ['ground_05', 45, 27],
+      ['ground_10', 46, 27],
+      ['ground_19', 47, 27],
+      ['ground_20', 48, 27],
+      ['ground_25', 44, 28],
+      ['ground_34', 45, 28],
+      ['ground_44', 46, 28],
+      ['ground_50', 47, 28],
+      ['ground_56', 48, 28],
+    ];
+    const scale = TILE_SIZE / 256;
+
+    for (const [key, tx, ty] of tiles) {
+      if (!this.textures.exists(key)) continue;
+      this.add
+        .image(tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2, key)
+        .setScale(scale)
+        .setDepth(1)
+        .setAlpha(0.95);
+    }
+  }
+
+  handlePurchaseUnlock(payload = {}) {
+    const itemId = payload.itemId;
+    const item = getUnlockItem(itemId);
+    if (!item) return;
+
+    if (isUnlocked(itemId)) {
+      this.placeUnlockSprite(itemId);
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'unlock_blocked',
+        reason: 'already_owned',
+        itemId,
+      });
+      this.emitFarmState();
+      return;
+    }
+
+    const price = Math.max(0, Number(payload.price) || 0);
+    if (this.currentMoney < price) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'unlock_blocked',
+        reason: 'insufficient_cash',
+        itemId,
+        price,
+        cash: this.currentMoney,
+      });
+      return;
+    }
+
+    this.currentMoney -= price;
+    this.syncMoneyAliases();
+    markUnlocked(itemId);
+    this.placeUnlockSprite(itemId);
+    this.audioItem?.play();
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'unlock_purchased',
+      itemId,
+      price,
+      earnings: this.currentMoney,
+      currentMoney: this.currentMoney,
+    });
     this.emitFarmState();
   }
 
@@ -403,40 +747,25 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Build a multi-row × multi-column patch of free tiles centered on the player.
-   * Skips walls and already-planted cells.
+   * Free cells inside the marked plant bed under the player.
+   * Planting outside beds is not allowed.
    */
   getPlantPatchCells(originGridX, originGridY) {
-    const cols = this.farmLevel.plantPatchCols ?? 10;
+    if (!isPlantableTile(originGridX, originGridY)) return [];
+
+    const cols = this.farmLevel.plantPatchCols ?? 4;
     const rows = this.farmLevel.plantPatchRows ?? 3;
-    const startX = originGridX - Math.floor(cols / 2);
-    const startY = originGridY - Math.floor(rows / 2);
-    const cells = [];
+    const maxCells = cols * rows;
 
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < cols; col += 1) {
-        const gridX = startX + col;
-        const gridY = startY + row;
-        const key = this.gridKey(gridX, gridY);
-
+    return freeCellsInPlotAt(originGridX, originGridY, {
+      occupiedKeys: this.plantedGridKeys,
+      maxCells,
+      tileSize: TILE_SIZE,
+      collidesAt: (gridX, gridY) => {
         const colTile = this.colLayer?.getTileAt(gridX, gridY);
-        if (colTile?.collides) continue;
-        if (this.plantedGridKeys.has(key)) continue;
-
-        cells.push({
-          gridX,
-          gridY,
-          key,
-          x: gridX * TILE_SIZE + TILE_SIZE / 2,
-          y: gridY * TILE_SIZE + TILE_SIZE / 2,
-          tileOriginX: gridX * TILE_SIZE,
-          tileOriginY: gridY * TILE_SIZE,
-          patchCol: col,
-          patchRow: row,
-        });
-      }
-    }
-    return cells;
+        return Boolean(colTile?.collides);
+      },
+    });
   }
 
   /** Debounce shared by window + Phaser key paths (avoids double plant/sell). */
@@ -474,6 +803,19 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const cell = this.getPlayerGridCell();
+
+    if (!isPlantableTile(cell.gridX, cell.gridY)) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'plant_blocked',
+        reason: 'not_plot',
+        tileX: cell.gridX,
+        tileY: cell.gridY,
+        gridKey: cell.key,
+      });
+      return;
+    }
+
+    const plot = findPlotAt(cell.gridX, cell.gridY);
     const patchCells = this.getPlantPatchCells(cell.gridX, cell.gridY);
 
     if (patchCells.length < 1) {
@@ -483,6 +825,7 @@ export default class GameScene extends Phaser.Scene {
         tileX: cell.gridX,
         tileY: cell.gridY,
         gridKey: cell.key,
+        plotId: plot?.id,
       });
       return;
     }
@@ -499,6 +842,7 @@ export default class GameScene extends Phaser.Scene {
       tileOriginX: cell.tileOriginX,
       tileOriginY: cell.tileOriginY,
       patchCells: this.pendingPatchCells,
+      plotId: plot?.id,
     };
     this.farmInputLocked = true;
     this.player.setVelocity(0);
@@ -513,8 +857,9 @@ export default class GameScene extends Phaser.Scene {
       tileX: cell.gridX,
       tileY: cell.gridY,
       gridKey: cell.key,
+      plotId: plot?.id,
       patchSize: patchCells.length,
-      patchCols: this.farmLevel.plantPatchCols ?? 10,
+      patchCols: this.farmLevel.plantPatchCols ?? 4,
       patchRows: this.farmLevel.plantPatchRows ?? 3,
       cropType: this.farmLevel.cropId,
       question,
@@ -532,6 +877,7 @@ export default class GameScene extends Phaser.Scene {
    */
   spawnCropAtCell(cell, staggerMs = 0) {
     if (!cell || this.plantedGridKeys.has(cell.key)) return null;
+    if (!isPlantableTile(cell.gridX, cell.gridY)) return null;
 
     const worldX = cell.x ?? cell.gridX * TILE_SIZE + TILE_SIZE / 2;
     const worldY = cell.y ?? cell.gridY * TILE_SIZE + TILE_SIZE / 2;
@@ -724,13 +1070,14 @@ export default class GameScene extends Phaser.Scene {
           patchPlanted: planted.length,
           rp: payload.rp ?? 0,
           performanceBand: this.performanceBand,
-          target: this.cashTarget,
+          timeTargetMs: this.timeTargetMs,
         });
       } else {
         this.pendingGridKey = null;
         this.pendingPatchCells = [];
       }
       this.emitFarmState();
+      this.checkTargetReached();
     } finally {
       this.resumeAfterQuiz();
     }
@@ -753,10 +1100,11 @@ export default class GameScene extends Phaser.Scene {
         questionId: payload.questionId,
         selectedIndex: payload.selectedIndex,
         performanceBand: this.performanceBand,
-        target: this.cashTarget,
+        timeTargetMs: this.timeTargetMs,
       });
 
       this.emitFarmState();
+      this.checkTargetReached();
     } finally {
       this.resumeAfterQuiz();
     }
@@ -798,7 +1146,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.emitInventoryUpdated();
-    this.checkTargetReached();
+    // Cash is for the unlock shop only — selling does not complete the level
     this.focusGameCanvas();
   }
 
@@ -825,6 +1173,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time) {
+    // Keep the map pin tracking even while a quiz locks farm input
+    this.emitPlayerMapPos();
+
     if (this.farmInputLocked) {
       this.player?.setVelocity(0);
       return;
@@ -914,8 +1265,17 @@ export default class GameScene extends Phaser.Scene {
 
   createCamera() {
     this.cameras.main.setRoundPixels(true);
-    this.cameras.main.setZoom(3.5);
+    // Lower zoom so more of the farm is visible while running
+    this.cameras.main.setZoom(2);
     this.cameras.main.startFollow(this.player);
+    if (this.map) {
+      this.cameras.main.setBounds(
+        0,
+        0,
+        this.map.widthInPixels,
+        this.map.heightInPixels,
+      );
+    }
   }
 
   handlePlayerInput() {
@@ -1003,6 +1363,8 @@ export default class GameScene extends Phaser.Scene {
 
   onForestGateEnter() {
     if (!this.forestUnlocked) return;
+    // Unharvested crops never carry into the next level
+    this.clearAllCrops({ silent: true });
     this.scene.start('GameOverScene', {
       score: this.earnings + (this.player.playerModel.scoreCalc || 0),
       forestUnlocked: true,
@@ -1046,6 +1408,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   gameOver() {
+    this.clearAllCrops({ silent: true });
     this.scene.start('GameOverScene', {
       score: this.player.playerModel.scoreCalc,
     });

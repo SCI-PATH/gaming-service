@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { GROUND_TILE_KEYS, UNLOCK_ITEMS } from '../../data/unlockShop.js';
 
 export default class LoadScene extends Phaser.Scene {
   constructor() {
@@ -58,6 +59,30 @@ export default class LoadScene extends Phaser.Scene {
     this.load.image('crop_flower', '/assets/crops/flower_crop.png');
     this.load.image('crop_corn_sprout', '/assets/crops/corn_crop_sprout.png');
     this.load.image('crop_flower_sprout', '/assets/crops/flower_crop_sprout.png');
+
+    this.loadUnlockShopAssets();
+  }
+
+  /** Animals (spritesheets), props, and ground tiles for unlock shop / next levels. */
+  loadUnlockShopAssets() {
+    for (const item of UNLOCK_ITEMS) {
+      if (item.frameWidth && item.frameHeight) {
+        this.load.spritesheet(item.textureKey, item.image, {
+          frameWidth: item.frameWidth,
+          frameHeight: item.frameHeight,
+        });
+      } else {
+        this.load.image(item.textureKey, item.image);
+      }
+    }
+
+    // Subset of summer ground tiles for next-level path decor near the gate
+    const groundSubset = GROUND_TILE_KEYS.filter((_, i) =>
+      [0, 4, 9, 18, 19, 24, 33, 43, 49, 55].includes(i),
+    );
+    for (const tile of groundSubset) {
+      this.load.image(tile.key, tile.path);
+    }
   }
 
   loadAudio() {

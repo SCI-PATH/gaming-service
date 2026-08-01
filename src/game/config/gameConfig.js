@@ -3,7 +3,6 @@ import { GAME_WIDTH, GAME_HEIGHT } from './constants';
 import BootScene from '../scenes/BootScene';
 import LoadScene from '../scenes/LoadScene';
 import MenuScene from '../scenes/MenuScene';
-import CreditsScene from '../scenes/CreditsScene';
 import GuideScene from '../scenes/GuideScene';
 import GameScene from '../scenes/GameScene';
 import GameOverScene from '../scenes/GameOverScene';
@@ -38,7 +37,6 @@ export function createGameConfig(parent) {
       BootScene,
       LoadScene,
       MenuScene,
-      CreditsScene,
       GuideScene,
       GameScene,
       GameOverScene,

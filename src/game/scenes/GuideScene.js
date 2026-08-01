@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { bodyStyle } from '../ui/textStyles';
+import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
 
 export default class GuideScene extends Phaser.Scene {
   constructor() {
@@ -7,6 +8,7 @@ export default class GuideScene extends Phaser.Scene {
   }
 
   create() {
+    ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     this.add.tileSprite(400, 300, 800, 600, 'title-bg');
     this.add.image(400, 225, 'instructions').setScale(3.5);
     this.add.image(400, 525, 'enter').setScale(3);
@@ -14,14 +16,14 @@ export default class GuideScene extends Phaser.Scene {
     this.add.text(
       400,
       415,
-      'Press E on empty ground — answer a science quiz to plant.',
+      'Stand on a marked PLANT bed — press E to quiz-plant.',
       bodyStyle,
     ).setOrigin(0.5);
 
     this.add.text(
       400,
       450,
-      'Your cash goal is set from prior mastery — sell with Q to reach it.',
+      'Finish 20 questions · unharvested crops clear next level.',
       bodyStyle,
     ).setOrigin(0.5);
 

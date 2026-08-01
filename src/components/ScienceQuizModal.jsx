@@ -3,7 +3,7 @@ import { ForestGameBridge } from '../game/ForestGameBridge.js';
 
 /**
  * Science quiz modal — times how long the student takes to answer.
- * Timing + correctness feed this level's mastery record (for the next level's cash goal).
+ * Timing + correctness feed this level's mastery record (for the next level's time target).
  */
 export default function ScienceQuizModal({ questionData, cropId, onClose }) {
   const openedAtRef = useRef(Date.now());

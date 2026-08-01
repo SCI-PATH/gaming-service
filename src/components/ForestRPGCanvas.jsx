@@ -11,6 +11,8 @@ import {
 export default function ForestRPGCanvas({
   onReady,
   onFarmState,
+  onPlayerMapPos,
+  onFarmSceneActive,
   onTriggerQuiz,
   onTargetReached,
   onInteraction,
@@ -23,6 +25,8 @@ export default function ForestRPGCanvas({
   cbs.current = {
     onReady,
     onFarmState,
+    onPlayerMapPos,
+    onFarmSceneActive,
     onTriggerQuiz,
     onTargetReached,
     onInteraction,
@@ -42,6 +46,10 @@ export default function ForestRPGCanvas({
     };
     const handleFarmState = (state) => cbs.current.onFarmState?.(state);
     const handleInventory = (state) => cbs.current.onFarmState?.(state);
+    const handlePlayerMapPos = (payload) =>
+      cbs.current.onPlayerMapPos?.(payload);
+    const handleFarmSceneActive = (payload) =>
+      cbs.current.onFarmSceneActive?.(payload);
     const handleQuiz = (payload) => cbs.current.onTriggerQuiz?.(payload);
     const handleTarget = (payload) => cbs.current.onTargetReached?.(payload);
     const handleInteraction = (detail) => cbs.current.onInteraction?.(detail);
@@ -49,6 +57,8 @@ export default function ForestRPGCanvas({
     ForestGameBridge.on(FARM_EVENTS.READY, handleReady);
     ForestGameBridge.on(FARM_EVENTS.FARM_STATE, handleFarmState);
     ForestGameBridge.on(FARM_EVENTS.INVENTORY_UPDATED, handleInventory);
+    ForestGameBridge.on(FARM_EVENTS.PLAYER_MAP_POS, handlePlayerMapPos);
+    ForestGameBridge.on(FARM_EVENTS.FARM_SCENE_ACTIVE, handleFarmSceneActive);
     ForestGameBridge.on(FARM_EVENTS.TRIGGER_SCIENCE_QUIZ, handleQuiz);
     ForestGameBridge.on(FARM_EVENTS.TARGET_REACHED, handleTarget);
     ForestGameBridge.on(FARM_EVENTS.INTERACTION, handleInteraction);
@@ -74,6 +84,8 @@ export default function ForestRPGCanvas({
       ForestGameBridge.off(FARM_EVENTS.READY, handleReady);
       ForestGameBridge.off(FARM_EVENTS.FARM_STATE, handleFarmState);
       ForestGameBridge.off(FARM_EVENTS.INVENTORY_UPDATED, handleInventory);
+      ForestGameBridge.off(FARM_EVENTS.PLAYER_MAP_POS, handlePlayerMapPos);
+      ForestGameBridge.off(FARM_EVENTS.FARM_SCENE_ACTIVE, handleFarmSceneActive);
       ForestGameBridge.off(FARM_EVENTS.TRIGGER_SCIENCE_QUIZ, handleQuiz);
       ForestGameBridge.off(FARM_EVENTS.TARGET_REACHED, handleTarget);
       ForestGameBridge.off(FARM_EVENTS.INTERACTION, handleInteraction);
@@ -107,4 +119,17 @@ export function emitScienceQuizFailure(payload) {
 /** Sell harvested inventory — preferred React button channel. */
 export function emitSellCrops() {
   ForestGameBridge.emit(FARM_EVENTS.SELL_INVENTORY_ACTION);
+}
+
+/** Buy an unlock-shop item (sheep, house, calf, …). */
+export function emitPurchaseUnlock(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.PURCHASE_UNLOCK, payload);
+}
+
+export function emitUnlockShopOpen() {
+  ForestGameBridge.emit(FARM_EVENTS.UNLOCK_SHOP_OPEN);
+}
+
+export function emitUnlockShopClose() {
+  ForestGameBridge.emit(FARM_EVENTS.UNLOCK_SHOP_CLOSE);
 }
