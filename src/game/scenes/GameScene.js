@@ -13,6 +13,7 @@ import {
   TILE_SIZE,
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
+import { isEggCollectStage } from '../../data/eggCollect.js';
 import { getFarmLevel, pickScienceQuestion } from '../../data/farmLevels';
 import {
   DDA_CONFIG,
@@ -25,20 +26,39 @@ import {
   cropValueFromMastery,
   getMasteryForLevelStart,
   goalTextFromMastery,
+  harvestTargetFromMastery,
+  plantPatchFromMastery,
   saveLevelPerformance,
 } from '../../data/masteryModel';
+import {
+  consumePendingGameplayBonus,
+  getGameplayForLevelStart,
+  getGameplaySettings,
+  saveGameplayLevelPerformance,
+} from '../../data/gameplayPerformance.js';
 import {
   getOwnedUnlockIds,
   getUnlockItem,
   isUnlocked,
   markUnlocked,
+  advanceChallengeProgress,
+  getChallengeProgress,
   shopBandFromPerformance,
   UNLOCK_WORLD_SLOTS,
+  UNLOCK_BUILDING_SLOTS,
 } from '../../data/unlockShop.js';
+import {
+  buildActiveChallenges,
+  getNextChallengeStep,
+} from '../../data/challengeRuntime.js';
+import { getStage } from '../../data/unlockChallenges.js';
 import {
   findPlotAt,
   freeCellsInPlotAt,
   isPlantableTile,
+  isLoadingTile,
+  LOADING_ZONE,
+  loadingZoneCenter,
   PLANT_PLOTS,
 } from '../../data/plantPlots.js';
 
@@ -52,15 +72,21 @@ export default class GameScene extends Phaser.Scene {
 
   init(data) {
     this.levelId = data?.levelId ?? 1;
+    this.devTest = data?.devTest || null;
+    this.devStartingMoney =
+      Number(data?.startingMoney) > 0 ? Number(data.startingMoney) : 0;
   }
 
   create() {
     this.farmLevel = getFarmLevel(this.levelId);
     this.baseCropValue = this.farmLevel.cropValue;
-    this.currentMoney = 0;
+    this.currentMoney = this.devStartingMoney || 0;
     this.earnings = 0;
-    this.harvestedItemsCount = 0;
+    this.harvestedItemsCount = 0; // crops loaded into cart (sellable)
+    this.carriedCount = 0; // crops on the runner's back (not yet unloaded)
     this.inventory = 0;
+    this.carrySprites = [];
+    this.pendingQuizMode = null;
     this.forestUnlocked = false;
     this.farmInputLocked = false;
     this.currentTargetTile = null;
@@ -76,7 +102,11 @@ export default class GameScene extends Phaser.Scene {
     this.attemptScores = [];
     this.responseTimesMs = [];
     this.levelAttempts = [];
+    this.answerResults = [];
     this.quizOpenedAt = 0;
+    this.retryCount = 0;
+    this.levelStartedAtMs = Date.now();
+    this.levelStartMoney = this.currentMoney;
 
     // Time target at level start from previous level avg / mastery (no cash goal)
     const prior = getMasteryForLevelStart(this.levelId);
@@ -87,14 +117,36 @@ export default class GameScene extends Phaser.Scene {
     this.timeTargetMs = prior.timeTargetMs;
     this.cashTarget = null; // cash is for unlock shop only, not level completion
     this.ddaCalibrated = true;
+    this.harvestTarget = harvestTargetFromMastery(this.mastery);
+    this.cropsHarvestedTotal = 0;
+    const patch = plantPatchFromMastery(this.mastery);
+
+    // Adaptive GAMEPLAY (enemies / timers / retries / hints) — not question DDA
+    const gameplayStart = getGameplayForLevelStart(this.levelId);
+    this.gameplayBand = gameplayStart.band;
+    this.gameplaySettings = gameplayStart.settings;
+    this.gameplayPreviousLevel = gameplayStart.previousLevel;
+    this.gameplayAppliedBonus = null;
+    this.levelTargetCompletionMs = this.gameplaySettings.levelTargetTimeMs;
+    this.answerTimerMs = this.gameplaySettings.answerTimerMs;
 
     this.farmLevel = {
       ...this.farmLevel,
       targetEarnings: null,
       timeTargetMs: this.timeTargetMs,
+      harvestTarget: this.harvestTarget,
       maxQuestions: DDA_CONFIG.maxQuestions,
+      plantPatchCols: patch.cols,
+      plantPatchRows: patch.rows,
       cropValue: cropValueFromMastery(this.baseCropValue, this.mastery),
-      goalText: goalTextFromMastery(this.timeTargetMs, this.mastery),
+      goalText: goalTextFromMastery(
+        this.timeTargetMs,
+        this.mastery,
+        this.harvestTarget,
+      ),
+      gameplayBand: this.gameplayBand,
+      answerTimerMs: this.answerTimerMs,
+      levelTargetCompletionMs: this.levelTargetCompletionMs,
     };
 
     this.addAudios();
@@ -103,8 +155,14 @@ export default class GameScene extends Phaser.Scene {
     this.createExit();
     // Starting level = plain background; owned unlocks appear only after purchase
     this.placedUnlockIds = new Set();
+    this.unlockSprites = new Map();
+    this.activeChallenges = [];
+    this.pendingItemChallenge = null;
     this.placeOwnedUnlocks();
+    this.refreshActiveChallenges();
     this.createPlantPlotMarkers();
+    this.createLoadingZoneMarker();
+    this.createHarvestCart();
     this.populateEnemies();
     this.createPlayer();
     this.bindKeys();
@@ -114,6 +172,21 @@ export default class GameScene extends Phaser.Scene {
     this.bindFarmBridge();
     this.bindWindowKeys();
     this.focusGameCanvas();
+
+    // Previous-level performance / improvement cash bonus (next-level grant)
+    const pendingBonus = consumePendingGameplayBonus();
+    if (pendingBonus?.totalBonus > 0) {
+      this.currentMoney += pendingBonus.totalBonus;
+      this.levelStartMoney = this.currentMoney;
+      this.gameplayAppliedBonus = pendingBonus;
+      this.syncMoneyAliases();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'gameplay_bonus_applied',
+        ...pendingBonus,
+        currentMoney: this.currentMoney,
+      });
+    }
+
     this.emitFarmState();
     this.emitPlayerMapPos();
 
@@ -130,10 +203,97 @@ export default class GameScene extends Phaser.Scene {
       timeTargetMs: this.timeTargetMs,
       timeTargetLabel: formatResponseTime(this.timeTargetMs),
       maxQuestions: DDA_CONFIG.maxQuestions,
+      harvestTarget: this.harvestTarget,
       source: this.masterySource,
       fromLevelId: this.masteryFromLevelId,
       levelId: this.levelId,
     });
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'gameplay_adapt_set',
+      levelId: this.levelId,
+      gameplayBand: this.gameplayBand,
+      gameplayLabel: this.gameplaySettings.label,
+      settings: this.gameplaySettings,
+      previousLevel: this.gameplayPreviousLevel,
+      appliedBonus: this.gameplayAppliedBonus,
+      nextGameplaySettings: this.gameplaySettings,
+    });
+
+    if (this.devTest) {
+      this.time.delayedCall(200, () => this.applyDevTest(this.devTest));
+    }
+  }
+
+  /** Skip-the-grind shortcuts for local house testing. */
+  applyDevTest(mode) {
+    if (!this.sys?.isActive()) return;
+
+    if (mode === 'buy_house') {
+      this.currentMoney = Math.max(this.currentMoney, 2000);
+      this.syncMoneyAliases();
+      this.quizCorrect = DDA_CONFIG.maxQuestions;
+      this.forestUnlocked = true;
+      this.farmLevel = {
+        ...this.farmLevel,
+        goalText:
+          'DEV TEST: Unlock shop open — buy the Farm House, then close shop for level 2.',
+      };
+      this.emitFarmState();
+      const shopPerf = this.buildShopPerformance?.() || {
+        attemptScores: [],
+        avgResponseMs: 0,
+        performanceBand: this.performanceBand,
+        questionsAnswered: DDA_CONFIG.maxQuestions,
+      };
+      ForestGameBridge.emit(FARM_EVENTS.GOAL_COMPLETED, {
+        earnings: this.currentMoney,
+        currentMoney: this.currentMoney,
+        target: this.timeTargetMs,
+        timeTargetMs: this.timeTargetMs,
+        timeTargetLabel: formatResponseTime(this.timeTargetMs),
+        beatTimeTarget: true,
+        maxQuestions: DDA_CONFIG.maxQuestions,
+        levelId: this.farmLevel.id,
+        goalText: this.farmLevel.goalText,
+        performanceBand: this.performanceBand,
+        mastery: this.mastery,
+        openUnlockShop: true,
+        ...shopPerf,
+      });
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'dev_test',
+        mode: 'buy_house',
+        cash: this.currentMoney,
+      });
+      return;
+    }
+
+    if (mode === 'house_challenge') {
+      this.currentMoney = Math.max(this.currentMoney, 500);
+      this.syncMoneyAliases();
+      this.refreshActiveChallenges();
+      this.emitFarmState();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'dev_test',
+        mode: 'house_challenge',
+        cash: this.currentMoney,
+        challenges: this.activeChallenges?.length || 0,
+      });
+    }
+
+    if (mode === 'egg_challenge') {
+      this.currentMoney = Math.max(this.currentMoney, 500);
+      this.syncMoneyAliases();
+      this.refreshActiveChallenges();
+      this.emitFarmState();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'dev_test',
+        mode: 'egg_challenge',
+        cash: this.currentMoney,
+        challenges: this.activeChallenges?.length || 0,
+      });
+    }
   }
 
   createGroups() {
@@ -175,6 +335,10 @@ export default class GameScene extends Phaser.Scene {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (event.target?.closest?.('.science-quiz-overlay')) return;
       if (event.target?.closest?.('.unlock-shop-overlay')) return;
+      if (event.target?.closest?.('.challenge-panel')) return;
+      if (event.target?.closest?.('.quest-scroll-overlay')) return;
+      if (event.target?.closest?.('.house-interior-overlay')) return;
+      if (event.target?.closest?.('.egg-collect-overlay')) return;
 
       if (event.code === 'KeyQ') {
         event.preventDefault();
@@ -215,6 +379,10 @@ export default class GameScene extends Phaser.Scene {
       if (!this.sys?.isActive()) return;
       this.handlePurchaseUnlock(payload);
     };
+    this._onStartItemChallenge = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.beginItemChallenge(payload);
+    };
     this._onShopOpen = () => {
       if (!this.sys?.isActive()) return;
       this.farmInputLocked = true;
@@ -227,6 +395,38 @@ export default class GameScene extends Phaser.Scene {
       this.physics.world.resume();
       this.focusGameCanvas();
     };
+    this._onHouseInteriorDone = () => {
+      if (!this.sys?.isActive()) return;
+      this.finishHouseChallengeStage();
+    };
+    this._onHouseInteriorCancel = () => {
+      if (!this.sys?.isActive()) return;
+      this.cancelHouseInterior();
+    };
+    this._onHouseStepCorrect = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onHouseStepCorrect(payload);
+    };
+    this._onHouseStepWrong = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onHouseStepWrong(payload);
+    };
+    this._onEggCollectDone = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.finishEggCollectStage(payload);
+    };
+    this._onEggCollectCancel = () => {
+      if (!this.sys?.isActive()) return;
+      this.cancelEggCollect();
+    };
+    this._onEggProtectCorrect = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onEggProtectCorrect(payload);
+    };
+    this._onEggProtectWrong = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onEggProtectWrong(payload);
+    };
 
     // Drop stale handlers from HMR / StrictMode so dead scenes cannot eat events
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PLANT_CROP);
@@ -236,6 +436,16 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PURCHASE_UNLOCK);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.UNLOCK_SHOP_OPEN);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.UNLOCK_SHOP_CLOSE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.START_ITEM_CHALLENGE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.HOUSE_INTERIOR_DONE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.HOUSE_INTERIOR_CANCEL);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.HOUSE_STEP_CORRECT);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.HOUSE_STEP_WRONG);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_COLLECT_DONE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_COLLECT_CANCEL);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_PROTECT_CORRECT);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_PROTECT_WRONG);
+    // NOTE: do NOT removeAllListeners(START_FARM_LEVEL) — ForestRPGCanvas owns that
 
     ForestGameBridge.on(FARM_EVENTS.PLANT_CROP, this._onPlant);
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, this._onQuizSuccess);
@@ -244,6 +454,30 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.on(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
     ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
     ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
+    ForestGameBridge.on(
+      FARM_EVENTS.START_ITEM_CHALLENGE,
+      this._onStartItemChallenge,
+    );
+    ForestGameBridge.on(
+      FARM_EVENTS.HOUSE_INTERIOR_DONE,
+      this._onHouseInteriorDone,
+    );
+    ForestGameBridge.on(
+      FARM_EVENTS.HOUSE_INTERIOR_CANCEL,
+      this._onHouseInteriorCancel,
+    );
+    ForestGameBridge.on(
+      FARM_EVENTS.HOUSE_STEP_CORRECT,
+      this._onHouseStepCorrect,
+    );
+    ForestGameBridge.on(FARM_EVENTS.HOUSE_STEP_WRONG, this._onHouseStepWrong);
+    ForestGameBridge.on(FARM_EVENTS.EGG_COLLECT_DONE, this._onEggCollectDone);
+    ForestGameBridge.on(FARM_EVENTS.EGG_COLLECT_CANCEL, this._onEggCollectCancel);
+    ForestGameBridge.on(
+      FARM_EVENTS.EGG_PROTECT_CORRECT,
+      this._onEggProtectCorrect,
+    );
+    ForestGameBridge.on(FARM_EVENTS.EGG_PROTECT_WRONG, this._onEggProtectWrong);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       ForestGameBridge.off(FARM_EVENTS.PLANT_CROP, this._onPlant);
@@ -253,6 +487,33 @@ export default class GameScene extends Phaser.Scene {
       ForestGameBridge.off(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
       ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
       ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
+      ForestGameBridge.off(
+        FARM_EVENTS.START_ITEM_CHALLENGE,
+        this._onStartItemChallenge,
+      );
+      ForestGameBridge.off(
+        FARM_EVENTS.HOUSE_INTERIOR_DONE,
+        this._onHouseInteriorDone,
+      );
+      ForestGameBridge.off(
+        FARM_EVENTS.HOUSE_INTERIOR_CANCEL,
+        this._onHouseInteriorCancel,
+      );
+      ForestGameBridge.off(
+        FARM_EVENTS.HOUSE_STEP_CORRECT,
+        this._onHouseStepCorrect,
+      );
+      ForestGameBridge.off(FARM_EVENTS.HOUSE_STEP_WRONG, this._onHouseStepWrong);
+      ForestGameBridge.off(FARM_EVENTS.EGG_COLLECT_DONE, this._onEggCollectDone);
+      ForestGameBridge.off(
+        FARM_EVENTS.EGG_COLLECT_CANCEL,
+        this._onEggCollectCancel,
+      );
+      ForestGameBridge.off(
+        FARM_EVENTS.EGG_PROTECT_CORRECT,
+        this._onEggProtectCorrect,
+      );
+      ForestGameBridge.off(FARM_EVENTS.EGG_PROTECT_WRONG, this._onEggProtectWrong);
     });
   }
 
@@ -284,8 +545,14 @@ export default class GameScene extends Phaser.Scene {
       inventory: this.harvestedItemsCount,
       harvestedCount: this.harvestedItemsCount,
       harvestedItemsCount: this.harvestedItemsCount,
+      carriedCount: this.carriedCount,
+      cartCount: this.harvestedItemsCount,
+      harvestTarget: this.harvestTarget,
+      cropsHarvestedTotal: this.cropsHarvestedTotal,
+      harvestProgressLabel: `${this.cropsHarvestedTotal}/${this.harvestTarget} crops`,
       levelId: this.farmLevel.id,
       cropName: this.farmLevel.cropName,
+      cropId: this.farmLevel.cropId,
       cropValue: this.farmLevel.cropValue,
       goalText: this.farmLevel.goalText,
       forestUnlocked: this.forestUnlocked,
@@ -312,6 +579,10 @@ export default class GameScene extends Phaser.Scene {
           : '—',
       beatTimeTarget:
         levelAvgMs > 0 ? levelAvgMs <= this.timeTargetMs : null,
+      ownedUnlockIds: getOwnedUnlockIds(),
+      activeChallengeCount: (this.activeChallenges || []).filter((c) => !c.done)
+        .length,
+      challenges: this.activeChallenges || [],
       playerTileX: this.player
         ? Math.floor(this.player.x / TILE_SIZE)
         : 48,
@@ -320,6 +591,23 @@ export default class GameScene extends Phaser.Scene {
         : 32,
       mapWidth: this.map?.width ?? 100,
       mapHeight: this.map?.height ?? 75,
+      // Adaptive gameplay (separate from mastery / question DDA)
+      gameplayBand: this.gameplayBand,
+      gameplayLabel: this.gameplaySettings?.label,
+      gameplaySettings: this.gameplaySettings,
+      gameplayPreviousLevel: this.gameplayPreviousLevel,
+      gameplayAppliedBonus: this.gameplayAppliedBonus,
+      nextGameplaySettings: getGameplaySettings(this.gameplayBand),
+      retries: this.retryCount,
+      answerTimerMs: this.answerTimerMs,
+      levelTargetCompletionMs: this.levelTargetCompletionMs,
+      levelElapsedSec: Math.max(
+        0,
+        Math.round((Date.now() - (this.levelStartedAtMs || Date.now())) / 1000),
+      ),
+      avgAnswerTimeSec: levelAvgMs
+        ? Math.round((levelAvgMs / 1000) * 10) / 10
+        : null,
     });
   }
 
@@ -378,10 +666,18 @@ export default class GameScene extends Phaser.Scene {
           : DDA_CONFIG.moderateMs;
 
     if (wasCorrect) this.quizCorrect += 1;
-    else this.quizIncorrect += 1;
+    else {
+      this.quizIncorrect += 1;
+      this.retryCount += 1;
+    }
 
     const attempt = { wasCorrect, responseTimeMs: ms };
     this.levelAttempts.push(attempt);
+    this.answerResults.push({
+      wasCorrect: Boolean(wasCorrect),
+      responseTimeMs: ms,
+      responseTimeSec: Math.round((ms / 1000) * 10) / 10,
+    });
 
     const attemptScore = scoreAttempt(attempt);
     this.attemptScores.push(attemptScore);
@@ -406,6 +702,11 @@ export default class GameScene extends Phaser.Scene {
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
       questionsAnswered: this.quizCorrect + this.quizIncorrect,
+      retries: this.retryCount,
+      avgAnswerTimeSec: this.levelAvgResponseMs()
+        ? Math.round((this.levelAvgResponseMs() / 1000) * 10) / 10
+        : null,
+      gameplayBand: this.gameplayBand,
     });
 
     const answered = this.quizCorrect + this.quizIncorrect;
@@ -464,8 +765,58 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Persist adaptive gameplay metrics + next-level classification / bonuses. */
+  persistGameplayPerformance() {
+    const avgMs = this.levelAvgResponseMs() || 0;
+    const levelCompletionTimeSec = Math.max(
+      0,
+      Math.round((Date.now() - (this.levelStartedAtMs || Date.now())) / 1000),
+    );
+    const cashEarned = Math.max(
+      0,
+      Math.round(this.currentMoney - (this.levelStartMoney || 0)),
+    );
+    const settings = this.gameplaySettings || getGameplaySettings('average');
+
+    return saveGameplayLevelPerformance(this.levelId, {
+      correctAnswers: this.quizCorrect,
+      incorrectAnswers: this.quizIncorrect,
+      answerResults: this.answerResults,
+      avgAnswerTimeSec: avgMs ? Math.round((avgMs / 1000) * 10) / 10 : 0,
+      previousAvgAnswerTimeSec:
+        this.gameplayPreviousLevel?.avgAnswerTimeSec ?? null,
+      retries: this.retryCount,
+      levelCompletionTimeSec,
+      previousLevelCompletionTimeSec:
+        this.gameplayPreviousLevel?.levelCompletionTimeSec ?? null,
+      answerTimerMs: this.answerTimerMs,
+      levelTargetTimeMs: this.levelTargetCompletionMs,
+      maxRetriesExpected:
+        (settings.maxRetriesPerQuestion || 2) * DDA_CONFIG.maxQuestions,
+      cashEarned,
+      baseReward: Math.max(cashEarned, this.farmLevel.cropValue * 10, 50),
+    });
+  }
+
+  /** Attach gameplay-assist fields to science quiz payloads (not question pick). */
+  withGameplayQuizMeta(payload = {}) {
+    const settings = this.gameplaySettings || getGameplaySettings('average');
+    return {
+      ...payload,
+      answerTimerMs: this.answerTimerMs,
+      hintLevel: settings.hintLevel,
+      maxRetriesPerQuestion: settings.maxRetriesPerQuestion,
+      gameplayBand: this.gameplayBand,
+      gameplayAssist: {
+        answerTimerMs: this.answerTimerMs,
+        hintLevel: settings.hintLevel,
+        maxRetriesPerQuestion: settings.maxRetriesPerQuestion,
+      },
+    };
+  }
+
   canPlantMore() {
-    // Max 20 questions — stop planting once level is complete
+    // Stop planting once level question limit is reached
     if (this.forestUnlocked) return false;
     const answered = this.quizCorrect + this.quizIncorrect;
     return answered < DDA_CONFIG.maxQuestions;
@@ -491,6 +842,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.forestUnlocked = true;
     this.persistLevelMastery();
+    const gameplaySaved = this.persistGameplayPerformance();
     // Unharvested plants do not carry into the next level
     this.clearAllCrops({ silent: true });
     const avgMs = this.levelAvgResponseMs();
@@ -503,9 +855,14 @@ export default class GameScene extends Phaser.Scene {
           ? ` You beat the ${formatResponseTime(this.timeTargetMs)} target!`
           : ` Target was ${formatResponseTime(this.timeTargetMs)} avg.`;
 
+    const gp = gameplaySaved?.record;
+    const bonusNote = gameplaySaved?.pendingBonus?.totalBonus
+      ? ` Next-level bonus ready: +$${gameplaySaved.pendingBonus.totalBonus}.`
+      : '';
+
     this.farmLevel = {
       ...this.farmLevel,
-      goalText: `Level complete!${timeNote} Unlock shop is open — bought items stay on your farm.`,
+      goalText: `Level complete!${timeNote}${bonusNote} Unlock shop is open — bought items stay on your farm.`,
     };
     this.openForestGate();
     this.decorateNextLevelGround();
@@ -525,9 +882,158 @@ export default class GameScene extends Phaser.Scene {
       mastery: this.mastery,
       openUnlockShop: true,
       ...shopPerf,
+      gameplayBand: gp?.classification || this.gameplayBand,
+      gameplayLabel: gp?.classificationLabel,
+      gameplayRecord: gp || null,
+      pendingGameplayBonus: gameplaySaved?.pendingBonus || null,
+      nextGameplaySettings: gp?.nextGameplaySettings || null,
+      retries: this.retryCount,
+      levelCompletionTimeSec: gp?.levelCompletionTimeSec,
+      avgAnswerTimeSec: gp?.avgAnswerTimeSec,
+      trend: gp?.trend,
     };
     ForestGameBridge.emit(FARM_EVENTS.GOAL_COMPLETED, payload);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'gameplay_level_complete',
+      levelId: this.farmLevel.id,
+      record: gp,
+      pendingBonus: gameplaySaved?.pendingBonus,
+      classification: gameplaySaved?.classification,
+    });
     this.emitFarmState();
+  }
+
+  /** World cart at the loading dock — fills when unload quiz succeeds. */
+  createHarvestCart() {
+    const center = loadingZoneCenter(TILE_SIZE);
+    const x = center.x;
+    const y = center.y + TILE_SIZE;
+    if (this.textures.exists('unlock_cart')) {
+      this.harvestCart = this.add.image(x, y, 'unlock_cart');
+      this.harvestCart.setScale(0.28);
+      this.harvestCart.setDepth(4);
+    } else {
+      this.harvestCart = null;
+    }
+
+    this.harvestCartCrops = this.add.container(x - 6, y - 10);
+    this.harvestCartCrops.setDepth(5);
+    this.refreshHarvestCartVisual();
+  }
+
+  createLoadingZoneMarker() {
+    if (this.loadingZoneMarker) this.loadingZoneMarker.destroy(true);
+    this.loadingZoneMarker = this.add.container(0, 0);
+    this.loadingZoneMarker.setDepth(1.5);
+
+    const z = LOADING_ZONE;
+    const px = z.x * TILE_SIZE;
+    const py = z.y * TILE_SIZE;
+    const pw = z.w * TILE_SIZE;
+    const ph = z.h * TILE_SIZE;
+
+    const g = this.add.graphics();
+    g.fillStyle(0x1a4a6e, 0.35);
+    g.fillRect(px, py, pw, ph);
+    g.lineStyle(2, 0x7ec8ff, 0.95);
+    g.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+
+    const label = this.add
+      .text(px + pw / 2, py - 4, 'LOAD', {
+        fontFamily: 'Courier New, monospace',
+        fontSize: '8px',
+        color: '#7ec8ff',
+        stroke: '#061018',
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 1);
+
+    this.loadingZoneMarker.add([g, label]);
+    this.tweens.add({
+      targets: g,
+      alpha: { from: 0.7, to: 1 },
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  refreshHarvestCartVisual() {
+    if (!this.harvestCartCrops) return;
+    this.harvestCartCrops.removeAll(true);
+
+    const cropKey =
+      this.farmLevel.cropId === 'corn' ? 'crop_corn' : 'crop_flower';
+    if (!this.textures.exists(cropKey)) return;
+
+    const n = Math.min(8, this.harvestedItemsCount || 0);
+    for (let i = 0; i < n; i += 1) {
+      const img = this.add.image(
+        (i % 4) * 7 - 10,
+        -Math.floor(i / 4) * 8,
+        cropKey,
+      );
+      img.setScale(0.55);
+      this.harvestCartCrops.add(img);
+    }
+  }
+
+  /** Long vertical stack of harvested crops carried behind the runner. */
+  syncCarryTrail() {
+    const cropKey =
+      this.farmLevel.cropId === 'corn' ? 'crop_corn' : 'crop_flower';
+    if (!this.textures.exists(cropKey) || !this.player) return;
+
+    const need = this.carriedCount || 0;
+    while (this.carrySprites.length < need) {
+      const img = this.add.image(this.player.x, this.player.y, cropKey);
+      img.setScale(0.7);
+      img.setDepth(6);
+      this.carrySprites.push(img);
+    }
+    while (this.carrySprites.length > need) {
+      const img = this.carrySprites.pop();
+      img?.destroy();
+    }
+  }
+
+  updateCarryTrailPositions() {
+    if (!this.player || !this.carrySprites?.length) return;
+
+    const model = this.player.playerModel;
+    const dir = model?.direction || 'down';
+    // Stack vertically behind the runner (column on their back)
+    let backX = 0;
+    let backY = 0;
+    if (dir === 'up') {
+      backX = 0;
+      backY = 10;
+    } else if (dir === 'down') {
+      backX = 0;
+      backY = -10;
+    } else if (dir === 'left') {
+      backX = 8;
+      backY = -2;
+    } else {
+      backX = -8;
+      backY = -2;
+    }
+
+    this.carrySprites.forEach((sprite, i) => {
+      if (!sprite?.active) return;
+      sprite.setPosition(
+        this.player.x + backX,
+        this.player.y + backY - (i + 1) * 7,
+      );
+      sprite.setDepth(6 + i * 0.01);
+    });
+  }
+
+  clearCarryTrail() {
+    this.carrySprites?.forEach((s) => s?.destroy());
+    this.carrySprites = [];
+    this.carriedCount = 0;
   }
 
   /**
@@ -595,7 +1101,9 @@ export default class GameScene extends Phaser.Scene {
     this.pendingGridKey = null;
     this.pendingPatchCells = [];
     this.currentTargetTile = null;
+    this.clearCarryTrail();
     this.cropsGroup?.clear(true, true);
+    this.refreshHarvestCartVisual?.();
     if (!silent) this.emitFarmState();
   }
 
@@ -608,24 +1116,429 @@ export default class GameScene extends Phaser.Scene {
   placeUnlockSprite(itemId) {
     if (!itemId || this.placedUnlockIds?.has(itemId)) return null;
     const item = getUnlockItem(itemId);
-    if (!item || !this.textures.exists(item.textureKey)) return null;
+    if (!item) return null;
 
     const owned = getOwnedUnlockIds();
-    const index = Math.max(0, owned.indexOf(itemId));
-    const slot = UNLOCK_WORLD_SLOTS[index % UNLOCK_WORLD_SLOTS.length];
+    const buildings = owned.filter((id) => {
+      const it = getUnlockItem(id);
+      return it?.category === 'building';
+    });
+    const others = owned.filter((id) => !buildings.includes(id));
+
+    let slot;
+    if (item.category === 'building') {
+      const bi = Math.max(0, buildings.indexOf(itemId));
+      slot = UNLOCK_BUILDING_SLOTS[bi % UNLOCK_BUILDING_SLOTS.length];
+    } else {
+      const oi = Math.max(0, others.indexOf(itemId));
+      slot = UNLOCK_WORLD_SLOTS[oi % UNLOCK_WORLD_SLOTS.length];
+    }
+
     const x = slot.tileX * TILE_SIZE + TILE_SIZE / 2;
     const y = slot.tileY * TILE_SIZE + TILE_SIZE / 2;
 
-    const sprite = item.frameWidth
-      ? this.add.sprite(x, y, item.textureKey, 0)
-      : this.add.image(x, y, item.textureKey);
+    let sprite;
+    if (this.textures.exists(item.textureKey)) {
+      sprite = item.frameWidth
+        ? this.add.sprite(x, y, item.textureKey, 0)
+        : this.add.image(x, y, item.textureKey);
+      sprite.setScale(item.displayScale ?? 1);
+    } else {
+      // Texture missing — still show a marker so unlocks are never "invisible"
+      sprite = this.add.rectangle(x, y, 40, 40, 0x3d6b45, 0.95);
+      sprite.setStrokeStyle(2, 0xd4a017);
+    }
 
-    sprite.setScale(item.displayScale ?? 1);
     sprite.setDepth(item.category === 'building' ? 6 : 5);
     sprite.setData('unlockId', itemId);
+    this.unlockSprites?.set(itemId, sprite);
+
+    const label = this.add
+      .text(x, y - 36, item.name || itemId, {
+        fontFamily: 'Georgia, serif',
+        fontSize: '11px',
+        color: '#f0e6c8',
+        stroke: '#0a1208',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(7);
+    sprite.setData('label', label);
+
+    // Click building / unlock on the farm to start its challenge (no panel button)
+    if (typeof sprite.setInteractive === 'function') {
+      sprite.setInteractive({ useHandCursor: true });
+      sprite.on('pointerdown', () => {
+        if (!this.sys?.isActive() || this.farmInputLocked) return;
+        this.startChallengeForUnlock(itemId);
+      });
+    }
 
     this.placedUnlockIds.add(itemId);
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'unlock_placed',
+      itemId,
+      tileX: slot.tileX,
+      tileY: slot.tileY,
+      hasTexture: this.textures.exists(item.textureKey),
+    });
+
     return sprite;
+  }
+
+  refreshActiveChallenges() {
+    this.activeChallenges = buildActiveChallenges(this.levelId);
+    ForestGameBridge.emit(FARM_EVENTS.CHALLENGES_STATE, {
+      levelId: this.levelId,
+      challenges: this.activeChallenges,
+    });
+  }
+
+  findNearestChallengeItem(maxDist = TILE_SIZE * 2.5) {
+    if (!this.player || !this.unlockSprites) return null;
+    let best = null;
+    let bestD = maxDist;
+    for (const [itemId, sprite] of this.unlockSprites.entries()) {
+      if (!sprite?.active) continue;
+      const hasOpen = this.activeChallenges?.some(
+        (c) => c.itemId === itemId && !c.done,
+      );
+      if (!hasOpen) continue;
+      const d = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        sprite.x,
+        sprite.y,
+      );
+      if (d < bestD) {
+        bestD = d;
+        best = itemId;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Start the next open challenge for a placed unlock (house, hen house, …).
+   * Used by clicking the sprite or pressing E nearby.
+   */
+  startChallengeForUnlock(itemId) {
+    if (!itemId || this.farmInputLocked) return false;
+    this.refreshActiveChallenges();
+    const open = this.activeChallenges?.find(
+      (c) => c.itemId === itemId && !c.done,
+    );
+    if (!open) {
+      const item = getUnlockItem(itemId);
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'none_for_item',
+        itemId,
+        hint:
+          itemId === 'hen_house'
+            ? 'No egg challenge yet — buy chicks on a previous level, then return.'
+            : itemId === 'house'
+              ? 'No house challenge open right now.'
+              : `${item?.name || itemId}: no open challenge.`,
+      });
+      return false;
+    }
+    this.beginItemChallenge({
+      itemId: open.itemId,
+      stageId: open.stageId,
+    });
+    return true;
+  }
+
+  beginItemChallenge(payload = {}) {
+    if (this.farmInputLocked) return;
+    const itemId = payload.itemId;
+    const stageId = payload.stageId;
+    let challenge =
+      this.activeChallenges?.find(
+        (c) => c.itemId === itemId && c.stageId === stageId && !c.done,
+      ) || null;
+
+    if (!challenge && itemId) {
+      challenge =
+        this.activeChallenges?.find((c) => c.itemId === itemId && !c.done) ||
+        null;
+    }
+
+    if (!challenge) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'none_available',
+      });
+      return;
+    }
+
+    const step = getNextChallengeStep(challenge);
+    if (!step) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'stage_complete',
+        itemId: challenge.itemId,
+      });
+      return;
+    }
+
+    this.pendingQuizMode = 'item_challenge';
+    this.pendingItemChallenge = {
+      itemId: challenge.itemId,
+      stageId: challenge.stageId,
+      stepIndex: challenge.stepIndex || 0,
+      rewardRp: challenge.rewardRp || 0,
+      rewardCash: challenge.rewardCash || 0,
+      totalSteps: challenge.steps.length,
+      title: challenge.title,
+      step,
+    };
+
+    // House egg coop (Collect Eggs stage) — before generic house interior
+    if (
+      challenge.mode === 'egg_collect' ||
+      isEggCollectStage(challenge.itemId, challenge.stageId)
+    ) {
+      this.farmInputLocked = true;
+      this.player?.setVelocity(0);
+      this.physics.world.pause();
+      ForestGameBridge.emit(FARM_EVENTS.OPEN_EGG_COLLECT, {
+        itemId: challenge.itemId,
+        stageId: challenge.stageId,
+        title: challenge.title,
+        gameplayBand: this.gameplayBand || 'average',
+        rewardRp: challenge.rewardRp || 0,
+        rewardCash: challenge.rewardCash || 0,
+      });
+      return;
+    }
+
+    // House: open empty room — furniture appears as answers are correct
+    if (challenge.itemId === 'house') {
+      this.farmInputLocked = true;
+      this.player?.setVelocity(0);
+      this.physics.world.pause();
+      const progress = getChallengeProgress(challenge.itemId, challenge.stageId);
+      ForestGameBridge.emit(FARM_EVENTS.OPEN_HOUSE_INTERIOR, {
+        itemId: challenge.itemId,
+        stageId: challenge.stageId,
+        title: challenge.title,
+        step,
+        placed: progress?.placed || [],
+        stepIndex: challenge.stepIndex || 0,
+        gameplayBand: this.gameplayBand || 'average',
+        luxuryBand: this.gameplayBand || 'average',
+        houseLevel:
+          this.gameplayBand === 'strong'
+            ? 'Luxury furniture'
+            : this.gameplayBand === 'weak'
+              ? 'Poor furniture'
+              : 'Average luxury',
+        question: {
+          id: step.id,
+          prompt: step.prompt,
+          options: step.options,
+          correctIndex: step.correctIndex,
+          hint: step.hint,
+          rp: challenge.rewardRp || 20,
+          topic: challenge.title,
+        },
+      });
+      return;
+    }
+
+    this.farmInputLocked = true;
+    this.player?.setVelocity(0);
+    this.physics.world.pause();
+    this.quizOpenedAt = Date.now();
+
+    const question = {
+      id: step.id,
+      prompt: step.prompt,
+      options: step.options,
+      correctIndex: step.correctIndex,
+      hint: step.hint,
+      rp: challenge.rewardRp || 20,
+      topic: challenge.title,
+    };
+
+    ForestGameBridge.emit(
+      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+      this.withGameplayQuizMeta({
+        mode: 'item_challenge',
+        challenge: 'item_challenge',
+        itemId: challenge.itemId,
+        stageId: challenge.stageId,
+        question,
+        questionData: question,
+        rp: question.rp,
+        levelId: this.farmLevel.id,
+        openedAt: this.quizOpenedAt,
+      }),
+    );
+  }
+
+  /** After house interior fully furnished — complete the stage. */
+  finishHouseChallengeStage() {
+    const pending = this.pendingItemChallenge;
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    if (!pending) {
+      this.resumeAfterQuiz();
+      return;
+    }
+
+    const stage = getStage(pending.itemId, pending.stageId);
+    const placed = getChallengeProgress(pending.itemId, pending.stageId)?.placed || [];
+    advanceChallengeProgress(pending.itemId, pending.stageId, {
+      stepIndex: stage?.steps?.length || pending.totalSteps || 0,
+      done: true,
+      placed,
+    });
+
+    if (pending.rewardCash) {
+      this.currentMoney += pending.rewardCash;
+      this.syncMoneyAliases();
+    }
+    this.audioItem?.play();
+    this.cameras.main.flash(200, 255, 220, 100);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'challenge_complete',
+      itemId: pending.itemId,
+      stageId: pending.stageId,
+      title: pending.title,
+      rp: pending.rewardRp || 0,
+      rewardCash: pending.rewardCash || 0,
+      earnings: this.currentMoney,
+    });
+    this.refreshActiveChallenges();
+    this.emitFarmState();
+    this.checkTargetReached();
+    this.resumeAfterQuiz();
+  }
+
+  /** One correct furniture-placement answer inside the house. */
+  onHouseStepCorrect(payload = {}) {
+    const pending = this.pendingItemChallenge;
+    if (!pending) return;
+
+    this.recordQuizAttempt(true, payload.responseTimeMs);
+    const nextStep = (payload.stepIndex ?? pending.stepIndex ?? 0) + 1;
+    const prevPlaced =
+      getChallengeProgress(pending.itemId, pending.stageId)?.placed || [];
+    const extras = Array.isArray(payload.bonusKeys) ? payload.bonusKeys : [];
+    const placed = payload.furnitureKey
+      ? [...new Set([...prevPlaced, payload.furnitureKey, ...extras])]
+      : prevPlaced;
+
+    advanceChallengeProgress(pending.itemId, pending.stageId, {
+      stepIndex: nextStep,
+      done: false,
+      placed,
+    });
+
+    this.pendingItemChallenge = {
+      ...pending,
+      stepIndex: nextStep,
+    };
+
+    this.audioItem?.play();
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'challenge_step',
+      itemId: pending.itemId,
+      stageId: pending.stageId,
+      stepIndex: nextStep,
+      title: pending.title,
+      placeLabel: payload.placeLabel,
+      furnitureKey: payload.furnitureKey,
+      rp: 0,
+    });
+
+    this.refreshActiveChallenges();
+    this.emitFarmState();
+  }
+
+  onHouseStepWrong(payload = {}) {
+    this.recordQuizAttempt(false, payload.responseTimeMs);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'challenge_fail',
+      itemId: this.pendingItemChallenge?.itemId,
+    });
+    this.emitFarmState();
+    this.checkTargetReached();
+  }
+
+  cancelHouseInterior() {
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    this.resumeAfterQuiz();
+  }
+
+  /** After egg-collect round succeeds — complete the chick stage. */
+  finishEggCollectStage(payload = {}) {
+    const pending = this.pendingItemChallenge;
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    if (!pending) {
+      this.resumeAfterQuiz();
+      return;
+    }
+
+    const stage = getStage(pending.itemId, pending.stageId);
+    advanceChallengeProgress(pending.itemId, pending.stageId, {
+      stepIndex: stage?.steps?.length || pending.totalSteps || 1,
+      done: true,
+      placed: [],
+    });
+
+    if (pending.rewardCash) {
+      this.currentMoney += pending.rewardCash;
+      this.syncMoneyAliases();
+    }
+    this.audioItem?.play();
+    this.cameras.main.flash(200, 255, 220, 100);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'challenge_complete',
+      itemId: pending.itemId,
+      stageId: pending.stageId,
+      title: pending.title,
+      rp: pending.rewardRp || 0,
+      rewardCash: pending.rewardCash || 0,
+      eggsCollected: payload.collected || 0,
+      earnings: this.currentMoney,
+    });
+    this.refreshActiveChallenges();
+    this.emitFarmState();
+    this.checkTargetReached();
+    this.resumeAfterQuiz();
+  }
+
+  onEggProtectCorrect(payload = {}) {
+    this.recordQuizAttempt(true, payload.responseTimeMs);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'egg_protect',
+      correct: true,
+      itemId: this.pendingItemChallenge?.itemId,
+    });
+    this.emitFarmState();
+  }
+
+  onEggProtectWrong(payload = {}) {
+    this.recordQuizAttempt(false, payload.responseTimeMs);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'egg_protect',
+      correct: false,
+      itemId: this.pendingItemChallenge?.itemId,
+    });
+    this.emitFarmState();
+  }
+
+  cancelEggCollect() {
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    this.resumeAfterQuiz();
   }
 
   decorateNextLevelGround() {
@@ -686,8 +1599,12 @@ export default class GameScene extends Phaser.Scene {
 
     this.currentMoney -= price;
     this.syncMoneyAliases();
-    markUnlocked(itemId);
+    markUnlocked(itemId, { purchasedAtLevel: this.levelId });
     this.placeUnlockSprite(itemId);
+    // Chick purchase also unlocks hen house — place it on the farm
+    if (itemId === 'chick' && isUnlocked('hen_house')) {
+      this.placeUnlockSprite('hen_house');
+    }
     this.audioItem?.play();
 
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
@@ -779,15 +1696,99 @@ export default class GameScene extends Phaser.Scene {
     return true;
   }
 
-  /** E opens plant quiz only — harvesting is done by running over ready crops. */
+  /** E: plant bed, load dock, or nearby unlock-item challenge. */
   handleInteractKey() {
     if (this.farmInputLocked || !this.player) return;
     if (!this.guardFarmAction('interact')) return;
-    this.handlePlantingAttempt({ skipGuard: true });
+
+    const cell = this.getPlayerGridCell();
+    if (isLoadingTile(cell.gridX, cell.gridY)) {
+      this.handleLoadingAttempt({ skipGuard: true });
+      return;
+    }
+    if (isPlantableTile(cell.gridX, cell.gridY)) {
+      this.handlePlantingAttempt({ skipGuard: true });
+      return;
+    }
+
+    const nearItem = this.findNearestChallengeItem();
+    if (nearItem) {
+      this.startChallengeForUnlock(nearItem);
+      return;
+    }
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'plant_blocked',
+      reason: 'not_plot',
+    });
   }
 
   /**
-   * E on farm ground → science quiz → plant a multi-row/column crop PATCH.
+   * At LOAD dock with crops on your back → load quiz → unload into cart.
+   */
+  handleLoadingAttempt(options = {}) {
+    if (this.farmInputLocked || !this.player) return;
+    if (!options.skipGuard && !this.guardFarmAction('load')) return;
+
+    if (this.forestUnlocked) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'load_blocked',
+        reason: 'target_reached',
+      });
+      return;
+    }
+
+    const cell = this.getPlayerGridCell();
+    if (!isLoadingTile(cell.gridX, cell.gridY)) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'load_blocked',
+        reason: 'not_dock',
+      });
+      return;
+    }
+
+    if ((this.carriedCount || 0) < 1) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'load_blocked',
+        reason: 'empty_carry',
+      });
+      return;
+    }
+
+    this.pendingQuizMode = 'load';
+    this.farmInputLocked = true;
+    this.player.setVelocity(0);
+    this.physics.world.pause();
+
+    const question = pickScienceQuestion(
+      this.farmLevel,
+      this.lastQuestionId,
+      'load',
+    );
+    this.lastQuestionId = question.id;
+    this.quizOpenedAt = Date.now();
+
+    ForestGameBridge.emit(
+      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+      this.withGameplayQuizMeta({
+        mode: 'load',
+        challenge: 'load',
+        carriedCount: this.carriedCount,
+        tileX: cell.gridX,
+        tileY: cell.gridY,
+        cropType: this.farmLevel.cropId,
+        question,
+        questionData: question,
+        rp: question.rp,
+        levelId: this.farmLevel.id,
+        openedAt: this.quizOpenedAt,
+      }),
+    );
+    this.emitFarmState();
+  }
+
+  /**
+   * E on plant bed → plant quiz → plant a multi-row/column crop PATCH.
    */
   handlePlantingAttempt(options = {}) {
     if (this.farmInputLocked || !this.player) return;
@@ -830,7 +1831,7 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Reserve every cell in the patch while the quiz is open
+    this.pendingQuizMode = 'plant';
     this.pendingPatchCells = patchCells.map((c) => ({ ...c }));
     this.pendingGridKey = cell.key;
     this.currentTargetTile = {
@@ -848,26 +1849,34 @@ export default class GameScene extends Phaser.Scene {
     this.player.setVelocity(0);
     this.physics.world.pause();
 
-    const question = pickScienceQuestion(this.farmLevel, this.lastQuestionId);
+    const question = pickScienceQuestion(
+      this.farmLevel,
+      this.lastQuestionId,
+      'plant',
+    );
     this.lastQuestionId = question.id;
 
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(FARM_EVENTS.TRIGGER_SCIENCE_QUIZ, {
-      mode: 'plant',
-      tileX: cell.gridX,
-      tileY: cell.gridY,
-      gridKey: cell.key,
-      plotId: plot?.id,
-      patchSize: patchCells.length,
-      patchCols: this.farmLevel.plantPatchCols ?? 4,
-      patchRows: this.farmLevel.plantPatchRows ?? 3,
-      cropType: this.farmLevel.cropId,
-      question,
-      questionData: question,
-      rp: question.rp,
-      levelId: this.farmLevel.id,
-      openedAt: this.quizOpenedAt,
-    });
+    ForestGameBridge.emit(
+      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+      this.withGameplayQuizMeta({
+        mode: 'plant',
+        challenge: 'plant',
+        tileX: cell.gridX,
+        tileY: cell.gridY,
+        gridKey: cell.key,
+        plotId: plot?.id,
+        patchSize: patchCells.length,
+        patchCols: this.farmLevel.plantPatchCols ?? 4,
+        patchRows: this.farmLevel.plantPatchRows ?? 3,
+        cropType: this.farmLevel.cropId,
+        question,
+        questionData: question,
+        rp: question.rp,
+        levelId: this.farmLevel.id,
+        openedAt: this.quizOpenedAt,
+      }),
+    );
 
     this.emitFarmState();
   }
@@ -983,7 +1992,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   showHarvestingBanner(count) {
-    const label = count > 1 ? `Harvesting! +${count}` : 'Harvesting!';
+    const label =
+      count > 1 ? `Carrying! +${count}` : 'Carrying on your back!';
 
     if (!this.harvestBanner) {
       this.harvestBanner = this.add
@@ -1028,7 +2038,11 @@ export default class GameScene extends Phaser.Scene {
     if (!crop?.active || !crop.isReady()) return;
 
     crop.playHarvestFx();
-    this.harvestedItemsCount += 1;
+    // Harvested crops ride on the runner's back until unloaded at the LOAD dock
+    this.carriedCount = (this.carriedCount || 0) + 1;
+    this.cropsHarvestedTotal = (this.cropsHarvestedTotal || 0) + 1;
+    this.syncCarryTrail();
+    this.updateCarryTrailPositions();
 
     if (crop.gridKey) this.plantedGridKeys.delete(crop.gridKey);
     this.plantedCrops = this.plantedCrops.filter((c) => c !== crop && c?.active);
@@ -1039,9 +2053,22 @@ export default class GameScene extends Phaser.Scene {
       this.emitInventoryUpdated();
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'harvest',
+        carriedCount: this.carriedCount,
+        cropsHarvestedTotal: this.cropsHarvestedTotal,
+        harvestTarget: this.harvestTarget,
         inventory: this.harvestedItemsCount,
         harvestedCount: this.harvestedItemsCount,
         harvestedItemsCount: this.harvestedItemsCount,
+        cropType: crop.cropType,
+      });
+    } else {
+      this.emitFarmState();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'harvest',
+        carriedCount: this.carriedCount,
+        cropsHarvestedTotal: this.cropsHarvestedTotal,
+        harvestTarget: this.harvestTarget,
+        inventory: this.harvestedItemsCount,
         cropType: crop.cropType,
       });
     }
@@ -1056,6 +2083,32 @@ export default class GameScene extends Phaser.Scene {
   onScienceCorrect(payload = {}) {
     try {
       this.recordQuizAttempt(true, payload.responseTimeMs);
+      const mode = this.pendingQuizMode || payload.mode || 'plant';
+
+      if (mode === 'item_challenge') {
+        this.resolveItemChallengeSuccess();
+        return;
+      }
+
+      if (mode === 'load') {
+        const unloaded = this.carriedCount || 0;
+        this.harvestedItemsCount += unloaded;
+        this.clearCarryTrail();
+        this.refreshHarvestCartVisual();
+        this.pendingQuizMode = null;
+        this.audioItem?.play();
+        this.cameras.main.flash(180, 120, 200, 255);
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'load_success',
+          unloaded,
+          cartCount: this.harvestedItemsCount,
+          rp: payload.rp ?? 0,
+        });
+        this.emitFarmState();
+        this.checkTargetReached();
+        return;
+      }
+
       const crops = this.spawnCropAtTarget();
       const planted = Array.isArray(crops) ? crops : crops ? [crops] : [];
 
@@ -1076,6 +2129,7 @@ export default class GameScene extends Phaser.Scene {
         this.pendingGridKey = null;
         this.pendingPatchCells = [];
       }
+      this.pendingQuizMode = null;
       this.emitFarmState();
       this.checkTargetReached();
     } finally {
@@ -1083,24 +2137,87 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  resolveItemChallengeSuccess() {
+    const pending = this.pendingItemChallenge;
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    if (!pending) {
+      this.emitFarmState();
+      return;
+    }
+
+    const stage = getStage(pending.itemId, pending.stageId);
+    const nextStep = (pending.stepIndex || 0) + 1;
+    const done = !stage || nextStep >= (stage.steps?.length || 0);
+
+    advanceChallengeProgress(pending.itemId, pending.stageId, {
+      stepIndex: done ? stage?.steps?.length || nextStep : nextStep,
+      done,
+    });
+
+    if (done) {
+      if (pending.rewardCash) {
+        this.currentMoney += pending.rewardCash;
+        this.syncMoneyAliases();
+      }
+      this.audioItem?.play();
+      this.cameras.main.flash(200, 255, 220, 100);
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_complete',
+        itemId: pending.itemId,
+        stageId: pending.stageId,
+        title: pending.title,
+        rp: pending.rewardRp || 0,
+        rewardCash: pending.rewardCash || 0,
+        earnings: this.currentMoney,
+      });
+    } else {
+      this.audioItem?.play();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_step',
+        itemId: pending.itemId,
+        stageId: pending.stageId,
+        stepIndex: nextStep,
+        title: pending.title,
+        rp: 0,
+      });
+    }
+
+    this.refreshActiveChallenges();
+    this.emitFarmState();
+    this.checkTargetReached();
+  }
+
   onScienceIncorrect(payload = {}) {
     try {
       this.recordQuizAttempt(false, payload.responseTimeMs);
-      this.currentTargetTile = null;
-      this.pendingGridKey = null;
-      this.pendingPatchCells = [];
+      const mode = this.pendingQuizMode || payload.mode || 'plant';
+      this.pendingQuizMode = null;
+      this.pendingItemChallenge = null;
+
+      if (mode === 'plant') {
+        this.currentTargetTile = null;
+        this.pendingGridKey = null;
+        this.pendingPatchCells = [];
+      }
 
       this.audioHurt?.play();
       this.cameras.main.flash(300, 255, 0, 0);
       this.cameras.main.shake(160, 0.008);
 
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'plant_fail',
+        type:
+          mode === 'load'
+            ? 'load_fail'
+            : mode === 'item_challenge'
+              ? 'challenge_fail'
+              : 'plant_fail',
         dda: true,
         questionId: payload.questionId,
         selectedIndex: payload.selectedIndex,
         performanceBand: this.performanceBand,
         timeTargetMs: this.timeTargetMs,
+        carriedCount: this.carriedCount,
       });
 
       this.emitFarmState();
@@ -1127,10 +2244,16 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const harvestedItemsCount = this.harvestedItemsCount;
-    const coinsEarned = harvestedItemsCount * this.farmLevel.cropValue;
+    const mult = this.gameplaySettings?.cashRewardMultiplier ?? 1;
+    const unitValue = Math.max(
+      1,
+      Math.round(this.farmLevel.cropValue * mult),
+    );
+    const coinsEarned = harvestedItemsCount * unitValue;
     this.harvestedItemsCount = 0;
     this.currentMoney += coinsEarned;
     this.syncMoneyAliases();
+    this.refreshHarvestCartVisual();
 
     this.audioItem?.play();
     this.cameras.main.flash(180, 255, 220, 80);
@@ -1141,6 +2264,8 @@ export default class GameScene extends Phaser.Scene {
       gained: coinsEarned,
       coinsEarned,
       coinsGained: coinsEarned,
+      unitValue,
+      cashRewardMultiplier: mult,
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
     });
@@ -1184,6 +2309,7 @@ export default class GameScene extends Phaser.Scene {
     this.handleCollisions();
     this.harvestCropsUnderfoot();
     this.updateHarvestingBanner();
+    this.updateCarryTrailPositions();
     this.pulseNearbyCrops();
     this.cullOffscreenArrows();
     this.animateEnemies();
@@ -1227,6 +2353,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   populateEnemies() {
+    const settings = this.gameplaySettings || getGameplaySettings('average');
+    this.enemySpeed = settings.enemySpeed;
+    this.enemyDistanceTiles = settings.enemyDistanceTiles;
+    this.enemyCountFactor = settings.enemyCountFactor;
+
     this.spawnEnemiesByGid(MOLE_GID, true, 'idle/mole-idle-front');
     this.spawnEnemiesByGid(TREANT_GID, false, 'idle/treant-idle-front');
   }
@@ -1235,20 +2366,70 @@ export default class GameScene extends Phaser.Scene {
     const objectLayer = this.map.getObjectLayer('Object Layer');
     if (!objectLayer) return;
 
-    objectLayer.objects
-      .filter((obj) => obj.gid === gid)
-      .forEach((obj) => {
-        const enemy = new Enemy(
-          this,
-          obj.x / TILE_SIZE,
-          obj.y / TILE_SIZE,
-          verticalMove,
-          idleFrame,
-        );
-        enemy.setSize(10, 10);
-        enemy.setDepth(1);
-        this.enemiesGroup.add(enemy);
-      });
+    const factor = Number.isFinite(this.enemyCountFactor)
+      ? this.enemyCountFactor
+      : 1;
+    const speed = Number.isFinite(this.enemySpeed) ? this.enemySpeed : 60;
+    const distTiles = Number.isFinite(this.enemyDistanceTiles)
+      ? this.enemyDistanceTiles
+      : 0;
+    const playerTileX = 48;
+    const playerTileY = 32;
+
+    const sources = objectLayer.objects.filter((obj) => obj.gid === gid);
+    if (!sources.length) return;
+
+    let spawnList = sources.slice();
+    if (factor < 1) {
+      const keep = Math.max(1, Math.round(sources.length * factor));
+      // Prefer farther spawns for weaker students when thinning
+      spawnList = [...sources]
+        .sort((a, b) => {
+          const da =
+            Math.hypot(a.x / TILE_SIZE - playerTileX, a.y / TILE_SIZE - playerTileY);
+          const db =
+            Math.hypot(b.x / TILE_SIZE - playerTileX, b.y / TILE_SIZE - playerTileY);
+          return distTiles >= 0 ? db - da : da - db;
+        })
+        .slice(0, keep);
+    } else if (factor > 1) {
+      const extra = Math.round(sources.length * (factor - 1));
+      for (let i = 0; i < extra; i += 1) {
+        const src = sources[i % sources.length];
+        spawnList.push({
+          ...src,
+          x: src.x + (i % 2 === 0 ? TILE_SIZE * 2 : -TILE_SIZE * 2),
+          y: src.y + (i % 3 === 0 ? TILE_SIZE : -TILE_SIZE),
+          _duplicate: true,
+        });
+      }
+    }
+
+    spawnList.forEach((obj) => {
+      let tileX = obj.x / TILE_SIZE;
+      let tileY = obj.y / TILE_SIZE;
+
+      if (distTiles !== 0) {
+        const dx = tileX - playerTileX;
+        const dy = tileY - playerTileY;
+        const len = Math.hypot(dx, dy) || 1;
+        const push = distTiles / len;
+        tileX += dx * push;
+        tileY += dy * push;
+      }
+
+      const enemy = new Enemy(
+        this,
+        tileX,
+        tileY,
+        verticalMove,
+        idleFrame,
+        speed,
+      );
+      enemy.setSize(10, 10);
+      enemy.setDepth(1);
+      this.enemiesGroup.add(enemy);
+    });
   }
 
   createPlayer() {

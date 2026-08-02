@@ -11,6 +11,31 @@ export default class MenuScene extends Phaser.Scene {
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     this.soundtrack = this.game.registry.get('soundtrack');
 
+    // Dev test: skip menu and jump straight into the farm
+    let jump = this.game.registry.get('devJumpFarm');
+    if (!jump?.mode) {
+      try {
+        const raw = sessionStorage.getItem('scipath_dev_jump');
+        if (raw) {
+          sessionStorage.removeItem('scipath_dev_jump');
+          jump = JSON.parse(raw);
+        }
+      } catch {
+        jump = null;
+      }
+    }
+    if (jump?.mode) {
+      this.game.registry.remove('devJumpFarm');
+      const levelId = Math.max(1, Number(jump.levelId) || 1);
+      this.game.registry.set('farmLevelId', levelId);
+      this.scene.start('GameScene', {
+        levelId,
+        devTest: jump.mode,
+        startingMoney: jump.startingMoney,
+      });
+      return;
+    }
+
     this.add.tileSprite(400, 300, 800, 600, 'title-bg');
 
     this.add

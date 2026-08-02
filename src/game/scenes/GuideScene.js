@@ -16,14 +16,14 @@ export default class GuideScene extends Phaser.Scene {
     this.add.text(
       400,
       415,
-      'Stand on a marked PLANT bed — press E to quiz-plant.',
+      'Plant quiz on gold beds · harvest onto your back.',
       bodyStyle,
     ).setOrigin(0.5);
 
     this.add.text(
       400,
       450,
-      'Finish 20 questions · unharvested crops clear next level.',
+      'Blue LOAD dock: load quiz unloads crops into the cart.',
       bodyStyle,
     ).setOrigin(0.5);
 
@@ -32,7 +32,8 @@ export default class GuideScene extends Phaser.Scene {
 
   update() {
     if (Phaser.Input.Keyboard.JustDown(this.enterKey.enter)) {
-      this.scene.start('GameScene');
+      const levelId = this.game.registry.get('farmLevelId') || 1;
+      this.scene.start('GameScene', { levelId });
     }
   }
 }

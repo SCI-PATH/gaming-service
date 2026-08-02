@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { PLANT_PLOTS } from '../data/plantPlots.js';
+import { LOADING_ZONE, PLANT_PLOTS } from '../data/plantPlots.js';
 import {
   ForestGameBridge,
   FARM_EVENTS,
@@ -9,11 +9,15 @@ import {
 export const FARM_MAP_TILES = { width: 100, height: 75 };
 
 /**
- * Farm map where the YOU pin blinks and moves with the student in real time.
+ * Farm map: plant beds (gold), load dock (blue), live YOU pin.
  */
 export default function FarmMapPanel({
   playerMapX,
   playerMapY,
+  harvestTarget = 24,
+  cropsHarvestedTotal = 0,
+  performanceBand = 'developing',
+  cropName = 'crops',
   compact = false,
 }) {
   const { width, height } = FARM_MAP_TILES;
@@ -24,7 +28,6 @@ export default function FarmMapPanel({
     y: Number.isFinite(playerMapY) ? playerMapY : 32,
   });
 
-  // Live feed directly from Phaser (also accepts props from App)
   useEffect(() => {
     const apply = (xRaw, yRaw) => {
       if (!Number.isFinite(xRaw) || !Number.isFinite(yRaw)) return;
@@ -37,7 +40,6 @@ export default function FarmMapPanel({
     const onBridge = (payload = {}) => {
       apply(Number(payload.playerMapX), Number(payload.playerMapY));
     };
-
     const onWindow = (event) => {
       const d = event.detail || {};
       apply(Number(d.playerMapX), Number(d.playerMapY));
@@ -45,14 +47,12 @@ export default function FarmMapPanel({
 
     ForestGameBridge.on(FARM_EVENTS.PLAYER_MAP_POS, onBridge);
     window.addEventListener('scipath-player-map', onWindow);
-
     return () => {
       ForestGameBridge.off(FARM_EVENTS.PLAYER_MAP_POS, onBridge);
       window.removeEventListener('scipath-player-map', onWindow);
     };
   }, [width, height]);
 
-  // Props path (App → panel) stays in sync too
   useLayoutEffect(() => {
     if (!Number.isFinite(playerMapX) || !Number.isFinite(playerMapY)) return;
     const x = clamp(playerMapX, 0, width - 0.01);
@@ -65,23 +65,25 @@ export default function FarmMapPanel({
   const py = pos.y;
   const tileX = Math.floor(px);
   const tileY = Math.floor(py);
-  const nearest = nearestBed(px, py);
-  const guide = nearest ? directionGuide(px, py, nearest) : null;
+  const nearest = nearestTarget(px, py);
+
+  const loadCx = ((LOADING_ZONE.x + LOADING_ZONE.w / 2) / width) * 100;
+  const loadCy = ((LOADING_ZONE.y + LOADING_ZONE.h / 2) / height) * 100;
 
   return (
     <aside
       className={`farm-map-panel${compact ? ' is-compact' : ''}`}
-      aria-label="Farm map — your blinking location moves as you run"
+      aria-label="Farm map with plant beds and loading dock"
     >
       <div className="farm-map-head">
         <strong>Farm Map</strong>
-        <span>Green blink moves with you</span>
+        <span>Gold = plant · Blue = load</span>
       </div>
 
       <div
         className="farm-map-canvas"
         role="img"
-        aria-label={`You are moving at column ${tileX}, row ${tileY}`}
+        aria-label={`You are at column ${tileX}, row ${tileY}`}
       >
         <div className="farm-map-grid">
           <svg
@@ -94,8 +96,8 @@ export default function FarmMapPanel({
               <line
                 x1={px}
                 y1={py}
-                x2={nearest.x + nearest.w / 2}
-                y2={nearest.y + nearest.h / 2}
+                x2={nearest.cx}
+                y2={nearest.cy}
                 className="farm-map-guide-line"
               />
             )}
@@ -112,12 +114,21 @@ export default function FarmMapPanel({
                 style={{ left: `${cx}%`, top: `${cy}%` }}
                 title={plot.label}
               >
-                <span>{shortLabel(plot)}</span>
+                <span>{shortPlantLabel(plot)}</span>
               </div>
             );
           })}
 
-          {/* left/top owned by JS — do not bind to React style or re-renders fight movement */}
+          <div
+            className={`farm-map-load${
+              nearest?.id === LOADING_ZONE.id ? ' is-closest' : ''
+            }`}
+            style={{ left: `${loadCx}%`, top: `${loadCy}%` }}
+            title="Load Dock — unload crops here"
+          >
+            <span>LOAD</span>
+          </div>
+
           <div
             ref={pinRef}
             className="farm-map-you is-blinking"
@@ -143,17 +154,51 @@ export default function FarmMapPanel({
           <i className="farm-map-key farm-map-key-you is-blinking" /> You
         </li>
         <li>
-          <i className="farm-map-key farm-map-key-bed" /> Plant bed
+          <i className="farm-map-key farm-map-key-bed" /> Plant
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-load" /> Load
         </li>
       </ul>
 
-      {nearest && guide && (
-        <p className="farm-map-hint">
-          Go to <strong>{nearest.label}</strong>: {guide.arrow} {guide.text}
-        </p>
-      )}
+      <div className="farm-map-crop-target" aria-live="polite">
+        <strong>Harvest target</strong>
+        <span>
+          {bandCropLabel(performanceBand)}: collect{' '}
+          <em>
+            {cropsHarvestedTotal}/{harvestTarget}
+          </em>{' '}
+          {cropName.toLowerCase()}
+        </span>
+        <div className="farm-map-crop-track">
+          <div
+            className="farm-map-crop-fill"
+            style={{
+              width: `${Math.min(
+                100,
+                Math.round(
+                  (Number(cropsHarvestedTotal) /
+                    Math.max(1, Number(harvestTarget))) *
+                    100,
+                ),
+              )}%`,
+            }}
+          />
+        </div>
+      </div>
     </aside>
   );
+}
+
+function bandCropLabel(band) {
+  switch (band) {
+    case 'strong':
+      return 'Challenge load (many crops)';
+    case 'emerging':
+      return 'Supported load (fewer crops)';
+    default:
+      return 'Standard load';
+  }
 }
 
 function movePin(pinEl, guideEl, x, y, mapW, mapH) {
@@ -170,7 +215,7 @@ function movePin(pinEl, guideEl, x, y, mapW, mapH) {
   }
 }
 
-function shortLabel(plot) {
+function shortPlantLabel(plot) {
   if (plot.id.includes('west') && plot.id.includes('south')) return 'SW';
   if (plot.id.includes('east') && plot.id.includes('south')) return 'SE';
   if (plot.id.includes('west')) return 'W';
@@ -178,41 +223,34 @@ function shortLabel(plot) {
   return 'P';
 }
 
-function nearestBed(tileX, tileY) {
+function nearestTarget(tileX, tileY) {
+  const targets = [
+    ...PLANT_PLOTS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      cx: p.x + p.w / 2,
+      cy: p.y + p.h / 2,
+      kind: 'plant',
+    })),
+    {
+      id: LOADING_ZONE.id,
+      label: LOADING_ZONE.label,
+      cx: LOADING_ZONE.x + LOADING_ZONE.w / 2,
+      cy: LOADING_ZONE.y + LOADING_ZONE.h / 2,
+      kind: 'load',
+    },
+  ];
+
   let best = null;
   let bestDist = Infinity;
-  for (const plot of PLANT_PLOTS) {
-    const cx = plot.x + plot.w / 2;
-    const cy = plot.y + plot.h / 2;
-    const d = (cx - tileX) ** 2 + (cy - tileY) ** 2;
+  for (const t of targets) {
+    const d = (t.cx - tileX) ** 2 + (t.cy - tileY) ** 2;
     if (d < bestDist) {
       bestDist = d;
-      best = plot;
+      best = t;
     }
   }
   return best;
-}
-
-function directionGuide(tileX, tileY, plot) {
-  const cx = plot.x + plot.w / 2;
-  const cy = plot.y + plot.h / 2;
-  const dx = cx - tileX;
-  const dy = cy - tileY;
-  const absX = Math.abs(dx);
-  const absY = Math.abs(dy);
-
-  if (absX < 2 && absY < 2) {
-    return { arrow: '★', text: 'You’re on a plant bed — press E!' };
-  }
-
-  if (absX >= absY) {
-    return dx < 0
-      ? { arrow: '←', text: 'keep walking left' }
-      : { arrow: '→', text: 'keep walking right' };
-  }
-  return dy < 0
-    ? { arrow: '↑', text: 'keep walking up' }
-    : { arrow: '↓', text: 'keep walking down' };
 }
 
 function clamp(n, lo, hi) {

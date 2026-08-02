@@ -49,10 +49,26 @@ export const UNLOCK_ITEMS = [
     category: 'building',
     featured: true,
     basePrice: 520,
-    description: 'Your homestead on the farm.',
+    description: 'Your homestead on the farm. Click it to furnish rooms.',
     image: '/assets/shop/props/house.png',
     textureKey: 'unlock_house',
-    displayScale: 0.22,
+    displayScale: 0.16,
+    interactHint: 'Click the house to start furniture challenges',
+  },
+  {
+    id: 'hen_house',
+    name: 'Hen House',
+    category: 'building',
+    featured: true,
+    basePrice: 180,
+    description:
+      'A coop for your chicks. Appears when you buy chicks — click it to collect eggs.',
+    image: '/assets/shop/props/hen_house.png',
+    textureKey: 'unlock_hen_house',
+    displayScale: 0.35,
+    interactHint: 'Click the hen house to collect eggs',
+    /** Granted with chicks — not sold separately in the unlock shop */
+    shopHidden: true,
   },
   {
     id: 'calf',
@@ -246,28 +262,37 @@ export const UNLOCK_ITEMS = [
   },
 ];
 
-/** World placement slots (tile coords) for purchased unlocks */
+/** World placement slots (tile coords) — spaced so large props don't cover each other */
 export const UNLOCK_WORLD_SLOTS = [
-  { tileX: 40, tileY: 29 },
-  { tileX: 42, tileY: 29 },
-  { tileX: 44, tileY: 29 },
-  { tileX: 46, tileY: 29 },
-  { tileX: 40, tileY: 31 },
-  { tileX: 42, tileY: 31 },
-  { tileX: 44, tileY: 31 },
-  { tileX: 46, tileY: 31 },
-  { tileX: 38, tileY: 30 },
-  { tileX: 48, tileY: 30 },
-  { tileX: 39, tileY: 32 },
-  { tileX: 41, tileY: 32 },
-  { tileX: 43, tileY: 32 },
-  { tileX: 45, tileY: 32 },
-  { tileX: 47, tileY: 32 },
-  { tileX: 49, tileY: 32 },
+  { tileX: 36, tileY: 26 },
+  { tileX: 42, tileY: 26 },
+  { tileX: 48, tileY: 26 },
+  { tileX: 54, tileY: 26 },
+  { tileX: 34, tileY: 30 },
+  { tileX: 40, tileY: 30 },
+  { tileX: 46, tileY: 30 },
+  { tileX: 52, tileY: 30 },
+  { tileX: 35, tileY: 34 },
+  { tileX: 41, tileY: 34 },
+  { tileX: 47, tileY: 34 },
+  { tileX: 53, tileY: 34 },
+  { tileX: 32, tileY: 28 },
+  { tileX: 56, tileY: 28 },
+  { tileX: 33, tileY: 32 },
+  { tileX: 55, tileY: 32 },
   { tileX: 38, tileY: 28 },
+  { tileX: 44, tileY: 28 },
   { tileX: 50, tileY: 28 },
-  { tileX: 37, tileY: 31 },
-  { tileX: 51, tileY: 31 },
+  { tileX: 37, tileY: 36 },
+];
+
+/** Building-sized items get these roomier slots first */
+export const UNLOCK_BUILDING_SLOTS = [
+  { tileX: 34, tileY: 24 },
+  { tileX: 44, tileY: 23 },
+  { tileX: 54, tileY: 24 },
+  { tileX: 30, tileY: 28 },
+  { tileX: 58, tileY: 28 },
 ];
 
 /** Ground tiles staged for next-level maps */
@@ -283,42 +308,167 @@ function clamp(n, lo, hi) {
   return Math.max(lo, Math.min(hi, n));
 }
 
-function readOwned() {
+function emptyStore() {
+  return { owned: [], meta: {}, savedAt: Date.now() };
+}
+
+function readStore() {
   try {
     const raw = localStorage.getItem(storageKey());
-    const data = raw ? JSON.parse(raw) : { owned: [] };
-    return Array.isArray(data.owned) ? data.owned : [];
+    if (!raw) return emptyStore();
+    const data = JSON.parse(raw);
+    return {
+      owned: Array.isArray(data.owned) ? data.owned : [],
+      meta: data.meta && typeof data.meta === 'object' ? data.meta : {},
+      savedAt: data.savedAt || Date.now(),
+    };
   } catch {
-    return [];
+    return emptyStore();
   }
 }
 
-function writeOwned(owned) {
+function writeStore(store) {
   try {
     localStorage.setItem(
       storageKey(),
-      JSON.stringify({ owned, savedAt: Date.now() }),
+      JSON.stringify({ ...store, savedAt: Date.now() }),
     );
   } catch {
     // ignore quota / private mode
   }
 }
 
+function readOwned() {
+  return readStore().owned;
+}
+
+function writeOwned(owned) {
+  const store = readStore();
+  store.owned = owned;
+  writeStore(store);
+}
+
 export function getOwnedUnlockIds() {
   return readOwned();
+}
+
+export function getUnlockMeta(itemId) {
+  const store = readStore();
+  return store.meta[itemId] || null;
+}
+
+export function getAllUnlockMeta() {
+  return { ...readStore().meta };
 }
 
 export function isUnlocked(itemId) {
   return readOwned().includes(itemId);
 }
 
-export function markUnlocked(itemId) {
-  const owned = readOwned();
-  if (!owned.includes(itemId)) {
-    owned.push(itemId);
-    writeOwned(owned);
+/** Wipe owned unlocks + meta for the current student (dev / test). */
+export function clearOwnedUnlocks() {
+  writeStore(emptyStore());
+  return [];
+}
+
+/**
+ * Persist ownership. Pass purchasedAtLevel so later levels can stage challenges.
+ * @param {string} itemId
+ * @param {{ purchasedAtLevel?: number }} [opts]
+ */
+export function markUnlocked(itemId, opts = {}) {
+  const store = readStore();
+  if (!store.owned.includes(itemId)) {
+    store.owned.push(itemId);
   }
-  return owned;
+  const prev = store.meta[itemId] || {};
+  const level =
+    Number(opts.purchasedAtLevel) > 0
+      ? Number(opts.purchasedAtLevel)
+      : Number(prev.purchasedAtLevel) > 0
+        ? Number(prev.purchasedAtLevel)
+        : 1;
+  store.meta[itemId] = {
+    ...prev,
+    purchasedAtLevel: level,
+    stageProgress: prev.stageProgress || {},
+  };
+
+  // Buying chicks also unlocks the hen house (same purchase level)
+  if (itemId === 'chick' && !store.owned.includes('hen_house')) {
+    store.owned.push('hen_house');
+    store.meta.hen_house = {
+      purchasedAtLevel: level,
+      stageProgress: {},
+      grantedWith: 'chick',
+    };
+  }
+
+  writeStore(store);
+  return store.owned;
+}
+
+/**
+ * Ensure every owned item has purchase meta (migrates older saves).
+ * @param {number} [fallbackPurchasedAt=1]
+ */
+export function ensureUnlockMeta(fallbackPurchasedAt = 1) {
+  const store = readStore();
+  let changed = false;
+  const fallback = Math.max(1, Number(fallbackPurchasedAt) || 1);
+  for (const itemId of store.owned) {
+    const prev = store.meta[itemId];
+    if (!prev || !(Number(prev.purchasedAtLevel) > 0)) {
+      store.meta[itemId] = {
+        ...(prev || {}),
+        purchasedAtLevel: fallback,
+        stageProgress: prev?.stageProgress || {},
+      };
+      changed = true;
+    }
+  }
+  if (changed) writeStore(store);
+  return store;
+}
+
+/**
+ * Advance / complete a challenge step for an owned item.
+ */
+export function advanceChallengeProgress(itemId, stageId, { stepIndex, done, placed }) {
+  const store = readStore();
+  if (!store.owned.includes(itemId)) return null;
+  const meta = store.meta[itemId] || {
+    purchasedAtLevel: 1,
+    stageProgress: {},
+  };
+  const prev = meta.stageProgress?.[stageId] || {
+    stepIndex: 0,
+    done: false,
+    placed: [],
+  };
+  meta.stageProgress = {
+    ...(meta.stageProgress || {}),
+    [stageId]: {
+      stepIndex: stepIndex ?? prev.stepIndex ?? 0,
+      done: done ?? prev.done ?? false,
+      placed: Array.isArray(placed) ? placed : prev.placed || [],
+      updatedAt: Date.now(),
+    },
+  };
+  store.meta[itemId] = meta;
+  writeStore(store);
+  return meta.stageProgress[stageId];
+}
+
+export function getChallengeProgress(itemId, stageId) {
+  const meta = getUnlockMeta(itemId);
+  return (
+    meta?.stageProgress?.[stageId] || {
+      stepIndex: 0,
+      done: false,
+      placed: [],
+    }
+  );
 }
 
 /**
@@ -392,15 +542,17 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
   const band = shopBandFromPerformance(perf);
   const mult = priceMultiplier(perf);
 
-  const items = UNLOCK_ITEMS.map((item) => ({
-    ...item,
-    price: priceForItem(item, perf),
-    owned: owned.includes(item.id),
-  })).sort((a, b) => {
-    if (a.featured && !b.featured) return -1;
-    if (!a.featured && b.featured) return 1;
-    return a.price - b.price;
-  });
+  const items = UNLOCK_ITEMS.filter((item) => !item.shopHidden)
+    .map((item) => ({
+      ...item,
+      price: priceForItem(item, perf),
+      owned: owned.includes(item.id),
+    }))
+    .sort((a, b) => {
+      if (a.featured && !b.featured) return -1;
+      if (!a.featured && b.featured) return 1;
+      return a.price - b.price;
+    });
 
   return {
     items,

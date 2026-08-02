@@ -1,9 +1,8 @@
 /**
- * Designated farm plant beds (tile coordinates).
- * Planting is only allowed on these plots — not the whole map.
+ * Designated farm plant beds + loading dock (tile coordinates).
  */
 
-/** @typedef {{ id: string, label: string, x: number, y: number, w: number, h: number }} PlantPlot */
+/** @typedef {{ id: string, label: string, x: number, y: number, w: number, h: number }} FarmZone */
 
 /** Fixed tillable beds spaced far apart so the center stays clear for running. */
 export const PLANT_PLOTS = [
@@ -12,6 +11,19 @@ export const PLANT_PLOTS = [
   { id: 'bed_south_west', label: 'SW Bed', x: 22, y: 56, w: 5, h: 3 },
   { id: 'bed_south_east', label: 'SE Bed', x: 68, y: 56, w: 5, h: 3 },
 ];
+
+/**
+ * Loading dock — run here with crops on your back, answer the load quiz to unload into the cart.
+ * Placed near farm spawn / cart so it is easy to find on the map.
+ */
+export const LOADING_ZONE = {
+  id: 'load_dock',
+  label: 'Load Dock',
+  x: 50,
+  y: 31,
+  w: 5,
+  h: 4,
+};
 
 export function gridKey(gridX, gridY) {
   return `${gridX},${gridY}`;
@@ -26,7 +38,6 @@ export function isTileInPlot(gridX, gridY, plot) {
   );
 }
 
-/** Find the plant bed containing a tile, or null. */
 export function findPlotAt(gridX, gridY) {
   return PLANT_PLOTS.find((plot) => isTileInPlot(gridX, gridY, plot)) ?? null;
 }
@@ -35,11 +46,19 @@ export function isPlantableTile(gridX, gridY) {
   return Boolean(findPlotAt(gridX, gridY));
 }
 
-/**
- * All tile cells inside a plot (world centers included).
- * @param {PlantPlot} plot
- * @param {number} tileSize
- */
+export function isLoadingTile(gridX, gridY) {
+  return isTileInPlot(gridX, gridY, LOADING_ZONE);
+}
+
+export function loadingZoneCenter(tileSize = 16) {
+  return {
+    x: (LOADING_ZONE.x + LOADING_ZONE.w / 2) * tileSize,
+    y: (LOADING_ZONE.y + LOADING_ZONE.h / 2) * tileSize,
+    tileX: LOADING_ZONE.x + LOADING_ZONE.w / 2,
+    tileY: LOADING_ZONE.y + LOADING_ZONE.h / 2,
+  };
+}
+
 export function cellsInPlot(plot, tileSize = 16) {
   const cells = [];
   for (let row = 0; row < plot.h; row += 1) {
@@ -63,7 +82,6 @@ export function cellsInPlot(plot, tileSize = 16) {
   return cells;
 }
 
-/** Free plantable cells in the plot that contains (originX, originY). */
 export function freeCellsInPlotAt(
   originGridX,
   originGridY,
@@ -77,7 +95,8 @@ export function freeCellsInPlotAt(
   const plot = findPlotAt(originGridX, originGridY);
   if (!plot) return [];
 
-  const occupied = occupiedKeys instanceof Set ? occupiedKeys : new Set(occupiedKeys || []);
+  const occupied =
+    occupiedKeys instanceof Set ? occupiedKeys : new Set(occupiedKeys || []);
   const cells = [];
 
   for (const cell of cellsInPlot(plot, tileSize)) {

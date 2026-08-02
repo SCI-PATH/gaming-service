@@ -36,6 +36,28 @@ export const FARM_EVENTS = {
   /** Lock farm input while unlock shop is open */
   UNLOCK_SHOP_OPEN: 'UNLOCK_SHOP_OPEN',
   UNLOCK_SHOP_CLOSE: 'UNLOCK_SHOP_CLOSE',
+  /** Start / restart GameScene at a farm level id */
+  START_FARM_LEVEL: 'START_FARM_LEVEL',
+  /** Active unlock-item challenges for this level */
+  CHALLENGES_STATE: 'CHALLENGES_STATE',
+  /** Begin an unlock-item challenge step (React → Phaser or reverse) */
+  START_ITEM_CHALLENGE: 'START_ITEM_CHALLENGE',
+  ITEM_CHALLENGE_RESULT: 'ITEM_CHALLENGE_RESULT',
+  /** House interior arrange/clean overlay */
+  OPEN_HOUSE_INTERIOR: 'OPEN_HOUSE_INTERIOR',
+  HOUSE_INTERIOR_DONE: 'HOUSE_INTERIOR_DONE',
+  HOUSE_INTERIOR_CANCEL: 'HOUSE_INTERIOR_CANCEL',
+  /** One correct house-placement answer */
+  HOUSE_STEP_CORRECT: 'HOUSE_STEP_CORRECT',
+  HOUSE_STEP_WRONG: 'HOUSE_STEP_WRONG',
+  /** Chick egg-collect mini-game (after buying chicks) */
+  OPEN_EGG_COLLECT: 'OPEN_EGG_COLLECT',
+  EGG_COLLECT_DONE: 'EGG_COLLECT_DONE',
+  EGG_COLLECT_CANCEL: 'EGG_COLLECT_CANCEL',
+  EGG_PROTECT_CORRECT: 'EGG_PROTECT_CORRECT',
+  EGG_PROTECT_WRONG: 'EGG_PROTECT_WRONG',
+  /** Dev shortcuts: jump into farm with money / house seeded */
+  DEV_JUMP_FARM: 'DEV_JUMP_FARM',
 };
 
 export const SCIENCE_EVENTS = {

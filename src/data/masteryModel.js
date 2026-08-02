@@ -13,7 +13,6 @@
 
 import {
   DDA_BANDS,
-  DDA_CONFIG,
   adjustTimeTarget,
   bandTimeTarget,
   scoreAttempt,
@@ -70,7 +69,33 @@ export function cropValueFromMastery(baseValue, mastery) {
   return baseValue;
 }
 
-export function goalTextFromMastery(timeTargetMs, mastery) {
+/** How many crops the student should harvest this level (smart → more). */
+export const MASTERY_HARVEST_TARGETS = {
+  strong: 48,
+  developing: 24,
+  emerging: 12,
+};
+
+/**
+ * Target harvest count from mastery / performance band.
+ * Higher mastery → more crops to harvest.
+ */
+export function harvestTargetFromMastery(mastery) {
+  const band = bandFromMastery(mastery);
+  if (band === DDA_BANDS.STRONG) return MASTERY_HARVEST_TARGETS.strong;
+  if (band === DDA_BANDS.EMERGING) return MASTERY_HARVEST_TARGETS.emerging;
+  return MASTERY_HARVEST_TARGETS.developing;
+}
+
+/** Plant patch size from mastery (smart students plant denser patches). */
+export function plantPatchFromMastery(mastery) {
+  const band = bandFromMastery(mastery);
+  if (band === DDA_BANDS.STRONG) return { cols: 5, rows: 3 };
+  if (band === DDA_BANDS.EMERGING) return { cols: 3, rows: 2 };
+  return { cols: 4, rows: 3 };
+}
+
+export function goalTextFromMastery(timeTargetMs, mastery, harvestTarget) {
   const band = bandFromMastery(mastery);
   const pct = Math.round(clamp01(mastery) * 100);
   const label =
@@ -80,7 +105,9 @@ export function goalTextFromMastery(timeTargetMs, mastery) {
         ? 'Building mastery'
         : 'Developing mastery';
   const targetLabel = formatResponseTime(timeTargetMs);
-  return `${label} (${pct}%): finish ${DDA_CONFIG.maxQuestions} questions · target avg ${targetLabel}`;
+  const crops =
+    harvestTarget ?? harvestTargetFromMastery(mastery);
+  return `${label} (${pct}%): harvest ${crops} crops · target avg ${targetLabel}`;
 }
 
 /**

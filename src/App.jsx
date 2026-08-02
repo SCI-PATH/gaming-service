@@ -4,17 +4,39 @@ import ForestRPGCanvas, {
   emitPlantCrop,
   emitUnlockShopOpen,
   emitUnlockShopClose,
+  emitStartFarmLevel,
+  emitHouseInteriorDone,
+  emitHouseInteriorCancel,
+  emitHouseStepCorrect,
+  emitHouseStepWrong,
+  emitEggCollectDone,
+  emitEggCollectCancel,
+  emitEggProtectCorrect,
+  emitEggProtectWrong,
 } from './components/ForestRPGCanvas.jsx';
 import ScienceQuizModal from './components/ScienceQuizModal.jsx';
 import UnlockShopModal from './components/UnlockShopModal.jsx';
+import LevelQuestScroll from './components/LevelQuestScroll.jsx';
+import GameplayPerformancePanel from './components/GameplayPerformancePanel.jsx';
+import HouseInteriorModal from './components/HouseInteriorModal.jsx';
+import EggCollectModal from './components/EggCollectModal.jsx';
 import StudentLogin from './components/StudentLogin.jsx';
 import FarmMapPanel from './components/FarmMapPanel.jsx';
 import { getFarmLevel } from './data/farmLevels.js';
+import { buildActiveChallenges } from './data/challengeRuntime.js';
 import { DDA_CONFIG, formatResponseTime } from './data/dda.js';
 import {
+  GAMEPLAY_BAND_LABELS,
+  getGameplaySettings,
+} from './data/gameplayPerformance.js';
+import {
+  ensureFreshStudentProgress,
   getCurrentStudent,
   logoutStudent,
 } from './data/mockStudents.js';
+
+// One-time wipe when progress generation bumps — all students start fresh
+ensureFreshStudentProgress();
 
 const DEFAULT_LEVEL = getFarmLevel(1);
 const DEFAULT_TIME_TARGET_MS = DDA_CONFIG.midTargetMs;
@@ -31,6 +53,7 @@ function createInitialFarm() {
     plantedCount: 0,
     levelId: DEFAULT_LEVEL.id,
     cropName: DEFAULT_LEVEL.cropName,
+    cropId: DEFAULT_LEVEL.cropId,
     cropValue: DEFAULT_LEVEL.cropValue,
     goalText: `Developing mastery (50%): finish ${DDA_CONFIG.maxQuestions} questions · target avg ${formatResponseTime(DEFAULT_TIME_TARGET_MS)}`,
     forestUnlocked: false,
@@ -46,6 +69,12 @@ function createInitialFarm() {
     playerMapY: 32,
     playerTileX: 48,
     playerTileY: 32,
+    carriedCount: 0,
+    gameplayBand: 'average',
+    gameplayLabel: GAMEPLAY_BAND_LABELS.average,
+    retries: 0,
+    avgAnswerTimeSec: null,
+    levelElapsedSec: 0,
   };
 }
 
@@ -66,8 +95,24 @@ export default function App() {
   const [shopPerformance, setShopPerformance] = useState(null);
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
+  const [challenges, setChallenges] = useState([]);
+  const [questScrollOpen, setQuestScrollOpen] = useState(false);
+  const [houseInterior, setHouseInterior] = useState(null);
+  const [eggCollect, setEggCollect] = useState(null);
+  const [gameplay, setGameplay] = useState(() => ({
+    band: 'average',
+    label: GAMEPLAY_BAND_LABELS.average,
+    settings: getGameplaySettings('average'),
+    previousLevel: null,
+    appliedBonus: null,
+    pendingBonus: null,
+    nextGameplaySettings: getGameplaySettings('average'),
+    live: { retries: 0, avgAnswerTimeSec: null, levelElapsedSec: 0 },
+  }));
   const playerMapRef = useRef({ x: 48, y: 32 });
   const playerMapRaf = useRef(0);
+  /** Level id for which the quest scroll already auto-opened */
+  const questScrollLevelRef = useRef(null);
 
   const resetSessionUi = useCallback(() => {
     setGameReady(false);
@@ -80,14 +125,43 @@ export default function App() {
     setShopOpen(false);
     setShopPerformance(null);
     setInFarm(false);
+    setChallenges([]);
+    setQuestScrollOpen(false);
+    setHouseInterior(null);
+    setEggCollect(null);
+    setGameplay({
+      band: 'average',
+      label: GAMEPLAY_BAND_LABELS.average,
+      settings: getGameplaySettings('average'),
+      previousLevel: null,
+      appliedBonus: null,
+      pendingBonus: null,
+      nextGameplaySettings: getGameplaySettings('average'),
+      live: { retries: 0, avgAnswerTimeSec: null, levelElapsedSec: 0 },
+    });
     playerMapRef.current = { x: 48, y: 32 };
     setPlayerMap({ x: 48, y: 32 });
+    questScrollLevelRef.current = null;
   }, []);
 
   const handleLogin = useCallback(
-    (nextStudent) => {
+    (nextStudent, opts = {}) => {
       resetSessionUi();
       setStudent(nextStudent);
+      if (opts.testMode === 'buy_house') {
+        setBanner(
+          'Shop test: buy Farm House and/or chicks with cash, close shop → next level unlocks their challenges.',
+        );
+      } else if (
+        opts.testMode === 'house_challenge' ||
+        (typeof opts.testMode === 'string' &&
+          (opts.testMode.startsWith('house_') ||
+            opts.testMode.startsWith('egg_')))
+      ) {
+        setBanner(
+          'House + eggs test: Farm House and Hen House are on the farm. Click the house to furnish; click the hen house to collect eggs.',
+        );
+      }
     },
     [resetSessionUi],
   );
@@ -123,6 +197,7 @@ export default function App() {
   );
 
   const bagCount = farm.harvestedCount ?? farm.inventory ?? 0;
+  const carriedCount = farm.carriedCount ?? 0;
 
   const bandLabel = useMemo(() => {
     const pct = farm.masteryPercent ?? Math.round((farm.mastery || 0) * 100);
@@ -156,6 +231,46 @@ export default function App() {
     setInFarm(payload.active === true);
   }, []);
 
+  const handleChallengesState = useCallback((payload = {}) => {
+    const list = Array.isArray(payload.challenges) ? payload.challenges : [];
+    setChallenges(list);
+  }, []);
+
+  const refreshChallenges = useCallback((levelId) => {
+    const id = Math.max(1, Number(levelId) || 1);
+    try {
+      setChallenges(buildActiveChallenges(id));
+    } catch {
+      setChallenges([]);
+    }
+  }, []);
+
+  // Rebuild challenge list whenever the farm level changes (don't rely only on Phaser emit)
+  useEffect(() => {
+    if (!inFarm || shopOpen) return;
+    refreshChallenges(farm.levelId);
+  }, [inFarm, farm.levelId, shopOpen, refreshChallenges]);
+
+  // Auto-unfurl quest scroll whenever the student enters a new farm level
+  // (no button required). Skips if this level's scroll was already shown.
+  useEffect(() => {
+    if (!inFarm || shopOpen || quizPayload || houseInterior || eggCollect) {
+      return;
+    }
+    const level = Math.max(1, Number(farm.levelId) || 1);
+    if (questScrollLevelRef.current === level) return;
+    questScrollLevelRef.current = level;
+    setQuestScrollOpen(true);
+    setBanner(null);
+  }, [
+    farm.levelId,
+    inFarm,
+    shopOpen,
+    quizPayload,
+    houseInterior,
+    eggCollect,
+  ]);
+
   useEffect(
     () => () => {
       if (playerMapRaf.current) {
@@ -187,15 +302,38 @@ export default function App() {
         state.harvestedCount ??
         prev.inventory,
     }));
+    if (Array.isArray(state.challenges)) {
+      setChallenges(state.challenges);
+    }
     if (
       Number.isFinite(Number(state.playerMapX)) &&
       Number.isFinite(Number(state.playerMapY))
     ) {
       handlePlayerMapPos(state);
     }
+    if (state.gameplayBand || state.retries != null || state.gameplaySettings) {
+      setGameplay((prev) => ({
+        ...prev,
+        band: state.gameplayBand ?? prev.band,
+        label: state.gameplayLabel ?? prev.label,
+        settings: state.gameplaySettings ?? prev.settings,
+        previousLevel: state.gameplayPreviousLevel ?? prev.previousLevel,
+        appliedBonus: state.gameplayAppliedBonus ?? prev.appliedBonus,
+        nextGameplaySettings:
+          state.nextGameplaySettings ?? prev.nextGameplaySettings,
+        live: {
+          retries: state.retries ?? prev.live?.retries ?? 0,
+          avgAnswerTimeSec:
+            state.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec ?? null,
+          levelElapsedSec:
+            state.levelElapsedSec ?? prev.live?.levelElapsedSec ?? 0,
+        },
+      }));
+    }
   }, [handlePlayerMapPos]);
 
   const handleTriggerQuiz = useCallback((payload) => {
+    setQuestScrollOpen(false);
     setQuizPayload(payload);
   }, []);
 
@@ -231,40 +369,121 @@ export default function App() {
         payload.beatTimeTarget === true
           ? ' You beat the time target!'
           : '';
+      const bonus = payload.pendingGameplayBonus;
+      const bonusNote =
+        bonus?.totalBonus > 0
+          ? ` Next level bonus: +$${bonus.totalBonus} (${bonus.gradeLabel}${
+              bonus.improvementBonusPct
+                ? ` + improvement`
+                : ''
+            }).`
+          : '';
       setBanner(
-        `Level complete!${beatNote} Spend cash ($${
+        `Level complete!${beatNote}${bonusNote} Spend cash ($${
           payload.earnings ?? payload.currentMoney
         }) on unlocks — they stay on your farm.`,
       );
     } else {
       setBanner('Level complete! Proceed to the Forest Entrance!');
     }
+
+    if (payload.gameplayBand || payload.pendingGameplayBonus) {
+      setGameplay((prev) => ({
+        ...prev,
+        band: payload.gameplayBand ?? prev.band,
+        label: payload.gameplayLabel ?? prev.label,
+        pendingBonus: payload.pendingGameplayBonus ?? prev.pendingBonus,
+        nextGameplaySettings:
+          payload.nextGameplaySettings ?? prev.nextGameplaySettings,
+        live: {
+          retries: payload.retries ?? prev.live?.retries,
+          avgAnswerTimeSec:
+            payload.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
+          levelElapsedSec:
+            payload.levelCompletionTimeSec ?? prev.live?.levelElapsedSec,
+        },
+      }));
+    }
   }, []);
 
   const handleInteraction = useCallback((detail) => {
-    if (detail?.type === 'plant_fail') {
-      setDdaMisses((n) => n + 1);
-    }
     if (detail?.type === 'plant_success' && detail.rp) {
       setRpEarned((n) => n + detail.rp);
+      setHint('Correct plant answer! Harvest crops — they stack on your back.');
+      window.setTimeout(() => setHint(null), 2600);
+    }
+    if (detail?.type === 'load_success') {
+      if (detail.rp) setRpEarned((n) => n + detail.rp);
+      setHint(
+        `Unloaded ${detail.unloaded ?? ''} crops into the cart! Sell with Q.`,
+      );
+      window.setTimeout(() => setHint(null), 2600);
+    }
+    if (detail?.type === 'load_fail' || detail?.type === 'plant_fail') {
+      setDdaMisses((n) => n + 1);
+    }
+    if (detail?.type === 'harvest') {
+      setHint(
+        `Carrying ${detail.carriedCount ?? ''} — take them to the blue LOAD dock.`,
+      );
+      window.setTimeout(() => setHint(null), 2000);
     }
     if (detail?.type === 'mastery_goal_set') {
-      const src =
-        detail.source === 'external'
-          ? 'mastery model'
-          : detail.source === 'previous_level'
-            ? `level ${detail.fromLevelId}`
-            : 'default';
       setHint(
-        `Target avg ${detail.timeTargetLabel || formatResponseTime(detail.timeTargetMs)} from ${src} (${detail.masteryPercent}% mastery) · max ${detail.maxQuestions ?? DDA_CONFIG.maxQuestions} questions`,
+        `Harvest target: ${detail.harvestTarget} crops (${detail.masteryPercent}% mastery) · avg ${detail.timeTargetLabel || formatResponseTime(detail.timeTargetMs)}`,
       );
       window.setTimeout(() => setHint(null), 3600);
+    }
+    if (detail?.type === 'gameplay_adapt_set') {
+      setGameplay((prev) => ({
+        ...prev,
+        band: detail.gameplayBand ?? prev.band,
+        label: detail.gameplayLabel ?? prev.label,
+        settings: detail.settings ?? prev.settings,
+        previousLevel: detail.previousLevel ?? prev.previousLevel,
+        appliedBonus: detail.appliedBonus ?? prev.appliedBonus,
+        nextGameplaySettings:
+          detail.nextGameplaySettings ?? prev.nextGameplaySettings,
+      }));
+      setHint(
+        `Gameplay adapt: ${detail.gameplayLabel || detail.gameplayBand}`,
+      );
+      window.setTimeout(() => setHint(null), 3200);
+    }
+    if (detail?.type === 'gameplay_bonus_applied') {
+      setGameplay((prev) => ({
+        ...prev,
+        appliedBonus: detail,
+      }));
+      setHint(
+        `Previous-level bonus +$${detail.totalBonus} (perf $${detail.performanceCash} + improve $${detail.improvementCash})`,
+      );
+      window.setTimeout(() => setHint(null), 4000);
+    }
+    if (detail?.type === 'gameplay_level_complete') {
+      setGameplay((prev) => ({
+        ...prev,
+        band: detail.record?.classification ?? prev.band,
+        label: detail.record?.classificationLabel ?? prev.label,
+        pendingBonus: detail.pendingBonus ?? prev.pendingBonus,
+        nextGameplaySettings:
+          detail.record?.nextGameplaySettings ?? prev.nextGameplaySettings,
+      }));
     }
     if (detail?.type === 'quiz_attempt') {
       setHint(
         `Answered in ${detail.responseLabel} · score ${detail.attemptScore}`,
       );
       window.setTimeout(() => setHint(null), 2000);
+      setGameplay((prev) => ({
+        ...prev,
+        live: {
+          ...prev.live,
+          retries: detail.retries ?? prev.live?.retries,
+          avgAnswerTimeSec:
+            detail.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
+        },
+      }));
     }
     if (detail?.type === 'sell') {
       setHint(`Sold for $${detail.coinsEarned ?? detail.gained}!`);
@@ -273,7 +492,7 @@ export default function App() {
     if (detail?.type === 'plant_blocked') {
       const msg =
         detail.reason === 'not_plot'
-          ? 'Stand on a marked PLANT bed (gold outline) to plant.'
+          ? 'Stand on a marked PLANT bed (gold) to plant.'
           : detail.reason === 'tile_occupied'
             ? 'This plant bed is full — try another marked bed.'
             : detail.reason === 'target_reached'
@@ -282,8 +501,18 @@ export default function App() {
       setHint(msg);
       window.setTimeout(() => setHint(null), 2200);
     }
+    if (detail?.type === 'load_blocked') {
+      const msg =
+        detail.reason === 'empty_carry'
+          ? 'Harvest crops onto your back first, then come to LOAD.'
+          : detail.reason === 'not_dock'
+            ? 'Stand on the blue LOAD dock to unload.'
+            : 'Cannot unload here.';
+      setHint(msg);
+      window.setTimeout(() => setHint(null), 2200);
+    }
     if (detail?.type === 'sell_blocked') {
-      setHint('Run over ready crops to harvest, then sell with Q.');
+      setHint('Unload crops into the cart at LOAD first, then sell with Q.');
       window.setTimeout(() => setHint(null), 2200);
     }
     if (detail?.type === 'unlock_purchased') {
@@ -293,19 +522,122 @@ export default function App() {
           earnings: detail.earnings ?? detail.currentMoney ?? prev.earnings,
         }));
       }
-      setHint(`Bought unlock for $${detail.price}! It stays on your farm.`);
-      window.setTimeout(() => setHint(null), 1800);
+      setHint(`Bought unlock for $${detail.price}! Challenges unlock next level.`);
+      window.setTimeout(() => setHint(null), 2200);
     }
-  }, []);
+    if (detail?.type === 'challenge_complete') {
+      if (detail.rp) setRpEarned((n) => n + detail.rp);
+      if (detail.earnings != null) {
+        setFarm((prev) => ({
+          ...prev,
+          earnings: detail.earnings ?? prev.earnings,
+        }));
+      }
+      setHint(
+        `${detail.itemId ? detail.title : 'Challenge'} complete!${
+          detail.rewardCash ? ` +$${detail.rewardCash}` : ''
+        }`,
+      );
+      window.setTimeout(() => setHint(null), 2600);
+      refreshChallenges(farm.levelId);
+    }
+    if (detail?.type === 'challenge_step') {
+      if (detail.rp) setRpEarned((n) => n + detail.rp);
+      setHint(
+        detail.placeLabel ||
+          `${detail.title}: item placed in the house.`,
+      );
+      window.setTimeout(() => setHint(null), 2200);
+      refreshChallenges(farm.levelId);
+    }
+    if (detail?.type === 'challenge_fail') {
+      setDdaMisses((n) => n + 1);
+    }
+    if (detail?.type === 'challenge_blocked') {
+      setHint(
+        detail.hint ||
+          'Click the Farm House or Hen House on the farm when a challenge is open.',
+      );
+      window.setTimeout(() => setHint(null), 2600);
+    }
+  }, [farm.levelId, refreshChallenges]);
 
   const handleQuizClose = useCallback(() => {
     setQuizPayload(null);
   }, []);
 
   const handleShopClose = useCallback(() => {
+    const nextLevelId = Math.max(1, (farm.levelId || 1) + 1);
     setShopOpen(false);
     emitUnlockShopClose();
-    setBanner('Forest gate is open — head to the entrance!');
+    setBanner(null);
+    // Point React at the next level immediately so the quest scroll can unfurl
+    setFarm((prev) => ({ ...prev, levelId: nextLevelId }));
+    refreshChallenges(nextLevelId);
+    questScrollLevelRef.current = null;
+    setQuestScrollOpen(true);
+    window.setTimeout(() => {
+      emitStartFarmLevel({ levelId: nextLevelId });
+    }, 50);
+  }, [farm.levelId, refreshChallenges]);
+
+  const handleOpenHouseInterior = useCallback((payload = {}) => {
+    setQuestScrollOpen(false);
+    setHouseInterior(payload);
+  }, []);
+
+  const handleOpenEggCollect = useCallback((payload = {}) => {
+    setQuestScrollOpen(false);
+    setEggCollect(payload);
+  }, []);
+
+  const handleHouseInteriorComplete = useCallback((payload) => {
+    emitHouseInteriorDone(payload);
+    // Keep modal open briefly so student sees the furnished room; close on Leave
+    setHint('House challenge complete — look at your furnished room!');
+    window.setTimeout(() => setHint(null), 2800);
+    refreshChallenges(farm.levelId);
+  }, [farm.levelId, refreshChallenges]);
+
+  const handleHouseInteriorClose = useCallback(() => {
+    setHouseInterior(null);
+    emitHouseInteriorCancel();
+  }, []);
+
+  const handleHouseStepCorrect = useCallback((payload) => {
+    emitHouseStepCorrect(payload);
+    if (payload.placeLabel) {
+      setHint(payload.placeLabel);
+      window.setTimeout(() => setHint(null), 1800);
+    }
+  }, []);
+
+  const handleHouseStepWrong = useCallback((payload) => {
+    emitHouseStepWrong(payload);
+  }, []);
+
+  const handleEggCollectComplete = useCallback((payload) => {
+    emitEggCollectDone(payload);
+    setHint(
+      `Eggs collected (${payload?.collected || 0}) — bucket secured!`,
+    );
+    window.setTimeout(() => setHint(null), 2800);
+    refreshChallenges(farm.levelId);
+  }, [farm.levelId, refreshChallenges]);
+
+  const handleEggCollectClose = useCallback(() => {
+    setEggCollect(null);
+    emitEggCollectCancel();
+  }, []);
+
+  const handleEggProtectCorrect = useCallback((payload) => {
+    emitEggProtectCorrect(payload);
+    setHint('Eggs protected — more time!');
+    window.setTimeout(() => setHint(null), 1600);
+  }, []);
+
+  const handleEggProtectWrong = useCallback((payload) => {
+    emitEggProtectWrong(payload);
   }, []);
 
   const handleSell = useCallback(() => {
@@ -342,6 +674,10 @@ export default function App() {
           </span>
           <span>Mastery: {bandLabel}</span>
           <span>
+            Gameplay:{' '}
+            {gameplay.label || GAMEPLAY_BAND_LABELS[gameplay.band] || 'AVERAGE'}
+          </span>
+          <span>
             Target: {farm.timeTargetLabel ?? formatResponseTime(farm.timeTargetMs)}
           </span>
           <span>Avg time: {farm.avgResponseLabel ?? '—'}</span>
@@ -351,7 +687,9 @@ export default function App() {
           <span>Cash: ${farm.earnings}</span>
           <span>RP: {rpEarned}</span>
           <span>Misses: {ddaMisses}</span>
-          <span>Bag: {bagCount}</span>
+          <span>Retries: {gameplay.live?.retries ?? farm.retries ?? 0}</span>
+          <span>On back: {carriedCount}</span>
+          <span>Cart: {bagCount}</span>
         </div>
       </header>
 
@@ -381,6 +719,9 @@ export default function App() {
             onTriggerQuiz={handleTriggerQuiz}
             onTargetReached={handleTargetReached}
             onInteraction={handleInteraction}
+            onChallengesState={handleChallengesState}
+            onOpenHouseInterior={handleOpenHouseInterior}
+            onOpenEggCollect={handleOpenEggCollect}
           />
 
           <div className="farm-controls">
@@ -391,20 +732,27 @@ export default function App() {
                 !gameReady ||
                 Boolean(quizPayload) ||
                 shopOpen ||
+                Boolean(houseInterior) ||
+                Boolean(eggCollect) ||
                 farm.forestUnlocked
               }
             >
-              Plant (E) — Quiz first
-            </button>
-            <button
-              type="button"
-              onClick={handleSell}
-              disabled={
-                !gameReady || bagCount < 1 || Boolean(quizPayload) || shopOpen
-              }
-            >
-              Sell Inventory (Q) — ${farm.cropValue}/ea
-            </button>
+            Plant (E) — at gold bed
+          </button>
+          <button
+            type="button"
+            onClick={handleSell}
+            disabled={
+              !gameReady ||
+              bagCount < 1 ||
+              Boolean(quizPayload) ||
+              shopOpen ||
+              Boolean(houseInterior) ||
+              Boolean(eggCollect)
+            }
+          >
+            Sell Cart (Q) — ${farm.cropValue}/ea
+          </button>
           </div>
 
           {hint && <div className="farm-hint">{hint}</div>}
@@ -422,6 +770,15 @@ export default function App() {
             <ScienceQuizModal
               questionData={quizPayload.questionData || quizPayload.question}
               cropId={quizPayload.cropId}
+              mode={quizPayload.mode || quizPayload.challenge || 'plant'}
+              carriedCount={quizPayload.carriedCount ?? carriedCount}
+              gameplayAssist={
+                quizPayload.gameplayAssist || {
+                  answerTimerMs: quizPayload.answerTimerMs,
+                  hintLevel: quizPayload.hintLevel,
+                  maxRetriesPerQuestion: quizPayload.maxRetriesPerQuestion,
+                }
+              }
               onClose={handleQuizClose}
             />
           )}
@@ -432,22 +789,71 @@ export default function App() {
             performance={shopPerformance}
             onClose={handleShopClose}
           />
+
+          <LevelQuestScroll
+            open={
+              questScrollOpen &&
+              !shopOpen &&
+              !quizPayload &&
+              !houseInterior &&
+              !eggCollect
+            }
+            levelId={farm.levelId}
+            challenges={challenges}
+            goalText={farm.goalText}
+            harvestTarget={farm.harvestTarget ?? 24}
+            cropsHarvestedTotal={farm.cropsHarvestedTotal ?? 0}
+            cropName={farm.cropName || 'crops'}
+            onClose={() => setQuestScrollOpen(false)}
+          />
         </div>
 
         {inFarm && (
-          <FarmMapPanel
-            playerMapX={playerMap.x}
-            playerMapY={playerMap.y}
-          />
+          <div className="farm-side-panels">
+            <FarmMapPanel
+              playerMapX={playerMap.x}
+              playerMapY={playerMap.y}
+              harvestTarget={farm.harvestTarget ?? 24}
+              cropsHarvestedTotal={farm.cropsHarvestedTotal ?? 0}
+              performanceBand={farm.performanceBand}
+              cropName={farm.cropName || 'crops'}
+            />
+            <GameplayPerformancePanel
+              visible={!shopOpen && !houseInterior && !eggCollect}
+              gameplay={gameplay}
+            />
+          </div>
         )}
       </div>
 
-      <p className="forest-help">
-        Arrow keys move · use the Farm Map to find gold plant beds · stand on a
-        marked <kbd>PLANT</kbd> bed · <kbd>E</kbd> quiz-plant · run over crops to
-        harvest · <kbd>Q</kbd> sell · Finish {maxQuestions} questions. Unharvested
-        crops clear when the level ends.
-      </p>
+      <HouseInteriorModal
+        open={Boolean(houseInterior)}
+        stageId={houseInterior?.stageId || 'clean_maintain'}
+        stageTitle={houseInterior?.title || 'Farm House'}
+        initialPlaced={houseInterior?.placed || []}
+        luxuryBand={
+          houseInterior?.luxuryBand ||
+          houseInterior?.gameplayBand ||
+          gameplay.band ||
+          'average'
+        }
+        onStepCorrect={handleHouseStepCorrect}
+        onStepWrong={handleHouseStepWrong}
+        onComplete={handleHouseInteriorComplete}
+        onClose={handleHouseInteriorClose}
+      />
+
+      <EggCollectModal
+        open={Boolean(eggCollect)}
+        stageTitle={eggCollect?.title || 'Collect Eggs'}
+        gameplayBand={
+          eggCollect?.gameplayBand || gameplay.band || 'average'
+        }
+        onProtectCorrect={handleEggProtectCorrect}
+        onProtectWrong={handleEggProtectWrong}
+        onComplete={handleEggCollectComplete}
+        onClose={handleEggCollectClose}
+      />
     </div>
   );
 }
