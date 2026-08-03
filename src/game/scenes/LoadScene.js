@@ -76,6 +76,12 @@ export default class LoadScene extends Phaser.Scene {
       }
     }
 
+    // Calf pen props (fence + buckets on the farm map)
+    this.load.image('calf_fence_gate', '/assets/calves/fence_gate.png');
+    this.load.image('calf_fence_corner', '/assets/calves/fence_corner.png');
+    this.load.image('calf_bucket', '/assets/calves/bucket.png');
+    this.load.image('calf_food_crate', '/assets/calves/food_crate_1.png');
+
     // Subset of summer ground tiles for next-level path decor near the gate
     const groundSubset = GROUND_TILE_KEYS.filter((_, i) =>
       [0, 4, 9, 18, 19, 24, 33, 43, 49, 55].includes(i),

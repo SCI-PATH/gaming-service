@@ -159,7 +159,7 @@ export default function App() {
             opts.testMode.startsWith('egg_')))
       ) {
         setBanner(
-          'House + eggs test: Farm House and Hen House are on the farm. Click the house to furnish; click the hen house to collect eggs.',
+          'House + eggs + calf test: click Farm House, Hen House, or the Calf Pen on the farm.',
         );
       }
     },
@@ -254,7 +254,13 @@ export default function App() {
   // Auto-unfurl quest scroll whenever the student enters a new farm level
   // (no button required). Skips if this level's scroll was already shown.
   useEffect(() => {
-    if (!inFarm || shopOpen || quizPayload || houseInterior || eggCollect) {
+    if (
+      !inFarm ||
+      shopOpen ||
+      quizPayload ||
+      houseInterior ||
+      eggCollect
+    ) {
       return;
     }
     const level = Math.max(1, Number(farm.levelId) || 1);
@@ -550,6 +556,18 @@ export default function App() {
       window.setTimeout(() => setHint(null), 2200);
       refreshChallenges(farm.levelId);
     }
+    if (detail?.type === 'calf_feed') {
+      if (detail.correct) {
+        setHint(
+          detail.fillKind === 'water'
+            ? 'Water poured into the pen bucket!'
+            : 'Food added to the pen bucket!',
+        );
+      } else {
+        setHint('Wrong answer — a calf is crying!');
+      }
+      window.setTimeout(() => setHint(null), 1800);
+    }
     if (detail?.type === 'challenge_fail') {
       setDdaMisses((n) => n + 1);
     }
@@ -559,6 +577,10 @@ export default function App() {
           'Click the Farm House or Hen House on the farm when a challenge is open.',
       );
       window.setTimeout(() => setHint(null), 2600);
+    }
+    if (detail?.type === 'challenge_opening') {
+      setHint(detail.hint || 'Opening…');
+      window.setTimeout(() => setHint(null), 1600);
     }
   }, [farm.levelId, refreshChallenges]);
 
@@ -725,6 +747,23 @@ export default function App() {
           />
 
           <div className="farm-controls">
+            <button
+              type="button"
+              className="quest-scroll-reopen"
+              onClick={() => setQuestScrollOpen(true)}
+              disabled={
+                !gameReady ||
+                Boolean(quizPayload) ||
+                shopOpen ||
+                Boolean(houseInterior) ||
+                Boolean(eggCollect)
+              }
+            >
+              Quest scroll
+              {challenges.some((c) => !c.done)
+                ? ` (${challenges.filter((c) => !c.done).length} open)`
+                : ''}
+            </button>
             <button
               type="button"
               onClick={() => emitPlantCrop()}

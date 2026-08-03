@@ -52,7 +52,8 @@ export const UNLOCK_ITEMS = [
     description: 'Your homestead on the farm. Click it to furnish rooms.',
     image: '/assets/shop/props/house.png',
     textureKey: 'unlock_house',
-    displayScale: 0.16,
+    /** Fit to farm tilemap (16px tiles) — taller than hen house */
+    mapTileHeight: 6,
     interactHint: 'Click the house to start furniture challenges',
   },
   {
@@ -65,7 +66,8 @@ export const UNLOCK_ITEMS = [
       'A coop for your chicks. Appears when you buy chicks — click it to collect eggs.',
     image: '/assets/shop/props/hen_house.png',
     textureKey: 'unlock_hen_house',
-    displayScale: 0.35,
+    /** Smaller than farm house on the same tile grid */
+    mapTileHeight: 3.75,
     interactHint: 'Click the hen house to collect eggs',
     /** Granted with chicks — not sold separately in the unlock shop */
     shopHidden: true,
@@ -76,10 +78,12 @@ export const UNLOCK_ITEMS = [
     category: 'animal',
     featured: true,
     basePrice: 340,
-    description: 'A young calf for the pasture.',
+    description:
+      'Young calves in a fenced pasture (separate from the house). Click the pen to feed them.',
     image: '/assets/shop/animals/calf.png',
     textureKey: 'unlock_calf',
-    displayScale: 0.9,
+    displayScale: 1.15,
+    interactHint: 'Click the calf pen to answer feed questions',
     ...FRAME_64,
   },
   {
@@ -285,6 +289,12 @@ export const UNLOCK_WORLD_SLOTS = [
   { tileX: 50, tileY: 28 },
   { tileX: 37, tileY: 36 },
 ];
+
+/** Dedicated pasture for the calf pen — far SW, away from house / hen house */
+export const CALF_PEN_SLOT = { tileX: 16, tileY: 42 };
+
+/** Hen house sits far NE — keep clear of the calf pasture */
+export const HEN_HOUSE_SLOT = { tileX: 60, tileY: 20 };
 
 /** Building-sized items get these roomier slots first */
 export const UNLOCK_BUILDING_SLOTS = [
@@ -565,4 +575,29 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
 
 export function getUnlockItem(itemId) {
   return UNLOCK_ITEMS.find((i) => i.id === itemId) ?? null;
+}
+
+/**
+ * Scale an unlock sprite to the farm tilemap (TILE_SIZE px).
+ * Prefer mapTileHeight / mapTileWidth so large PNGs don't dwarf the map.
+ */
+export function resolveUnlockDisplayScale(
+  item,
+  sourceWidth = 0,
+  sourceHeight = 0,
+  tileSize = 16,
+) {
+  if (!item) return 1;
+  const tw = Math.max(1, Number(tileSize) || 16);
+  const sw = Math.max(1, Number(sourceWidth) || 1);
+  const sh = Math.max(1, Number(sourceHeight) || 1);
+
+  if (item.mapTileHeight > 0) {
+    return (Number(item.mapTileHeight) * tw) / sh;
+  }
+  if (item.mapTileWidth > 0) {
+    return (Number(item.mapTileWidth) * tw) / sw;
+  }
+  if (item.displayScale > 0) return Number(item.displayScale);
+  return 1;
 }

@@ -14,6 +14,11 @@ import {
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
 import { isEggCollectStage } from '../../data/eggCollect.js';
+import {
+  isCalfFeedStage,
+  getCalfFeedSettings,
+  pickCalfFeedQuestion,
+} from '../../data/calfFeed.js';
 import { getFarmLevel, pickScienceQuestion } from '../../data/farmLevels';
 import {
   DDA_CONFIG,
@@ -39,6 +44,7 @@ import {
 import {
   getOwnedUnlockIds,
   getUnlockItem,
+  resolveUnlockDisplayScale,
   isUnlocked,
   markUnlocked,
   advanceChallengeProgress,
@@ -46,6 +52,8 @@ import {
   shopBandFromPerformance,
   UNLOCK_WORLD_SLOTS,
   UNLOCK_BUILDING_SLOTS,
+  CALF_PEN_SLOT,
+  HEN_HOUSE_SLOT,
 } from '../../data/unlockShop.js';
 import {
   buildActiveChallenges,
@@ -156,6 +164,8 @@ export default class GameScene extends Phaser.Scene {
     // Starting level = plain background; owned unlocks appear only after purchase
     this.placedUnlockIds = new Set();
     this.unlockSprites = new Map();
+    this.calfPen = null;
+    this.calfFeedRound = null;
     this.activeChallenges = [];
     this.pendingItemChallenge = null;
     this.placeOwnedUnlocks();
@@ -339,6 +349,7 @@ export default class GameScene extends Phaser.Scene {
       if (event.target?.closest?.('.quest-scroll-overlay')) return;
       if (event.target?.closest?.('.house-interior-overlay')) return;
       if (event.target?.closest?.('.egg-collect-overlay')) return;
+      if (event.target?.closest?.('.calf-feed-overlay')) return;
 
       if (event.code === 'KeyQ') {
         event.preventDefault();
@@ -427,6 +438,22 @@ export default class GameScene extends Phaser.Scene {
       if (!this.sys?.isActive()) return;
       this.onEggProtectWrong(payload);
     };
+    this._onCalfFeedDone = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.finishCalfFeedStage(payload);
+    };
+    this._onCalfFeedCancel = () => {
+      if (!this.sys?.isActive()) return;
+      this.cancelCalfFeed();
+    };
+    this._onCalfFeedCorrect = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onCalfFeedCorrect(payload);
+    };
+    this._onCalfFeedWrong = (payload) => {
+      if (!this.sys?.isActive()) return;
+      this.onCalfFeedWrong(payload);
+    };
 
     // Drop stale handlers from HMR / StrictMode so dead scenes cannot eat events
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PLANT_CROP);
@@ -445,6 +472,10 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_COLLECT_CANCEL);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_PROTECT_CORRECT);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.EGG_PROTECT_WRONG);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.CALF_FEED_DONE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.CALF_FEED_CANCEL);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.CALF_FEED_CORRECT);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.CALF_FEED_WRONG);
     // NOTE: do NOT removeAllListeners(START_FARM_LEVEL) — ForestRPGCanvas owns that
 
     ForestGameBridge.on(FARM_EVENTS.PLANT_CROP, this._onPlant);
@@ -478,6 +509,10 @@ export default class GameScene extends Phaser.Scene {
       this._onEggProtectCorrect,
     );
     ForestGameBridge.on(FARM_EVENTS.EGG_PROTECT_WRONG, this._onEggProtectWrong);
+    ForestGameBridge.on(FARM_EVENTS.CALF_FEED_DONE, this._onCalfFeedDone);
+    ForestGameBridge.on(FARM_EVENTS.CALF_FEED_CANCEL, this._onCalfFeedCancel);
+    ForestGameBridge.on(FARM_EVENTS.CALF_FEED_CORRECT, this._onCalfFeedCorrect);
+    ForestGameBridge.on(FARM_EVENTS.CALF_FEED_WRONG, this._onCalfFeedWrong);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       ForestGameBridge.off(FARM_EVENTS.PLANT_CROP, this._onPlant);
@@ -514,6 +549,10 @@ export default class GameScene extends Phaser.Scene {
         this._onEggProtectCorrect,
       );
       ForestGameBridge.off(FARM_EVENTS.EGG_PROTECT_WRONG, this._onEggProtectWrong);
+      ForestGameBridge.off(FARM_EVENTS.CALF_FEED_DONE, this._onCalfFeedDone);
+      ForestGameBridge.off(FARM_EVENTS.CALF_FEED_CANCEL, this._onCalfFeedCancel);
+      ForestGameBridge.off(FARM_EVENTS.CALF_FEED_CORRECT, this._onCalfFeedCorrect);
+      ForestGameBridge.off(FARM_EVENTS.CALF_FEED_WRONG, this._onCalfFeedWrong);
     });
   }
 
@@ -1118,6 +1157,11 @@ export default class GameScene extends Phaser.Scene {
     const item = getUnlockItem(itemId);
     if (!item) return null;
 
+    // Calf → full fenced pen with herd + buckets (away from house / hen house)
+    if (itemId === 'calf') {
+      return this.placeCalfPen();
+    }
+
     const owned = getOwnedUnlockIds();
     const buildings = owned.filter((id) => {
       const it = getUnlockItem(id);
@@ -1126,7 +1170,9 @@ export default class GameScene extends Phaser.Scene {
     const others = owned.filter((id) => !buildings.includes(id));
 
     let slot;
-    if (item.category === 'building') {
+    if (itemId === 'hen_house') {
+      slot = HEN_HOUSE_SLOT;
+    } else if (item.category === 'building') {
       const bi = Math.max(0, buildings.indexOf(itemId));
       slot = UNLOCK_BUILDING_SLOTS[bi % UNLOCK_BUILDING_SLOTS.length];
     } else {
@@ -1142,7 +1188,14 @@ export default class GameScene extends Phaser.Scene {
       sprite = item.frameWidth
         ? this.add.sprite(x, y, item.textureKey, 0)
         : this.add.image(x, y, item.textureKey);
-      sprite.setScale(item.displayScale ?? 1);
+      const src = this.textures.get(item.textureKey)?.getSourceImage?.();
+      const scale = resolveUnlockDisplayScale(
+        item,
+        src?.width || sprite.width || item.frameWidth,
+        src?.height || sprite.height || item.frameHeight,
+        TILE_SIZE,
+      );
+      sprite.setScale(scale);
     } else {
       // Texture missing — still show a marker so unlocks are never "invisible"
       sprite = this.add.rectangle(x, y, 40, 40, 0x3d6b45, 0.95);
@@ -1151,29 +1204,46 @@ export default class GameScene extends Phaser.Scene {
 
     sprite.setDepth(item.category === 'building' ? 6 : 5);
     sprite.setData('unlockId', itemId);
-    this.unlockSprites?.set(itemId, sprite);
 
+    const labelY =
+      y - Math.max(28, (sprite.displayHeight || 48) / 2 + 10);
+    const baseName = item.name || itemId;
     const label = this.add
-      .text(x, y - 36, item.name || itemId, {
+      .text(x, labelY, baseName, {
         fontFamily: 'Georgia, serif',
-        fontSize: '11px',
+        fontSize: item.category === 'building' ? '11px' : '10px',
         color: '#f0e6c8',
         stroke: '#0a1208',
         strokeThickness: 3,
       })
       .setOrigin(0.5)
       .setDepth(7);
-    sprite.setData('label', label);
 
-    // Click building / unlock on the farm to start its challenge (no panel button)
-    if (typeof sprite.setInteractive === 'function') {
-      sprite.setInteractive({ useHandCursor: true });
-      sprite.on('pointerdown', () => {
-        if (!this.sys?.isActive() || this.farmInputLocked) return;
-        this.startChallengeForUnlock(itemId);
-      });
-    }
+    // Invisible click zone (same pattern as calf pen). Scaled building PNGs
+    // often miss Phaser sprite hit-tests — this keeps House / Hen House clickable.
+    const hitW = Math.max(
+      TILE_SIZE * 4,
+      (Number(sprite.displayWidth) || 40) + TILE_SIZE,
+    );
+    const hitH = Math.max(
+      TILE_SIZE * 4,
+      (Number(sprite.displayHeight) || 40) + TILE_SIZE,
+    );
+    const hit = this.add
+      .rectangle(x, y, hitW, hitH, 0x000000, 0.001)
+      .setDepth(9)
+      .setInteractive({ useHandCursor: true });
+    hit.setData('unlockId', itemId);
+    hit.setData('label', label);
+    hit.setData('baseLabel', baseName);
+    hit.setData('visual', sprite);
+    hit.on('pointerdown', (_pointer, _lx, _ly, event) => {
+      if (!this.sys?.isActive()) return;
+      event?.stopPropagation?.();
+      this.tryStartUnlockChallenge(itemId);
+    });
 
+    this.unlockSprites?.set(itemId, hit);
     this.placedUnlockIds.add(itemId);
 
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
@@ -1184,18 +1254,507 @@ export default class GameScene extends Phaser.Scene {
       hasTexture: this.textures.exists(item.textureKey),
     });
 
-    return sprite;
+    return hit;
+  }
+
+  /**
+   * Build a fenced calf pasture on the map (separate from house / hen house).
+   * Clicking the pen starts normal science quizzes that fill water/food buckets.
+   */
+  placeCalfPen() {
+    if (this.calfPen?.container) {
+      this.placedUnlockIds.add('calf');
+      return this.calfPen.hit;
+    }
+
+    const slot = CALF_PEN_SLOT;
+    const cx = slot.tileX * TILE_SIZE + TILE_SIZE / 2;
+    const cy = slot.tileY * TILE_SIZE + TILE_SIZE / 2;
+    const band = this.gameplayBand || 'average';
+    const settings = getCalfFeedSettings(band);
+    const half = Math.ceil(settings.fillsNeeded / 2);
+
+    const container = this.add.container(cx, cy).setDepth(6);
+    // Roomier pen so the herd can spread out (tiles are 16px)
+    const penW = TILE_SIZE * 14;
+    const penH = TILE_SIZE * 10;
+
+    // Pasture floor
+    const floor = this.add
+      .rectangle(0, 0, penW, penH, 0x5a8a42, 0.92)
+      .setStrokeStyle(3, 0x6b4423);
+    container.add(floor);
+    const dirt = this.add.ellipse(0, 8, penW * 0.78, penH * 0.6, 0xc4a574, 0.45);
+    container.add(dirt);
+
+    // Fence posts around the pen (behind animals)
+    const fenceKey = this.textures.exists('calf_fence_gate')
+      ? 'calf_fence_gate'
+      : null;
+    const placeFence = (x, y, rot = 0) => {
+      if (fenceKey) {
+        const f = this.add.image(x, y, fenceKey).setScale(1.15).setAngle(rot);
+        container.add(f);
+      } else {
+        container.add(
+          this.add.rectangle(x, y, 10, 22, 0x8b5a2b).setStrokeStyle(1, 0x3a2410),
+        );
+      }
+    };
+    const fenceCols = 9;
+    const fenceRows = 6;
+    for (let i = 0; i < fenceCols; i += 1) {
+      const x = -penW / 2 + 14 + (i * (penW - 28)) / (fenceCols - 1);
+      placeFence(x, -penH / 2 + 10);
+      placeFence(x, penH / 2 - 10);
+    }
+    for (let i = 1; i < fenceRows - 1; i += 1) {
+      const y = -penH / 2 + 10 + (i * (penH - 20)) / (fenceRows - 1);
+      placeFence(-penW / 2 + 12, y, 90);
+      placeFence(penW / 2 - 12, y, 90);
+    }
+
+    // Spread calves on a grid with clear gaps (sprites are large vs tile size)
+    const calves = [];
+    const calfKey = this.textures.exists('unlock_calf') ? 'unlock_calf' : null;
+    this.ensureCalfAnimations();
+    const herdCount = Math.min(8, Math.max(5, settings.calfCount || 6));
+    const calfScale = 0.9;
+    const minSpacing = 46;
+    const herdCols = herdCount <= 6 ? 3 : 4;
+    const herdRows = Math.ceil(herdCount / herdCols);
+    const gapX = Math.max(minSpacing, (penW - 70) / Math.max(1, herdCols));
+    const gapY = Math.max(minSpacing, (penH - 90) / Math.max(1, herdRows));
+    const startX = -((herdCols - 1) * gapX) / 2;
+    const startY = -((herdRows - 1) * gapY) / 2 - 10;
+    for (let i = 0; i < herdCount; i += 1) {
+      const col = i % herdCols;
+      const row = Math.floor(i / herdCols);
+      // Tiny jitter only — keep clear personal space
+      const ox = startX + col * gapX + (Math.random() * 4 - 2);
+      const oy = startY + row * gapY + (Math.random() * 4 - 2);
+      let sprite;
+      if (calfKey) {
+        sprite = this.add
+          .sprite(ox, oy, calfKey, i % 6)
+          .setScale(calfScale)
+          .setDepth(1);
+      } else {
+        sprite = this.add.circle(ox, oy, 10, 0xf0e6d8).setStrokeStyle(2, 0x333);
+      }
+      container.add(sprite);
+      calves.push(sprite);
+    }
+
+    // Water + food buckets at the front (smaller so calves stay the focus)
+    const bucketKey = this.textures.exists('calf_bucket') ? 'calf_bucket' : null;
+    const foodKey = this.textures.exists('calf_food_crate')
+      ? 'calf_food_crate'
+      : null;
+    const bucketY = penH / 2 - 36;
+
+    const waterBucket = bucketKey
+      ? this.add.image(-64, bucketY, bucketKey).setScale(0.28)
+      : this.add.rectangle(-64, bucketY, 22, 26, 0x8b5a2b);
+    const foodBucket = bucketKey
+      ? this.add.image(64, bucketY, bucketKey).setScale(0.28)
+      : this.add.rectangle(64, bucketY, 22, 26, 0x8b5a2b);
+    container.add(waterBucket);
+    container.add(foodBucket);
+
+    const waterFill = this.add
+      .rectangle(-64, bucketY + 6, 14, 4, 0x3a9fd8, 0.95)
+      .setOrigin(0.5, 1);
+    const foodPile = foodKey
+      ? this.add.image(64, bucketY - 6, foodKey).setScale(0.65).setAlpha(0.15)
+      : this.add.rectangle(64, bucketY - 6, 14, 8, 0x7a9a40, 0.15);
+    container.add(waterFill);
+    container.add(foodPile);
+
+    const waterLabel = this.add
+      .text(-64, penH / 2 - 22, 'Water 0/' + half, {
+        fontFamily: 'Georgia, serif',
+        fontSize: '10px',
+        color: '#d8f0ff',
+        stroke: '#0a1208',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+    const foodLabel = this.add
+      .text(64, penH / 2 - 22, 'Food 0/' + (settings.fillsNeeded - half), {
+        fontFamily: 'Georgia, serif',
+        fontSize: '10px',
+        color: '#ffe9a8',
+        stroke: '#0a1208',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+    container.add(waterLabel);
+    container.add(foodLabel);
+
+    const title = this.add
+      .text(0, -penH / 2 - 16, 'Calf Pen', {
+        fontFamily: 'Georgia, serif',
+        fontSize: '13px',
+        color: '#f0e6c8',
+        stroke: '#0a1208',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5);
+    container.add(title);
+
+    // Click target covering the whole pen
+    const hit = this.add
+      .rectangle(cx, cy, penW, penH, 0x000000, 0.001)
+      .setDepth(7)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', (_pointer, _lx, _ly, event) => {
+      if (!this.sys?.isActive()) return;
+      event?.stopPropagation?.();
+      this.tryStartUnlockChallenge('calf');
+    });
+    hit.setData('label', title);
+    hit.setData('baseLabel', 'Calf Pen');
+
+    this.calfPen = {
+      container,
+      hit,
+      calves,
+      waterBucket,
+      foodBucket,
+      waterFill,
+      foodPile,
+      waterLabel,
+      foodLabel,
+      waterMax: half,
+      foodMax: Math.max(1, settings.fillsNeeded - half),
+      fillsNeeded: settings.fillsNeeded,
+      minSpacing,
+      wanderBounds: {
+        minX: -penW / 2 + 32,
+        maxX: penW / 2 - 32,
+        minY: -penH / 2 + 28,
+        maxY: penH / 2 - 48,
+      },
+    };
+
+    this.unlockSprites?.set('calf', hit);
+    this.placedUnlockIds.add('calf');
+
+    // Start each calf wandering at a staggered time so the herd feels alive
+    calves.forEach((sprite, i) => {
+      if (!sprite?.play) return;
+      this.time.delayedCall(200 + i * 180 + Math.random() * 400, () => {
+        this.wanderCalfStep(sprite);
+      });
+    });
+
+    // Restore fill if stage already complete
+    const progress = getChallengeProgress('calf', 'feed_calves');
+    if (progress?.done) {
+      this.calfFeedRound = {
+        waterLevel: half,
+        foodLevel: this.calfPen.foodMax,
+        correctCount: settings.fillsNeeded,
+        nextFill: 'food',
+        usedQuestionIds: [],
+      };
+      this.refreshCalfPenBuckets();
+    } else {
+      this.calfFeedRound = {
+        waterLevel: 0,
+        foodLevel: 0,
+        correctCount: 0,
+        nextFill: 'water',
+        usedQuestionIds: [],
+      };
+    }
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'unlock_placed',
+      itemId: 'calf',
+      tileX: slot.tileX,
+      tileY: slot.tileY,
+      hasTexture: Boolean(calfKey),
+    });
+
+    return hit;
+  }
+
+  /**
+   * Walk-cycle anims from unlock_calf sheet (6×8 of 64px frames).
+   * Rows 0–3: down / up / side / side.
+   */
+  ensureCalfAnimations() {
+    if (!this.textures.exists('unlock_calf')) return;
+    const defs = [
+      { key: 'calf-walk-down', start: 0, end: 5 },
+      { key: 'calf-walk-up', start: 6, end: 11 },
+      { key: 'calf-walk-side', start: 12, end: 17 },
+    ];
+    for (const d of defs) {
+      if (this.anims.exists(d.key)) continue;
+      this.anims.create({
+        key: d.key,
+        frames: this.anims.generateFrameNumbers('unlock_calf', {
+          start: d.start,
+          end: d.end,
+        }),
+        frameRate: 8,
+        repeat: -1,
+      });
+    }
+  }
+
+  /** True if (x,y) keeps minSpacing from every other calf. */
+  isCalfSpotFree(x, y, self, minSpacing) {
+    const herd = this.calfPen?.calves || [];
+    for (const other of herd) {
+      if (!other?.active || other === self) continue;
+      if (Math.hypot(other.x - x, other.y - y) < minSpacing) return false;
+    }
+    return true;
+  }
+
+  /** Pick a nearby free spot in the pen and walk there with a facing walk cycle. */
+  wanderCalfStep(sprite) {
+    if (!this.sys?.isActive() || !sprite?.active || !this.calfPen) return;
+    if (sprite.getData('crying')) {
+      this.time.delayedCall(500, () => this.wanderCalfStep(sprite));
+      return;
+    }
+
+    const bounds = this.calfPen.wanderBounds;
+    if (!bounds) return;
+    const minSpacing = this.calfPen.minSpacing || 44;
+
+    let tx = sprite.x;
+    let ty = sprite.y;
+    let found = false;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const reach = 24 + Math.random() * 40;
+      const angle = Math.random() * Math.PI * 2;
+      const nx = Phaser.Math.Clamp(
+        sprite.x + Math.cos(angle) * reach,
+        bounds.minX,
+        bounds.maxX,
+      );
+      const ny = Phaser.Math.Clamp(
+        sprite.y + Math.sin(angle) * reach,
+        bounds.minY,
+        bounds.maxY,
+      );
+      if (this.isCalfSpotFree(nx, ny, sprite, minSpacing)) {
+        tx = nx;
+        ty = ny;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      // Stay put a moment rather than walking into the herd
+      this.time.delayedCall(500 + Math.random() * 900, () =>
+        this.wanderCalfStep(sprite),
+      );
+      return;
+    }
+
+    const dx = tx - sprite.x;
+    const dy = ty - sprite.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 3) {
+      this.time.delayedCall(300 + Math.random() * 700, () =>
+        this.wanderCalfStep(sprite),
+      );
+      return;
+    }
+
+    if (sprite.play) {
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        sprite.setFlipX(dx < 0);
+        sprite.play('calf-walk-side', true);
+      } else if (dy < 0) {
+        sprite.setFlipX(false);
+        sprite.play('calf-walk-up', true);
+      } else {
+        sprite.setFlipX(false);
+        sprite.play('calf-walk-down', true);
+      }
+    }
+
+    const speed = 14 + Math.random() * 10;
+    const duration = Math.max(450, (dist / speed) * 1000);
+    const existing = sprite.getData('wanderTween');
+    if (existing?.stop) existing.stop();
+
+    const tween = this.tweens.add({
+      targets: sprite,
+      x: tx,
+      y: ty,
+      duration,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        if (!sprite?.active) return;
+        sprite.anims?.stop();
+        const idleFrame =
+          Math.abs(dx) >= Math.abs(dy) ? 12 : dy < 0 ? 6 : 0;
+        if (sprite.setFrame) sprite.setFrame(idleFrame);
+        this.tweens.add({
+          targets: sprite,
+          y: sprite.y - 1.2,
+          duration: 280,
+          yoyo: true,
+          ease: 'Sine.easeInOut',
+        });
+        this.time.delayedCall(400 + Math.random() * 1200, () =>
+          this.wanderCalfStep(sprite),
+        );
+      },
+    });
+    sprite.setData('wanderTween', tween);
+  }
+
+  refreshCalfPenBuckets() {
+    const pen = this.calfPen;
+    const round = this.calfFeedRound;
+    if (!pen || !round) return;
+    const wMax = pen.waterMax || 1;
+    const fMax = pen.foodMax || 1;
+    const wPct = Math.min(1, round.waterLevel / wMax);
+    const fPct = Math.min(1, round.foodLevel / fMax);
+    if (pen.waterFill?.setDisplaySize) {
+      pen.waterFill.setDisplaySize(18, Math.max(4, 22 * wPct));
+      pen.waterFill.setFillStyle(0x3a9fd8, wPct > 0 ? 0.95 : 0.25);
+    }
+    if (pen.foodPile?.setAlpha) {
+      pen.foodPile.setAlpha(0.12 + fPct * 0.88);
+    }
+    pen.waterLabel?.setText(`Water ${round.waterLevel}/${wMax}`);
+    pen.foodLabel?.setText(`Food ${round.foodLevel}/${fMax}`);
+  }
+
+  makeCalfCry() {
+    const calves = this.calfPen?.calves || [];
+    if (!calves.length) return;
+    const hungry = calves.filter((c) => c?.active);
+    const target = hungry[Math.floor(Math.random() * hungry.length)];
+    if (!target) return;
+
+    target.setData('crying', true);
+    const wanderTween = target.getData('wanderTween');
+    if (wanderTween?.stop) wanderTween.stop();
+    target.anims?.stop();
+
+    this.tweens.add({
+      targets: target,
+      x: target.x + 4,
+      duration: 80,
+      yoyo: true,
+      repeat: 5,
+    });
+    target.setTint?.(0x88aaff);
+    const tear = this.add
+      .text(
+        this.calfPen.container.x + target.x + 10,
+        this.calfPen.container.y + target.y - 18,
+        'baa…',
+        {
+          fontFamily: 'Georgia, serif',
+          fontSize: '12px',
+          color: '#9fd4ff',
+          stroke: '#0a1208',
+          strokeThickness: 3,
+        },
+      )
+      .setDepth(12);
+    this.time.delayedCall(900, () => {
+      tear.destroy();
+      target.clearTint?.();
+      target.setData('crying', false);
+      this.wanderCalfStep(target);
+    });
   }
 
   refreshActiveChallenges() {
     this.activeChallenges = buildActiveChallenges(this.levelId);
+    this.refreshChallengeMarkers();
     ForestGameBridge.emit(FARM_EVENTS.CHALLENGES_STATE, {
       levelId: this.levelId,
       challenges: this.activeChallenges,
     });
   }
 
-  findNearestChallengeItem(maxDist = TILE_SIZE * 2.5) {
+  /** Glow ring + one clear label (never stack "QUEST" on top of the name). */
+  refreshChallengeMarkers() {
+    if (this.challengeMarkers) {
+      this.challengeMarkers.clear(true, true);
+    }
+    this.challengeMarkers = this.add.group();
+    const open = (this.activeChallenges || []).filter((c) => !c.done);
+    const openIds = new Set(open.map((c) => c.itemId));
+
+    // Restore plain names on unlocks that no longer have an open quest
+    for (const [itemId, spr] of this.unlockSprites?.entries() || []) {
+      if (openIds.has(itemId)) continue;
+      const label = spr?.getData?.('label');
+      const base = spr?.getData?.('baseLabel');
+      if (label?.setText && base) {
+        label.setText(base);
+        label.setColor('#f0e6c8');
+      }
+    }
+
+    for (const c of open) {
+      const spr = this.unlockSprites?.get(c.itemId);
+      if (!spr?.active) continue;
+      const x = spr.x;
+      const y = spr.y;
+      const radius = Math.max(
+        14,
+        Math.min(
+          28,
+          ((spr.displayWidth || 32) + (spr.displayHeight || 32)) / 5,
+        ),
+      );
+      const ring = this.add
+        .circle(x, y + 4, radius, 0xd4a017, 0.28)
+        .setStrokeStyle(2, 0xffe08a, 0.85)
+        .setDepth(4);
+      ring.disableInteractive?.();
+      if (ring.input) ring.input.enabled = false;
+
+      const base =
+        spr.getData('baseLabel') ||
+        c.itemLabel ||
+        c.itemId ||
+        'Unlock';
+      const label = spr.getData('label');
+      if (label?.setText) {
+        label.setText(`${base} — Quest`);
+        label.setColor('#ffe9a8');
+      }
+
+      this.tweens.add({
+        targets: ring,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        alpha: 0.12,
+        duration: 750,
+        yoyo: true,
+        repeat: -1,
+      });
+      this.challengeMarkers.add(ring);
+    }
+  }
+
+  focusCameraOnUnlock(itemId) {
+    const spr = this.unlockSprites?.get(itemId);
+    if (!spr || !this.cameras?.main) return;
+    this.cameras.main.pan(spr.x, spr.y, 450, 'Sine.easeInOut');
+  }
+
+  findNearestChallengeItem(maxDist = TILE_SIZE * 4.5) {
     if (!this.player || !this.unlockSprites) return null;
     let best = null;
     let bestD = maxDist;
@@ -1220,11 +1779,45 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Start an unlock challenge from a map click.
+   * Clears a stuck input lock (no pending modal) so house / hen / calf stay clickable.
+   */
+  tryStartUnlockChallenge(itemId) {
+    if (!itemId) return false;
+    if (this.farmInputLocked) {
+      const busy =
+        Boolean(this.pendingQuizMode) || Boolean(this.pendingItemChallenge);
+      if (busy) {
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'challenge_blocked',
+          reason: 'input_locked',
+          itemId,
+          hint: 'Finish or close the open window first, then try again.',
+        });
+        return false;
+      }
+      // Stuck lock from a previous modal — free input so clicks work again
+      this.farmInputLocked = false;
+      this.physics?.world?.resume();
+    }
+    return this.startChallengeForUnlock(itemId);
+  }
+
+  /**
    * Start the next open challenge for a placed unlock (house, hen house, …).
    * Used by clicking the sprite or pressing E nearby.
    */
   startChallengeForUnlock(itemId) {
-    if (!itemId || this.farmInputLocked) return false;
+    if (!itemId) return false;
+    if (this.farmInputLocked) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'input_locked',
+        itemId,
+        hint: 'Finish or close the open window first, then try again.',
+      });
+      return false;
+    }
     this.refreshActiveChallenges();
     const open = this.activeChallenges?.find(
       (c) => c.itemId === itemId && !c.done,
@@ -1240,7 +1833,9 @@ export default class GameScene extends Phaser.Scene {
             ? 'No egg challenge yet — buy chicks on a previous level, then return.'
             : itemId === 'house'
               ? 'No house challenge open right now.'
-              : `${item?.name || itemId}: no open challenge.`,
+              : itemId === 'calf'
+                ? 'No calf feed challenge yet — buy a calf on a previous level, then play the next level.'
+                : `${item?.name || itemId}: no open challenge.`,
       });
       return false;
     }
@@ -1252,8 +1847,17 @@ export default class GameScene extends Phaser.Scene {
   }
 
   beginItemChallenge(payload = {}) {
-    if (this.farmInputLocked) return;
+    if (this.farmInputLocked) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'input_locked',
+        itemId: payload.itemId,
+        hint: 'Finish or close the open window first, then try again.',
+      });
+      return;
+    }
     const itemId = payload.itemId;
+    if (itemId) this.focusCameraOnUnlock(itemId);
     const stageId = payload.stageId;
     let challenge =
       this.activeChallenges?.find(
@@ -1274,36 +1878,30 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    const step = getNextChallengeStep(challenge);
-    if (!step) {
-      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'challenge_blocked',
-        reason: 'stage_complete',
-        itemId: challenge.itemId,
-      });
-      return;
-    }
-
-    this.pendingQuizMode = 'item_challenge';
-    this.pendingItemChallenge = {
-      itemId: challenge.itemId,
-      stageId: challenge.stageId,
-      stepIndex: challenge.stepIndex || 0,
-      rewardRp: challenge.rewardRp || 0,
-      rewardCash: challenge.rewardCash || 0,
-      totalSteps: challenge.steps.length,
-      title: challenge.title,
-      step,
-    };
-
-    // House egg coop (Collect Eggs stage) — before generic house interior
+    // Modal mini-games open without needing a quiz step payload first
     if (
       challenge.mode === 'egg_collect' ||
       isEggCollectStage(challenge.itemId, challenge.stageId)
     ) {
+      this.pendingQuizMode = 'item_challenge';
+      this.pendingItemChallenge = {
+        itemId: challenge.itemId,
+        stageId: challenge.stageId,
+        stepIndex: challenge.stepIndex || 0,
+        rewardRp: challenge.rewardRp || 0,
+        rewardCash: challenge.rewardCash || 0,
+        totalSteps: challenge.steps?.length || 1,
+        title: challenge.title,
+        step: getNextChallengeStep(challenge),
+      };
       this.farmInputLocked = true;
       this.player?.setVelocity(0);
       this.physics.world.pause();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_opening',
+        itemId: challenge.itemId,
+        hint: 'Opening Hen House…',
+      });
       ForestGameBridge.emit(FARM_EVENTS.OPEN_EGG_COLLECT, {
         itemId: challenge.itemId,
         stageId: challenge.stageId,
@@ -1315,17 +1913,80 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (
+      challenge.mode === 'calf_feed' ||
+      isCalfFeedStage(challenge.itemId, challenge.stageId)
+    ) {
+      if (!this.calfPen) this.placeCalfPen();
+      const settings = getCalfFeedSettings(this.gameplayBand || 'average');
+      const half = Math.ceil(settings.fillsNeeded / 2);
+      if (!this.calfFeedRound) {
+        this.calfFeedRound = {
+          waterLevel: 0,
+          foodLevel: 0,
+          correctCount: 0,
+          nextFill: 'water',
+          usedQuestionIds: [],
+        };
+      }
+      if (this.calfPen) {
+        this.calfPen.waterMax = half;
+        this.calfPen.foodMax = Math.max(1, settings.fillsNeeded - half);
+        this.calfPen.fillsNeeded = settings.fillsNeeded;
+      }
+      this.pendingQuizMode = 'calf_feed';
+      this.pendingItemChallenge = {
+        itemId: challenge.itemId,
+        stageId: challenge.stageId || 'feed_calves',
+        stepIndex: challenge.stepIndex || 0,
+        rewardRp: challenge.rewardRp || 0,
+        rewardCash: challenge.rewardCash || 0,
+        totalSteps: settings.fillsNeeded,
+        title: challenge.title || 'Feed the Calves',
+      };
+      this.openCalfFeedQuestion();
+      return;
+    }
+
+    const step = getNextChallengeStep(challenge);
+    if (!step && challenge.itemId !== 'house') {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_blocked',
+        reason: 'stage_complete',
+        itemId: challenge.itemId,
+        hint: 'That challenge is already finished.',
+      });
+      return;
+    }
+
+    this.pendingQuizMode = 'item_challenge';
+    this.pendingItemChallenge = {
+      itemId: challenge.itemId,
+      stageId: challenge.stageId,
+      stepIndex: challenge.stepIndex || 0,
+      rewardRp: challenge.rewardRp || 0,
+      rewardCash: challenge.rewardCash || 0,
+      totalSteps: challenge.steps?.length || 1,
+      title: challenge.title,
+      step,
+    };
+
     // House: open empty room — furniture appears as answers are correct
     if (challenge.itemId === 'house') {
       this.farmInputLocked = true;
       this.player?.setVelocity(0);
       this.physics.world.pause();
       const progress = getChallengeProgress(challenge.itemId, challenge.stageId);
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'challenge_opening',
+        itemId: 'house',
+        hint: 'Opening Farm House…',
+      });
       ForestGameBridge.emit(FARM_EVENTS.OPEN_HOUSE_INTERIOR, {
         itemId: challenge.itemId,
         stageId: challenge.stageId,
         title: challenge.title,
-        step,
+        step: step || null,
         placed: progress?.placed || [],
         stepIndex: challenge.stepIndex || 0,
         gameplayBand: this.gameplayBand || 'average',
@@ -1336,15 +1997,17 @@ export default class GameScene extends Phaser.Scene {
             : this.gameplayBand === 'weak'
               ? 'Poor furniture'
               : 'Average luxury',
-        question: {
-          id: step.id,
-          prompt: step.prompt,
-          options: step.options,
-          correctIndex: step.correctIndex,
-          hint: step.hint,
-          rp: challenge.rewardRp || 20,
-          topic: challenge.title,
-        },
+        question: step
+          ? {
+              id: step.id,
+              prompt: step.prompt,
+              options: step.options,
+              correctIndex: step.correctIndex,
+              hint: step.hint,
+              rp: challenge.rewardRp || 20,
+              topic: challenge.title,
+            }
+          : null,
       });
       return;
     }
@@ -1378,6 +2041,173 @@ export default class GameScene extends Phaser.Scene {
         openedAt: this.quizOpenedAt,
       }),
     );
+  }
+
+  openCalfFeedQuestion() {
+    if (!this.sys?.isActive()) return;
+    const round = this.calfFeedRound || { usedQuestionIds: [] };
+    const q = pickCalfFeedQuestion(round.usedQuestionIds || []);
+    const pending = this.pendingItemChallenge || {};
+    const filled =
+      (round.waterLevel || 0) + (round.foodLevel || 0);
+    const need = this.calfPen?.fillsNeeded || pending.totalSteps || 4;
+
+    this.farmInputLocked = true;
+    this.player?.setVelocity(0);
+    this.physics.world.pause();
+    this.quizOpenedAt = Date.now();
+    this.pendingQuizMode = 'calf_feed';
+
+    const question = {
+      id: q.id,
+      prompt: q.prompt,
+      options: q.options,
+      correctIndex: q.correctIndex,
+      hint: q.hint,
+      rp: pending.rewardRp || 20,
+      topic: pending.title || 'Feed the Calves',
+    };
+
+    ForestGameBridge.emit(
+      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+      this.withGameplayQuizMeta({
+        mode: 'calf_feed',
+        challenge: 'calf_feed',
+        itemId: 'calf',
+        stageId: pending.stageId || 'feed_calves',
+        question,
+        questionData: question,
+        rp: question.rp,
+        levelId: this.farmLevel.id,
+        openedAt: this.quizOpenedAt,
+        calfProgress: `${filled}/${need} fills`,
+      }),
+    );
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'calf_feed_quiz',
+      filled,
+      need,
+      waterLevel: round.waterLevel || 0,
+      foodLevel: round.foodLevel || 0,
+    });
+  }
+
+  resolveCalfFeedSuccess(payload = {}) {
+    const settings = getCalfFeedSettings(this.gameplayBand || 'average');
+    const pen = this.calfPen;
+    const half = pen?.waterMax || Math.ceil(settings.fillsNeeded / 2);
+    const foodMax = pen?.foodMax || Math.max(1, settings.fillsNeeded - half);
+    const fillsNeeded = pen?.fillsNeeded || settings.fillsNeeded;
+
+    if (!this.calfFeedRound) {
+      this.calfFeedRound = {
+        waterLevel: 0,
+        foodLevel: 0,
+        correctCount: 0,
+        nextFill: 'water',
+        usedQuestionIds: [],
+      };
+    }
+    const round = this.calfFeedRound;
+    const qid = payload.questionId || payload.question?.id;
+    if (qid && !round.usedQuestionIds.includes(qid)) {
+      round.usedQuestionIds.push(qid);
+    }
+
+    const fillKind = round.nextFill === 'food' ? 'food' : 'water';
+    if (fillKind === 'water') {
+      round.waterLevel = Math.min(half, round.waterLevel + 1);
+    } else {
+      round.foodLevel = Math.min(foodMax, round.foodLevel + 1);
+    }
+    round.correctCount += 1;
+    round.nextFill =
+      round.waterLevel >= half
+        ? 'food'
+        : round.foodLevel >= foodMax
+          ? 'water'
+          : fillKind === 'water'
+            ? 'food'
+            : 'water';
+
+    this.refreshCalfPenBuckets();
+    this.audioItem?.play();
+
+    const floatX =
+      (this.calfPen?.container?.x || 0) + (fillKind === 'water' ? -48 : 48);
+    const floatY = (this.calfPen?.container?.y || 0) + 20;
+    const pop = this.add
+      .text(floatX, floatY, fillKind === 'water' ? '+ water' : '+ food', {
+        fontFamily: 'Georgia, serif',
+        fontSize: '13px',
+        color: fillKind === 'water' ? '#9fd4ff' : '#ffe9a8',
+        stroke: '#0a1208',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(14);
+    this.tweens.add({
+      targets: pop,
+      y: floatY - 28,
+      alpha: 0,
+      duration: 900,
+      onComplete: () => pop.destroy(),
+    });
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'calf_feed',
+      correct: true,
+      fillKind,
+      waterLevel: round.waterLevel,
+      foodLevel: round.foodLevel,
+    });
+
+    const done =
+      round.waterLevel >= half &&
+      round.foodLevel >= foodMax &&
+      round.correctCount >= fillsNeeded;
+
+    if (done) {
+      this.finishCalfFeedStage({
+        correctCount: round.correctCount,
+        waterLevel: round.waterLevel,
+        foodLevel: round.foodLevel,
+      });
+      return;
+    }
+
+    // Next question after a short beat
+    this.time.delayedCall(450, () => {
+      if (!this.sys?.isActive()) return;
+      this.openCalfFeedQuestion();
+    });
+  }
+
+  resolveCalfFeedWrong(payload = {}) {
+    if (!this.calfFeedRound) {
+      this.calfFeedRound = {
+        waterLevel: 0,
+        foodLevel: 0,
+        correctCount: 0,
+        nextFill: 'water',
+        usedQuestionIds: [],
+      };
+    }
+    const qid = payload.questionId || payload.question?.id;
+    if (qid && !this.calfFeedRound.usedQuestionIds.includes(qid)) {
+      this.calfFeedRound.usedQuestionIds.push(qid);
+    }
+    this.makeCalfCry();
+    this.audioHurt?.play();
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'calf_feed',
+      correct: false,
+    });
+    this.time.delayedCall(700, () => {
+      if (!this.sys?.isActive()) return;
+      this.openCalfFeedQuestion();
+    });
   }
 
   /** After house interior fully furnished — complete the stage. */
@@ -1536,6 +2366,71 @@ export default class GameScene extends Phaser.Scene {
   }
 
   cancelEggCollect() {
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    this.resumeAfterQuiz();
+  }
+
+  /** After calf-feed round succeeds — complete the feed stage. */
+  finishCalfFeedStage(payload = {}) {
+    const pending = this.pendingItemChallenge;
+    this.pendingQuizMode = null;
+    this.pendingItemChallenge = null;
+    if (!pending) {
+      this.resumeAfterQuiz();
+      return;
+    }
+
+    const stage = getStage(pending.itemId, pending.stageId);
+    advanceChallengeProgress(pending.itemId, pending.stageId, {
+      stepIndex: stage?.steps?.length || pending.totalSteps || 1,
+      done: true,
+      placed: [],
+    });
+
+    if (pending.rewardCash) {
+      this.currentMoney += pending.rewardCash;
+      this.syncMoneyAliases();
+    }
+    this.audioItem?.play();
+    this.cameras.main.flash(200, 180, 220, 255);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'challenge_complete',
+      itemId: pending.itemId,
+      stageId: pending.stageId,
+      title: pending.title,
+      rp: pending.rewardRp || 0,
+      rewardCash: pending.rewardCash || 0,
+      calfFills: payload.correctCount || 0,
+      earnings: this.currentMoney,
+    });
+    this.refreshActiveChallenges();
+    this.emitFarmState();
+    this.checkTargetReached();
+    this.resumeAfterQuiz();
+  }
+
+  onCalfFeedCorrect(payload = {}) {
+    this.recordQuizAttempt(true, payload.responseTimeMs);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'calf_feed',
+      correct: true,
+      itemId: this.pendingItemChallenge?.itemId,
+    });
+    this.emitFarmState();
+  }
+
+  onCalfFeedWrong(payload = {}) {
+    this.recordQuizAttempt(false, payload.responseTimeMs);
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'calf_feed',
+      correct: false,
+      itemId: this.pendingItemChallenge?.itemId,
+    });
+    this.emitFarmState();
+  }
+
+  cancelCalfFeed() {
     this.pendingQuizMode = null;
     this.pendingItemChallenge = null;
     this.resumeAfterQuiz();
@@ -1713,7 +2608,7 @@ export default class GameScene extends Phaser.Scene {
 
     const nearItem = this.findNearestChallengeItem();
     if (nearItem) {
-      this.startChallengeForUnlock(nearItem);
+      this.tryStartUnlockChallenge(nearItem);
       return;
     }
 
@@ -2085,6 +2980,11 @@ export default class GameScene extends Phaser.Scene {
       this.recordQuizAttempt(true, payload.responseTimeMs);
       const mode = this.pendingQuizMode || payload.mode || 'plant';
 
+      if (mode === 'calf_feed') {
+        this.resolveCalfFeedSuccess(payload);
+        return;
+      }
+
       if (mode === 'item_challenge') {
         this.resolveItemChallengeSuccess();
         return;
@@ -2192,6 +3092,13 @@ export default class GameScene extends Phaser.Scene {
     try {
       this.recordQuizAttempt(false, payload.responseTimeMs);
       const mode = this.pendingQuizMode || payload.mode || 'plant';
+
+      if (mode === 'calf_feed') {
+        // Keep calf feed going — cry, then next question
+        this.resolveCalfFeedWrong(payload);
+        return;
+      }
+
       this.pendingQuizMode = null;
       this.pendingItemChallenge = null;
 

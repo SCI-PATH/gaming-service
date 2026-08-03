@@ -48,6 +48,9 @@ export function buildActiveChallenges(currentLevelId = 1) {
         continue;
       }
       const progress = getChallengeProgress(itemId, stage.id);
+      const stepCount = stage.steps?.length || 0;
+      const rawStep = Number(progress.stepIndex) || 0;
+      const isDone = Boolean(progress.done) || (stepCount > 0 && rawStep >= stepCount);
       active.push({
         itemId,
         itemLabel: def.label,
@@ -56,10 +59,10 @@ export function buildActiveChallenges(currentLevelId = 1) {
         title: stage.title,
         description: stage.description,
         steps: stage.steps,
-        stepIndex: progress.done
-          ? stage.steps.length
-          : Math.min(progress.stepIndex || 0, stage.steps.length),
-        done: Boolean(progress.done),
+        stepIndex: isDone
+          ? stepCount
+          : Math.min(rawStep, Math.max(0, stepCount - 1)),
+        done: isDone,
         rewardRp: stage.rewardRp || 0,
         rewardCash: stage.rewardCash || 0,
         mode: stage.mode || null,

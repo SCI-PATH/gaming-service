@@ -1,12 +1,13 @@
 /**
- * Lists unlock-item challenges active on this farm level.
- * House / hen house challenges start by clicking those buildings on the farm
- * (not from panel buttons).
+ * Lists unlock-item challenges from prior-level purchases.
+ * Go → pans camera and starts the challenge; map clicks still work too.
  */
 export default function ChallengePanel({
   challenges = [],
+  onStartChallenge,
   visible = true,
   levelId,
+  disabled = false,
 }) {
   if (!visible) return null;
 
@@ -16,17 +17,17 @@ export default function ChallengePanel({
   return (
     <aside className="challenge-panel" aria-label="Unlock item challenges">
       <div className="challenge-panel-head">
-        <strong>Item Challenges</strong>
+        <strong>Open Challenges</strong>
         <span>
-          {levelId ? `Level ${levelId}` : 'This level'} — click buildings on the
-          farm
+          {levelId ? `Level ${levelId}` : 'This level'} — from unlocks you bought
+          earlier
         </span>
       </div>
 
       {open.length < 1 && done.length < 1 && (
         <p className="challenge-panel-empty">
           Finish a level, buy unlocks in the shop, then play the next level.
-          Click the Farm House or Hen House on the map to start their challenges.
+          Open challenges will list here with a Go button.
         </p>
       )}
 
@@ -35,6 +36,7 @@ export default function ChallengePanel({
           const step = c.steps?.[c.stepIndex];
           const isHouse = c.itemId === 'house';
           const isHen = c.itemId === 'hen_house';
+          const isCalf = c.itemId === 'calf';
           return (
             <li key={`${c.itemId}-${c.stageId}`} className="challenge-card">
               <div className="challenge-card-top">
@@ -46,12 +48,26 @@ export default function ChallengePanel({
                 Step {(c.stepIndex || 0) + 1}/{c.steps.length}
                 {step ? `: ${step.label}` : ''}
               </p>
+              <button
+                type="button"
+                disabled={disabled || !onStartChallenge}
+                onClick={() =>
+                  onStartChallenge?.({
+                    itemId: c.itemId,
+                    stageId: c.stageId,
+                  })
+                }
+              >
+                Go
+              </button>
               <p className="challenge-go-hint">
                 {isHouse
-                  ? '→ Click the Farm House on the farm to enter'
+                  ? 'Or click the Farm House on the map'
                   : isHen
-                    ? '→ Click the Hen House on the farm to collect eggs'
-                    : '→ Walk near the item and press E, or click it'}
+                    ? 'Or click the Hen House on the map'
+                    : isCalf
+                      ? 'Or click the Calf Pen (SW pasture)'
+                      : 'Or click the unlock / press E nearby'}
               </p>
             </li>
           );

@@ -56,6 +56,12 @@ export const FARM_EVENTS = {
   EGG_COLLECT_CANCEL: 'EGG_COLLECT_CANCEL',
   EGG_PROTECT_CORRECT: 'EGG_PROTECT_CORRECT',
   EGG_PROTECT_WRONG: 'EGG_PROTECT_WRONG',
+  /** Calf feed mini-game (water + food buckets in fenced pen) */
+  OPEN_CALF_FEED: 'OPEN_CALF_FEED',
+  CALF_FEED_DONE: 'CALF_FEED_DONE',
+  CALF_FEED_CANCEL: 'CALF_FEED_CANCEL',
+  CALF_FEED_CORRECT: 'CALF_FEED_CORRECT',
+  CALF_FEED_WRONG: 'CALF_FEED_WRONG',
   /** Dev shortcuts: jump into farm with money / house seeded */
   DEV_JUMP_FARM: 'DEV_JUMP_FARM',
 };

@@ -49,6 +49,7 @@ export default function LevelQuestScroll({
       const step = c.steps?.[c.stepIndex];
       const isHouse = c.itemId === 'house';
       const isHen = c.itemId === 'hen_house';
+      const isCalf = c.itemId === 'calf';
       list.push({
         id: `${c.itemId}-${c.stageId}`,
         title: `${c.itemLabel}: ${c.title}`,
@@ -60,7 +61,9 @@ export default function LevelQuestScroll({
           ? 'Click the Farm House on the farm'
           : isHen
             ? 'Click the Hen House on the farm'
-            : 'Click the unlock on the farm, or press E nearby',
+            : isCalf
+              ? 'Click the Calf Pen (far SW pasture)'
+              : 'Click the unlock on the farm, or press E nearby',
         kind: 'challenge',
       });
     }
@@ -81,7 +84,6 @@ export default function LevelQuestScroll({
       return undefined;
     }
     setNoted(new Set());
-    // Next frame → trigger CSS unfurl
     const id = window.requestAnimationFrame(() => setUnfurled(true));
     return () => window.cancelAnimationFrame(id);
   }, [open, levelId]);

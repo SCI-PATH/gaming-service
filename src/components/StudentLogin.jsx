@@ -79,14 +79,14 @@ export default function StudentLogin({ onLogin }) {
   };
 
   /**
-   * One test shortcut per band: seeds house + chicks (+ hen house) as if bought
-   * on a previous level. Click Farm House / Hen House on the map to play.
+   * Test shortcut: seeds house + chicks (+ hen house) + calf as if bought
+   * on a previous level. Click Farm House / Hen House / Calf on the map.
    */
   const playHouseAndEggsAs = (student) => {
     const loggedIn = loginTestStudent(student.id);
     if (!loggedIn) {
       setError(
-        `Could not start house + eggs test as ${student.displayName}.`,
+        `Could not start house + eggs + calf test as ${student.displayName}.`,
       );
       return;
     }
@@ -95,6 +95,7 @@ export default function StudentLogin({ onLogin }) {
     // Pretend student bought these after level 1 (challenges unlock on level 2+)
     markUnlocked('house', { purchasedAtLevel: 1 });
     markUnlocked('chick', { purchasedAtLevel: 1 });
+    markUnlocked('calf', { purchasedAtLevel: 1 });
     try {
       // Skip raise-chick quiz noise for the house/eggs check
       advanceChallengeProgress('chick', 'raise_chick', {
@@ -148,8 +149,8 @@ export default function StudentLogin({ onLogin }) {
         <h1>Student Login</h1>
         <p className="student-login-sub">
           Each account keeps its own mastery, gameplay band, house luxury, egg
-          timers, and unlocks. Test buttons only skip the shop for checking —
-          in the real game students buy the house and chicks on earlier levels.
+          timers, calf feed pace, and unlocks. Test buttons only skip the shop
+          for checking — in the real game students buy unlocks on earlier levels.
         </p>
 
         <div className="student-gameplay-tests">
@@ -174,9 +175,10 @@ export default function StudentLogin({ onLogin }) {
 
         <div className="student-gameplay-tests student-house-tests">
           <p>
-            House + eggs test (weak / average / smart) — seeds Farm House and
-            Hen House. Click the Farm House for furniture; click the Hen House
-            for egg collect (timer/luxury follow your band).
+            House + eggs + calf test (weak / average / smart) — seeds Farm
+            House, Hen House, and a Calf Pen on the map. Click buildings/pen on
+            the farm; calf feed uses normal science questions and fills buckets
+            in the pen.
           </p>
           <div className="student-gameplay-btns">
             {GAMEPLAY_TEST_USERS.map((s) => (
@@ -186,16 +188,16 @@ export default function StudentLogin({ onLogin }) {
                 className={`student-gameplay-btn gp-${s.gameplayProfile}`}
                 onClick={() => playHouseAndEggsAs(s)}
               >
-                <strong>House + Eggs · {s.displayName}</strong>
+                <strong>House + Eggs + Calf · {s.displayName}</strong>
                 <span>
                   {s.username} / {s.password}
                 </span>
                 <em>
                   {s.gameplayProfile === 'weak'
-                    ? 'Poor furniture + coop (gentle timer)'
+                    ? 'Poor furniture + gentle egg/calf timers'
                     : s.gameplayProfile === 'strong'
-                      ? 'Luxury furniture + coop (fast timer)'
-                      : 'Average furniture + coop (steady timer)'}
+                      ? 'Luxury furniture + fast egg/calf timers'
+                      : 'Average furniture + steady egg/calf timers'}
                 </em>
               </button>
             ))}

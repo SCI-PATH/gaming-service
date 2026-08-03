@@ -514,22 +514,20 @@ export const UNLOCK_CHALLENGES = {
     category: 'animal',
     stages: [
       {
-        id: 'raise_calf',
-        title: 'Raise the Calf',
-        description: 'Feed → water → clean → protect until it grows.',
+        id: 'feed_calves',
+        title: 'Feed the Calves',
+        description:
+          'Walk to the fenced calf pasture (separate from the house and hen house). Click the pen, answer science questions, and fill the water and food buckets on the farm.',
         minLevelsOwned: 1,
-        rewardRp: 30,
+        mode: 'calf_feed',
+        rewardRp: 35,
+        rewardCash: 12,
         steps: [
           {
-            id: 'calf-1',
-            label: 'Daily care',
-            prompt: 'A calf grows best when you…',
-            options: [
-              'Feed, water, clean, and protect it consistently',
-              'Ignore it for weeks',
-              'Only decorate it',
-              'Keep it without water',
-            ],
+            id: 'calf-feed-step',
+            label: 'Fill water & food buckets at the pen',
+            prompt: 'Feed and water the calves',
+            options: ['Feed', 'Ignore', 'Scare', 'Sell'],
             correctIndex: 0,
           },
         ],

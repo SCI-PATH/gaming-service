@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LOADING_ZONE, PLANT_PLOTS } from '../data/plantPlots.js';
 import {
+  CALF_PEN_SLOT,
+  HEN_HOUSE_SLOT,
+  UNLOCK_BUILDING_SLOTS,
+} from '../data/unlockShop.js';
+import {
   ForestGameBridge,
   FARM_EVENTS,
 } from './ForestGameBridge.js';
@@ -8,8 +13,36 @@ import {
 /** Full farm map size in tiles (matches public/assets/maps/map.json). */
 export const FARM_MAP_TILES = { width: 100, height: 75 };
 
+/** Fixed unlock landmarks on the farm (tile centers). */
+export const FARM_LANDMARKS = [
+  {
+    id: 'house',
+    label: 'Farm House',
+    short: 'HOUSE',
+    tileX: UNLOCK_BUILDING_SLOTS[0].tileX,
+    tileY: UNLOCK_BUILDING_SLOTS[0].tileY,
+    kind: 'house',
+  },
+  {
+    id: 'hen_house',
+    label: 'Hen House',
+    short: 'HEN',
+    tileX: HEN_HOUSE_SLOT.tileX,
+    tileY: HEN_HOUSE_SLOT.tileY,
+    kind: 'hen',
+  },
+  {
+    id: 'calf',
+    label: 'Calf Pen',
+    short: 'CALF',
+    tileX: CALF_PEN_SLOT.tileX,
+    tileY: CALF_PEN_SLOT.tileY,
+    kind: 'calf',
+  },
+];
+
 /**
- * Farm map: plant beds (gold), load dock (blue), live YOU pin.
+ * Farm map: plant beds (gold), load dock (blue), unlock landmarks, live YOU pin.
  */
 export default function FarmMapPanel({
   playerMapX,
@@ -73,11 +106,11 @@ export default function FarmMapPanel({
   return (
     <aside
       className={`farm-map-panel${compact ? ' is-compact' : ''}`}
-      aria-label="Farm map with plant beds and loading dock"
+      aria-label="Farm map with plant beds, load dock, and unlock locations"
     >
       <div className="farm-map-head">
         <strong>Farm Map</strong>
-        <span>Gold = plant · Blue = load</span>
+        <span>Gold = plant beds · Blue = load · House / Hen / Calf</span>
       </div>
 
       <div
@@ -92,6 +125,17 @@ export default function FarmMapPanel({
             viewBox={`0 0 ${width} ${height}`}
             aria-hidden
           >
+            {PLANT_PLOTS.map((plot) => (
+              <rect
+                key={`bed-zone-${plot.id}`}
+                className="farm-map-bed-zone"
+                x={plot.x}
+                y={plot.y}
+                width={plot.w}
+                height={Math.max(plot.h, 4)}
+                rx={0.6}
+              />
+            ))}
             {nearest && (
               <line
                 x1={px}
@@ -112,9 +156,9 @@ export default function FarmMapPanel({
                 key={plot.id}
                 className={`farm-map-bed${isClosest ? ' is-closest' : ''}`}
                 style={{ left: `${cx}%`, top: `${cy}%` }}
-                title={plot.label}
+                title={`${plot.label} — plant here`}
               >
-                <span>{shortPlantLabel(plot)}</span>
+                <span>PLANT</span>
               </div>
             );
           })}
@@ -128,6 +172,24 @@ export default function FarmMapPanel({
           >
             <span>LOAD</span>
           </div>
+
+          {FARM_LANDMARKS.map((spot) => {
+            const lx = (spot.tileX / width) * 100;
+            const ly = (spot.tileY / height) * 100;
+            const isClosest = nearest?.id === spot.id;
+            return (
+              <div
+                key={spot.id}
+                className={`farm-map-landmark farm-map-landmark-${spot.kind}${
+                  isClosest ? ' is-closest' : ''
+                }`}
+                style={{ left: `${lx}%`, top: `${ly}%` }}
+                title={spot.label}
+              >
+                <span>{spot.short}</span>
+              </div>
+            );
+          })}
 
           <div
             ref={pinRef}
@@ -152,6 +214,15 @@ export default function FarmMapPanel({
       <ul className="farm-map-legend">
         <li>
           <i className="farm-map-key farm-map-key-you is-blinking" /> You
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-house" /> House
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-hen" /> Hen
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-calf" /> Calf
         </li>
         <li>
           <i className="farm-map-key farm-map-key-bed" /> Plant
@@ -215,14 +286,6 @@ function movePin(pinEl, guideEl, x, y, mapW, mapH) {
   }
 }
 
-function shortPlantLabel(plot) {
-  if (plot.id.includes('west') && plot.id.includes('south')) return 'SW';
-  if (plot.id.includes('east') && plot.id.includes('south')) return 'SE';
-  if (plot.id.includes('west')) return 'W';
-  if (plot.id.includes('east')) return 'E';
-  return 'P';
-}
-
 function nearestTarget(tileX, tileY) {
   const targets = [
     ...PLANT_PLOTS.map((p) => ({
@@ -239,6 +302,13 @@ function nearestTarget(tileX, tileY) {
       cy: LOADING_ZONE.y + LOADING_ZONE.h / 2,
       kind: 'load',
     },
+    ...FARM_LANDMARKS.map((s) => ({
+      id: s.id,
+      label: s.label,
+      cx: s.tileX,
+      cy: s.tileY,
+      kind: s.kind,
+    })),
   ];
 
   let best = null;

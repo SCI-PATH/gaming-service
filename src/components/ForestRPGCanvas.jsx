@@ -19,6 +19,7 @@ export default function ForestRPGCanvas({
   onChallengesState,
   onOpenHouseInterior,
   onOpenEggCollect,
+  onOpenCalfFeed,
 }) {
   const hostRef = useRef(null);
   const gameRef = useRef(null);
@@ -36,6 +37,7 @@ export default function ForestRPGCanvas({
     onChallengesState,
     onOpenHouseInterior,
     onOpenEggCollect,
+    onOpenCalfFeed,
   };
 
   useEffect(() => {
@@ -65,6 +67,8 @@ export default function ForestRPGCanvas({
       cbs.current.onOpenHouseInterior?.(payload);
     const handleEggCollect = (payload) =>
       cbs.current.onOpenEggCollect?.(payload);
+    const handleCalfFeed = (payload) =>
+      cbs.current.onOpenCalfFeed?.(payload);
 
     /** Survive GameScene listener gaps during shop → next level. */
     const handleStartFarmLevel = (payload = {}) => {
@@ -98,6 +102,7 @@ export default function ForestRPGCanvas({
     ForestGameBridge.on(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
     ForestGameBridge.on(FARM_EVENTS.OPEN_HOUSE_INTERIOR, handleHouseInterior);
     ForestGameBridge.on(FARM_EVENTS.OPEN_EGG_COLLECT, handleEggCollect);
+    ForestGameBridge.on(FARM_EVENTS.OPEN_CALF_FEED, handleCalfFeed);
     ForestGameBridge.on(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
 
     // Focus canvas on click so Phaser keys work after React UI usage
@@ -129,6 +134,7 @@ export default function ForestRPGCanvas({
       ForestGameBridge.off(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
       ForestGameBridge.off(FARM_EVENTS.OPEN_HOUSE_INTERIOR, handleHouseInterior);
       ForestGameBridge.off(FARM_EVENTS.OPEN_EGG_COLLECT, handleEggCollect);
+      ForestGameBridge.off(FARM_EVENTS.OPEN_CALF_FEED, handleCalfFeed);
       ForestGameBridge.off(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
       game.destroy(true);
       gameRef.current = null;
@@ -215,4 +221,20 @@ export function emitEggProtectCorrect(payload) {
 
 export function emitEggProtectWrong(payload) {
   ForestGameBridge.emit(FARM_EVENTS.EGG_PROTECT_WRONG, payload);
+}
+
+export function emitCalfFeedDone(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.CALF_FEED_DONE, payload);
+}
+
+export function emitCalfFeedCancel(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.CALF_FEED_CANCEL, payload);
+}
+
+export function emitCalfFeedCorrect(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.CALF_FEED_CORRECT, payload);
+}
+
+export function emitCalfFeedWrong(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.CALF_FEED_WRONG, payload);
 }
