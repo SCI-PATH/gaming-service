@@ -22,6 +22,10 @@ import HouseInteriorModal from './components/HouseInteriorModal.jsx';
 import EggCollectModal from './components/EggCollectModal.jsx';
 import StudentLogin from './components/StudentLogin.jsx';
 import FarmMapPanel from './components/FarmMapPanel.jsx';
+import {
+  AvatarAssistantModal,
+  useBehavioralTelemetry,
+} from './avatar/index.js';
 import { getFarmLevel } from './data/farmLevels.js';
 import { buildActiveChallenges } from './data/challengeRuntime.js';
 import { DDA_CONFIG, formatResponseTime } from './data/dda.js';
@@ -99,6 +103,8 @@ export default function App() {
   const [questScrollOpen, setQuestScrollOpen] = useState(false);
   const [houseInterior, setHouseInterior] = useState(null);
   const [eggCollect, setEggCollect] = useState(null);
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const [avatarTrigger, setAvatarTrigger] = useState(null);
   const [gameplay, setGameplay] = useState(() => ({
     band: 'average',
     label: GAMEPLAY_BAND_LABELS.average,
@@ -113,6 +119,42 @@ export default function App() {
   const playerMapRaf = useRef(0);
   /** Level id for which the quest scroll already auto-opened */
   const questScrollLevelRef = useRef(null);
+
+  const quizKey =
+    quizPayload?.questionData?.id ||
+    quizPayload?.question?.id ||
+    quizPayload?.mode ||
+    null;
+
+  const {
+    trigger: telemTrigger,
+    session: telemetrySession,
+    metrics: behavioralMetrics,
+    misconceptions,
+    learningPrefs,
+    activeMindMap,
+    clearTrigger: clearAvatarTrigger,
+    resetSession: resetAvatarTelemetry,
+    recordAnswer: recordAvatarAnswer,
+    requestHelp: openAvatarHelp,
+    updateLearningPreferences,
+    showMindMapForTopic,
+  } = useBehavioralTelemetry({
+    // Keep telemetry hot whenever a student is logged in (quizzes can fire
+    // before the farm “active” flag settles; old gate silently dropped all misses).
+    enabled: Boolean(student),
+    quizOpen: Boolean(quizPayload),
+    quizKey,
+    levelId: farm.levelId,
+    levelElapsedSec: gameplay.live?.levelElapsedSec || 0,
+    externalRetries: gameplay.live?.retries ?? farm.retries ?? 0,
+  });
+
+  useEffect(() => {
+    if (!telemTrigger) return;
+    setAvatarTrigger(telemTrigger);
+    setAvatarOpen(true);
+  }, [telemTrigger]);
 
   const resetSessionUi = useCallback(() => {
     setGameReady(false);
@@ -129,6 +171,9 @@ export default function App() {
     setQuestScrollOpen(false);
     setHouseInterior(null);
     setEggCollect(null);
+    setAvatarOpen(false);
+    setAvatarTrigger(null);
+    resetAvatarTelemetry();
     setGameplay({
       band: 'average',
       label: GAMEPLAY_BAND_LABELS.average,
@@ -142,7 +187,24 @@ export default function App() {
     playerMapRef.current = { x: 48, y: 32 };
     setPlayerMap({ x: 48, y: 32 });
     questScrollLevelRef.current = null;
-  }, []);
+  }, [resetAvatarTelemetry]);
+
+  const handleAvatarClose = useCallback(() => {
+    setAvatarOpen(false);
+    setAvatarTrigger(null);
+    clearAvatarTrigger();
+  }, [clearAvatarTrigger]);
+
+  const handleQuizAnswerAttempt = useCallback(
+    (attempt = {}) => {
+      recordAvatarAnswer({
+        isCorrect: Boolean(attempt.isCorrect),
+        selectedText: attempt.selectedText || null,
+        questionData: attempt.questionData || null,
+      });
+    },
+    [recordAvatarAnswer],
+  );
 
   const handleLogin = useCallback(
     (nextStudent, opts = {}) => {
@@ -749,6 +811,20 @@ export default function App() {
           <div className="farm-controls">
             <button
               type="button"
+              className="avatar-help-btn"
+              onClick={openAvatarHelp}
+              disabled={
+                !gameReady ||
+                Boolean(shopOpen) ||
+                Boolean(houseInterior) ||
+                Boolean(eggCollect) ||
+                avatarOpen
+              }
+            >
+              Ask mentor
+            </button>
+            <button
+              type="button"
               className="quest-scroll-reopen"
               onClick={() => setQuestScrollOpen(true)}
               disabled={
@@ -818,6 +894,7 @@ export default function App() {
                   maxRetriesPerQuestion: quizPayload.maxRetriesPerQuestion,
                 }
               }
+              onAnswerAttempt={handleQuizAnswerAttempt}
               onClose={handleQuizClose}
             />
           )}
@@ -892,6 +969,67 @@ export default function App() {
         onProtectWrong={handleEggProtectWrong}
         onComplete={handleEggCollectComplete}
         onClose={handleEggCollectClose}
+      />
+
+      <AvatarAssistantModal
+        open={avatarOpen}
+        student={student}
+        farm={farm}
+        gameplay={gameplay}
+        quiz={quizPayload}
+        metrics={avatarTrigger?.metrics || behavioralMetrics}
+        misconceptions={misconceptions}
+        learningPrefs={learningPrefs}
+        scenario={
+          avatarTrigger?.scenario || telemetrySession.scenario || null
+        }
+        offerMindMap={Boolean(
+          avatarTrigger?.offerMindMap ||
+            avatarTrigger?.reason === 'concept_misconceptions' ||
+            avatarTrigger?.reason === 'repeated_incorrect',
+        )}
+        mindMap={
+          avatarTrigger?.offerMindMap ||
+          avatarTrigger?.reason === 'concept_misconceptions' ||
+          avatarTrigger?.reason === 'repeated_incorrect'
+            ? avatarTrigger?.mindMap || activeMindMap
+            : avatarTrigger?.mindMap || null
+        }
+        interventionMode={
+          avatarTrigger?.intervention_mode ||
+          telemetrySession.lastInterventionMode
+        }
+        perceivedState={avatarTrigger?.perceived_state}
+        onLearningMessage={updateLearningPreferences}
+        onShowMindMap={() => showMindMapForTopic()}
+        telemetry={{
+          ...telemetrySession,
+          metrics: avatarTrigger?.metrics || behavioralMetrics,
+          mindMap:
+            avatarTrigger?.mindMap ||
+            (avatarTrigger?.offerMindMap ? activeMindMap : null),
+          learningPrefs,
+          scenario: avatarTrigger?.scenario,
+          offerMindMap: avatarTrigger?.offerMindMap,
+          consecutiveFails:
+            avatarTrigger?.consecutiveFails ?? telemetrySession.consecutiveFails,
+          frustrationScore:
+            avatarTrigger?.frustrationScore ?? telemetrySession.frustrationScore,
+          timeOnQuestionMs:
+            avatarTrigger?.timeOnQuestionMs ?? telemetrySession.timeOnQuestionMs,
+          lastWrongAnswer:
+            avatarTrigger?.lastWrongAnswer ?? telemetrySession.lastWrongAnswer,
+          lastTriggerReason:
+            avatarTrigger?.reason ?? telemetrySession.lastTriggerReason,
+          lastInterventionMode:
+            avatarTrigger?.intervention_mode ||
+            telemetrySession.lastInterventionMode,
+          perceived_state: avatarTrigger?.perceived_state,
+        }}
+        triggerReason={
+          avatarTrigger?.reason || telemetrySession.lastTriggerReason
+        }
+        onClose={handleAvatarClose}
       />
     </div>
   );

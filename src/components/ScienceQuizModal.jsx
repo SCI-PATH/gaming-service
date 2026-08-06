@@ -13,10 +13,12 @@ export default function ScienceQuizModal({
   carriedCount = 0,
   gameplayAssist = null,
   onClose,
+  onAnswerAttempt,
 }) {
   const openedAtRef = useRef(Date.now());
   const finishedRef = useRef(false);
   const onCloseRef = useRef(onClose);
+  const onAnswerAttemptRef = useRef(onAnswerAttempt);
   const [result, setResult] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [showHint, setShowHint] = useState(false);
@@ -31,6 +33,10 @@ export default function ScienceQuizModal({
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    onAnswerAttemptRef.current = onAnswerAttempt;
+  }, [onAnswerAttempt]);
 
   useEffect(() => {
     openedAtRef.current = Date.now();
@@ -59,6 +65,15 @@ export default function ScienceQuizModal({
 
       finishedRef.current = true;
       const responseTimeMs = Math.max(0, Date.now() - openedAtRef.current);
+      onAnswerAttemptRef.current?.({
+        isCorrect: false,
+        selectedIndex: -1,
+        selectedText: null,
+        responseTimeMs,
+        questionData,
+        mode,
+        timedOut: true,
+      });
       setResult({
         isCorrect: false,
         selectedIndex: -1,
@@ -136,6 +151,16 @@ export default function ScienceQuizModal({
     if (result || finishedRef.current) return;
     finishedRef.current = true;
     const responseTimeMs = Math.max(0, Date.now() - openedAtRef.current);
+    const selectedText = options[selectedIndex]?.text ?? null;
+    onAnswerAttemptRef.current?.({
+      isCorrect,
+      selectedIndex,
+      selectedText,
+      responseTimeMs,
+      questionData,
+      mode,
+      timedOut: false,
+    });
     setResult({
       isCorrect,
       selectedIndex,
