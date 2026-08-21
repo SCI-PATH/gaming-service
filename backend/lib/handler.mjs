@@ -1,0 +1,495 @@
+import {
+  getSystemPromptForMode,
+  getDynamicSystemAddon,
+  isAutoCoachMessage,
+  INTERVENTION_MODES,
+} from './systemPrompt.mjs';
+import {
+  chatCompletion,
+  getLlamaConfig,
+  streamChatCompletion,
+} from './llamaClient.mjs';
+import { buildFocusedSpokenOpener } from '../../frontend/src/avatar/interventionFocus.js';
+import {
+  freezeInterventionSession,
+  resolvePerformanceReply,
+} from '../../frontend/src/avatar/mentorConversationSession.js';
+import {
+  friendlyStudentName,
+  sanitizeKidSpeech,
+} from '../../frontend/src/avatar/kidFriendlySpeech.js';
+
+/**
+ * Offline / failed-provider fallback — adaptive to student words + trigger focus.
+ */
+export function buildFallbackReply(context = {}, studentMessage = '', history = []) {
+  const mode =
+    context?.intervention_mode ||
+    INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD;
+  const name =
+    friendlyStudentName(context?.student_profile?.display_name) || 'friend';
+  const nonWrong = String(
+    context?.non_wrong_scenario_code ||
+      context?.trigger_event?.non_wrong_scenario_code ||
+      '',
+  ).toUpperCase();
+  const allowMap = context?.generate_mind_map === true;
+  const mapTopic = allowMap
+    ? context?.mind_map?.topic ||
+      context?.misconceptions?.[0]?.topic ||
+      null
+    : null;
+  const raw = String(studentMessage || '').trim();
+  const auto = isAutoCoachMessage(raw);
+  const focus = context?.intervention_focus || {};
+
+  // Student spoke — performance mentor session turn
+  if (raw && !auto) {
+    const session = freezeInterventionSession(focus, {
+      studentName: name,
+    });
+    if (focus.conversation_session) {
+      session.guidance_level =
+        focus.conversation_session.guidance_level ?? session.guidance_level;
+      session.turn_index =
+        focus.conversation_session.turn_index ?? session.turn_index;
+      session.evaluations =
+        focus.conversation_session.evaluations || session.evaluations;
+      if (focus.conversation_session.evidence) {
+        session.evidence = {
+          ...session.evidence,
+          ...focus.conversation_session.evidence,
+        };
+      }
+    }
+    const resolved = resolvePerformanceReply({
+      studentMessage: raw,
+      session,
+      modelReply: '',
+      focus,
+      history,
+    });
+    return resolved.reply;
+  }
+
+  // Opener fallback ONLY when this is an auto/open turn
+  if (focus.spoken_opener) {
+    return sanitizeKidSpeech(focus.spoken_opener);
+  }
+  if (focus.diagnostic_question || focus.concept_topic || nonWrong) {
+    return sanitizeKidSpeech(
+      buildFocusedSpokenOpener(
+        {
+          ...focus,
+          code: focus.code || nonWrong || null,
+          diagnostic_question: focus.diagnostic_question || null,
+          problem_statement:
+            focus.problem_statement_friendly ||
+            focus.friendly_why ||
+            focus.problem_statement ||
+            null,
+        },
+        { name },
+      ),
+    );
+  }
+
+  if (mode === INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE) {
+    return sanitizeKidSpeech(
+      `${name}, you are doing great on the farm! Want a fun extra challenge next?`,
+    );
+  }
+
+  if (mode === INTERVENTION_MODES.CONGRATULATE_AND_ADVANCE) {
+    return sanitizeKidSpeech(
+      `Yes, ${name}—that was wonderful farm work! What adventure should we try next?`,
+    );
+  }
+
+  const focusTopic =
+    focus.concept_topic || mapTopic || 'this science idea';
+  if (mapTopic || allowMap) {
+    return sanitizeKidSpeech(
+      `${name}, let's look at ${focusTopic} together. Which part still feels fuzzy?`,
+    );
+  }
+  return sanitizeKidSpeech(
+    `${name}, I am here to help. What part of the farm question feels hardest right now?`,
+  );
+}
+
+/**
+ * Build Groq messages: mode system prompt + full context JSON + student turn.
+ */
+export function buildMessages(body = {}) {
+  const context = body.contextPayload || body.context || {};
+  const studentMessage = String(
+    body.studentMessage || body.message || body.quickPrompt || '',
+  ).trim();
+  const history = Array.isArray(body.history) ? body.history.slice(-6) : [];
+  const mode =
+    body.intervention_mode ||
+    context?.intervention_mode ||
+    INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD;
+
+  const system = [
+    getSystemPromptForMode(mode),
+    getDynamicSystemAddon(context, { studentMessage }),
+  ].join('\n\n');
+
+  const allowMap = context?.generate_mind_map === true;
+  const focus = context?.intervention_focus || {};
+  const nonWrong =
+    context?.non_wrong_scenario_code ||
+    context?.trigger_event?.non_wrong_scenario_code ||
+    focus.code;
+  const auto = isAutoCoachMessage(studentMessage);
+  const concept =
+    focus.concept_topic ||
+    context?.current_question?.topic ||
+    'the focused science concept';
+  const problem =
+    focus.problem_statement ||
+    context?.non_wrong_scenario_label ||
+    'the detected learning problem';
+
+  let instruct;
+  if (studentMessage && !auto) {
+    instruct =
+      `TURN TYPE: FOLLOW-UP — PERSONALIZED SCIENCE MENTOR for low performance. ` +
+      `FROZEN cause: ${problem}. FROZEN concept: ${concept}. ` +
+      `Guidance level: ${focus.guidance_level ?? focus.conversation_session?.guidance_level ?? 0} ` +
+      `(0=diagnostic, 1=scaffold, 2=repair, 3=microstep). ` +
+      `The student JUST answered: "${studentMessage.slice(0, 320)}". ` +
+      `REQUIRED: (1) quote/paraphrase their answer, (2) evaluate understanding for ${concept}, ` +
+      `(3) give guidance at the current guidance level tied ONLY to ${problem}/${concept}, ` +
+      `(4) one new check question that fits their answer depth. ` +
+      `Evidence: wrong="${focus.last_wrong_answer || ''}", farmQ="${String(focus.current_question || '').slice(0, 80)}". ` +
+      `FORBIDDEN: re-greeting, replaying opener, general chatbot topics, ability ranks, MCQ letter.`;
+  } else if (auto || nonWrong || focus.code) {
+    instruct =
+      `TURN TYPE: OPENER only. Detected problem: ${problem}. Concept: ${concept}. ` +
+      `Diagnostic to ask: ${focus.diagnostic_question || 'one soft concept check'}. ` +
+      `${focus.mentor_brief || ''} ` +
+      'Under 3 sentences: (1) kind name why you came, (2) ask the trigger-matched diagnostic, (3) optional tiny tip. ' +
+      'Not a general chatbot. Never give the MCQ answer.' +
+      (allowMap ? ' Mention mind-map idea gently if provided.' : '');
+  } else if (allowMap) {
+    instruct =
+      'Adaptive reply under 3 sentences. Use incorrect-answer mind map for Socratic repair only. Never give the MCQ answer.';
+  } else {
+    instruct =
+      'Adaptive personalized reply under 3 sentences. Stay on farm science. Never give the MCQ answer.';
+  }
+
+  const spokenLabel = auto
+    ? `Coach auto-signal (focused intervention — not student speech):\n${studentMessage || defaultStudentMessage(mode, context)}`
+    : `STUDENT SAID — analyze and adapt your reply to these exact words:\n"${studentMessage || defaultStudentMessage(mode, context)}"`;
+
+  const userBlock = [
+    `Context payload:\n${JSON.stringify(context, null, 0)}`,
+    spokenLabel,
+    instruct,
+  ].join('\n\n');
+
+  return [
+    { role: 'system', content: system },
+    ...history
+      .filter(
+        (m) =>
+          m &&
+          (m.role === 'user' || m.role === 'assistant') &&
+          typeof m.content === 'string' &&
+          !isAutoCoachMessage(m.content) &&
+          m.content !== '…',
+      )
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 600) })),
+    { role: 'user', content: userBlock },
+  ];
+}
+
+function defaultStudentMessage(mode, context = {}) {
+  const nonWrong = String(
+    context?.non_wrong_scenario_code ||
+      context?.trigger_event?.non_wrong_scenario_code ||
+      '',
+  ).toUpperCase();
+
+  if (nonWrong.includes('SLOW') || nonWrong.includes('PAUSE')) {
+    return `I need help based on my recent slower farm questions. Focus only on the science concept and ask a diagnostic question. Never mention ability tiers.`;
+  }
+  if (nonWrong) {
+    return `Performance signal: ${nonWrong}. Help using my farm metrics and the affected concept only. Never mention ability tiers.`;
+  }
+  if (mode === INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE) {
+    return 'I seem under-challenged—push me higher with deeper science on this farm topic.';
+  }
+  if (mode === INTERVENTION_MODES.CONGRATULATE_AND_ADVANCE) {
+    return 'Celebrate my progress with specific evidence and help me choose what to advance next.';
+  }
+  return 'Help me learn from my farm performance—focused questions only, not ability labels.';
+}
+
+/**
+ * Core handler — returns JSON-serializable result.
+ */
+export async function handleAvatarChat(body = {}) {
+  const context = body.contextPayload || body.context || {};
+  const studentMessage = String(
+    body.studentMessage || body.message || body.quickPrompt || '',
+  ).trim();
+  const history = Array.isArray(body.history) ? body.history : [];
+  const cfg = getLlamaConfig();
+  const mode =
+    body.intervention_mode ||
+    context?.intervention_mode ||
+    INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD;
+  const mood = inferMood(mode, context, studentMessage);
+
+  if (cfg.provider === 'offline' || cfg.provider === 'fallback') {
+    return {
+      ok: true,
+      reply: buildFallbackReply(context, studentMessage, history),
+      provider: 'offline',
+      model: null,
+      fallback: true,
+      avatarMood: mood,
+      intervention_mode: mode,
+    };
+  }
+
+  const messages = buildMessages(body);
+
+  try {
+    const result = await chatCompletion({ messages, stream: false });
+    let reply = sanitizeKidSpeech(result.content);
+    // Never accept an opener-style replay that ignored the student
+    if (studentMessage && !isAutoCoachMessage(studentMessage)) {
+      const session = freezeInterventionSession(
+        context?.intervention_focus || {},
+        {
+          studentName: context?.student_profile?.display_name,
+        },
+      );
+      const resolved = resolvePerformanceReply({
+        studentMessage,
+        session,
+        modelReply: reply,
+        focus: context?.intervention_focus || {},
+        history,
+      });
+      reply = resolved.reply;
+    }
+    return {
+      ok: true,
+      reply,
+      provider: result.provider,
+      model: result.model,
+      fallback: false,
+      avatarMood: mood,
+      intervention_mode: mode,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const soft =
+      message === 'OFFLINE_MODE'
+        ? 'Offline mentor mode (no Groq call).'
+        : message;
+    return {
+      ok: true,
+      reply: buildFallbackReply(context, studentMessage, history),
+      provider: 'fallback',
+      model: null,
+      fallback: true,
+      // Soft error for kids UI — never raw 429 / rate-limit JSON
+      error: softErrorForClient(soft),
+      avatarMood: mood,
+      intervention_mode: mode,
+    };
+  }
+}
+
+function softErrorForClient(message) {
+  const s = String(message || '');
+  if (/rate.?limit|429|tokens per day|TPD/i.test(s)) {
+    return 'rate_limit';
+  }
+  if (/timeout|timed out|network/i.test(s)) return 'timeout';
+  if (s.length > 80 || s.includes('{')) return 'provider_fallback';
+  return s || null;
+}
+
+function inferMood(mode, context, studentMessage) {
+  if (mode === INTERVENTION_MODES.CONGRATULATE_AND_ADVANCE) return 'proud';
+  if (mode === INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE) {
+    return 'encouraging';
+  }
+  const tier = String(
+    context?.student_profile?.evaluated_tier || '',
+  ).toUpperCase();
+  if (tier === 'SMART') return 'encouraging';
+  if (tier === 'WEAK') return 'empathetic';
+  const fr = String(
+    context?.game_state?.frustration_level ||
+      context?.metrics?.click_pattern_density ||
+      '',
+  ).toLowerCase();
+  const msg = String(studentMessage || '').toLowerCase();
+  if (
+    fr.includes('high') ||
+    fr.includes('rage') ||
+    msg.includes('too hard') ||
+    msg.includes('frustrated')
+  ) {
+    return 'empathetic';
+  }
+  return 'empathetic';
+}
+
+/**
+ * SSE stream: data: {"type":"meta"|"token"|"done"|"error", ...}
+ */
+export async function handleAvatarChatStream(body = {}, write) {
+  const context = body.contextPayload || body.context || {};
+  const studentMessage = String(
+    body.studentMessage || body.message || body.quickPrompt || '',
+  ).trim();
+  const history = Array.isArray(body.history) ? body.history : [];
+  const cfg = getLlamaConfig();
+  const mode =
+    body.intervention_mode ||
+    context?.intervention_mode ||
+    INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD;
+  const mood = inferMood(mode, context, studentMessage);
+
+  const send = (obj) => {
+    write(`data: ${JSON.stringify(obj)}\n\n`);
+  };
+
+  send({
+    type: 'meta',
+    provider: cfg.provider,
+    model: cfg.provider === 'offline' ? null : cfg.model,
+    avatarMood: mood,
+    intervention_mode: mode,
+    fallback: cfg.provider === 'offline' || cfg.provider === 'fallback',
+  });
+
+  if (cfg.provider === 'offline' || cfg.provider === 'fallback') {
+    const reply = buildFallbackReply(context, studentMessage, history);
+    await streamTextChunks(reply, (t) => send({ type: 'token', text: t }));
+    send({
+      type: 'done',
+      reply,
+      provider: 'offline',
+      fallback: true,
+      avatarMood: mood,
+      intervention_mode: mode,
+    });
+    return;
+  }
+
+  const messages = buildMessages(body);
+  let full = '';
+
+  try {
+    await streamChatCompletion({
+      messages,
+      onMeta: (m) =>
+        send({
+          type: 'meta',
+          provider: m.provider,
+          model: m.model,
+          fallback: false,
+          avatarMood: mood,
+          intervention_mode: mode,
+        }),
+      onToken: (t) => {
+        full += t;
+        send({ type: 'token', text: t });
+      },
+    });
+    if (!full.trim()) {
+      full = buildFallbackReply(context, studentMessage, history);
+      send({ type: 'token', text: full });
+      send({
+        type: 'done',
+        reply: full,
+        provider: 'fallback',
+        fallback: true,
+        error: 'Empty model stream',
+        avatarMood: mood,
+        intervention_mode: mode,
+      });
+      return;
+    }
+    let cleaned = sanitizeKidSpeech(full.trim());
+    if (studentMessage && !isAutoCoachMessage(studentMessage)) {
+      const session = freezeInterventionSession(
+        context?.intervention_focus || {},
+        { studentName: context?.student_profile?.display_name },
+      );
+      cleaned = resolvePerformanceReply({
+        studentMessage,
+        session,
+        modelReply: cleaned,
+        focus: context?.intervention_focus || {},
+        history,
+      }).reply;
+    }
+    send({
+      type: 'done',
+      reply: cleaned,
+      provider: cfg.provider,
+      model: cfg.model,
+      fallback: false,
+      avatarMood: mood,
+      intervention_mode: mode,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const reply = buildFallbackReply(context, studentMessage, history);
+    if (!full.trim()) {
+      await streamTextChunks(reply, (t) => send({ type: 'token', text: t }));
+    }
+    let finalReply = sanitizeKidSpeech(full.trim() || reply);
+    if (studentMessage && !isAutoCoachMessage(studentMessage)) {
+      finalReply = resolvePerformanceReply({
+        studentMessage,
+        session: freezeInterventionSession(
+          context?.intervention_focus || {},
+          { studentName: context?.student_profile?.display_name },
+        ),
+        modelReply: finalReply,
+        focus: context?.intervention_focus || {},
+        history,
+      }).reply;
+    }
+    send({
+      type: 'done',
+      reply: finalReply,
+      provider: 'fallback',
+      fallback: true,
+      error: softErrorForClient(message),
+      avatarMood: mood,
+      intervention_mode: mode,
+    });
+  }
+}
+
+function streamTextChunks(text, onToken) {
+  const words = String(text).split(/(\s+)/).filter(Boolean);
+  return new Promise((resolve) => {
+    let i = 0;
+    const tick = () => {
+      if (i >= words.length) {
+        resolve();
+        return;
+      }
+      onToken(words[i]);
+      i += 1;
+      setTimeout(tick, 28);
+    };
+    tick();
+  });
+}

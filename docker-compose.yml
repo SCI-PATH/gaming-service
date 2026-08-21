@@ -1,0 +1,18 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: scipath-backend
+    container_name: scipath-backend
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8002"
+      AVATAR_PORT: "8002"
+    volumes:
+      - ./backend/data:/app/data
+    restart: unless-stopped
