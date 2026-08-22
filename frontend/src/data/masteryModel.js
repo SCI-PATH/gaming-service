@@ -20,7 +20,8 @@ import {
   averageScore,
   formatResponseTime,
 } from './dda';
-import { studentStorageKey } from './mockStudents.js';
+import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
+import { syncLevelPerformance } from './engagementSync.js';
 
 const BASE_STORAGE_KEY = 'scipath_student_mastery';
 
@@ -207,7 +208,10 @@ export function saveLevelPerformance(levelId, payload) {
     savedAt: Date.now(),
   };
   writeStore(store);
-  return store.levels[String(levelId)];
+  const saved = store.levels[String(levelId)];
+  // Research mirror → Neon (non-blocking)
+  syncLevelPerformance(levelId, saved, getCurrentStudent());
+  return saved;
 }
 
 export function getAllMasteryLevelRecords() {

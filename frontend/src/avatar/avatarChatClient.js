@@ -9,8 +9,26 @@ import {
   resolvePerformanceReply,
 } from './mentorConversationSession.js';
 import { buildAdaptiveFollowUp } from './adaptiveMentorReply.js';
+import { syncMentorIntervention } from '../data/engagementSync.js';
 
 const CLIENT_TIMEOUT_MS = 45000;
+
+function logMentorExchange(opts, result) {
+  if (!result?.reply) return;
+  syncMentorIntervention({
+    contextPayload: opts.contextPayload,
+    studentMessage: opts.studentMessage || opts.quickPrompt || '',
+    mentorReply: result.reply,
+    provider: result.provider,
+    model: result.model,
+    interventionMode: opts.contextPayload?.intervention_mode,
+    frustrationScore: opts.contextPayload?.frustration_score,
+    perceivedState: opts.contextPayload?.perceived_state,
+    triggerReason: opts.contextPayload?.intervention_focus?.reason || null,
+    focusPayload: opts.contextPayload?.intervention_focus || {},
+    telemetrySnapshot: opts.contextPayload || {},
+  });
+}
 
 function isAutoCoachMessage(studentMessage = '') {
   const s = String(studentMessage || '').trim();
@@ -237,7 +255,7 @@ export async function streamAvatarChat({
       );
     }
 
-    return {
+    const streamResult = {
       reply: sanitizeKidSpeech(full.trim()),
       provider: meta.provider,
       model: meta.model,
@@ -245,6 +263,11 @@ export async function streamAvatarChat({
       avatarMood: meta.avatarMood || 'neutral',
       error: softProviderNote(meta.error) || meta.error || null,
     };
+    logMentorExchange(
+      { contextPayload, studentMessage, quickPrompt },
+      streamResult,
+    );
+    return streamResult;
   } catch (err) {
     if (err?.name === 'AbortError') {
       const reply = sanitizeKidSpeech(
@@ -310,7 +333,7 @@ async function requestAvatarChatOnce({
   if (!res.ok) {
     throw new Error(data?.error || `Avatar chat failed (${res.status})`);
   }
-  return {
+  const onceResult = {
     reply: resolveStudentAwareReply(
       studentMessage,
       contextPayload,
@@ -323,4 +346,9 @@ async function requestAvatarChatOnce({
     avatarMood: data?.avatarMood || 'neutral',
     error: softProviderNote(data?.error) || data?.error || null,
   };
+  logMentorExchange(
+    { contextPayload, studentMessage, quickPrompt },
+    onceResult,
+  );
+  return onceResult;
 }

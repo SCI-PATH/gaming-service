@@ -7,9 +7,10 @@
  */
 
 import { DDA_BANDS, DDA_CONFIG, classifyPerformance } from './dda.js';
-import { studentStorageKey } from './mockStudents.js';
+import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { normalizePerformanceCategory, PERFORMANCE_CATEGORIES } from './performanceCategories.js';
 import { FRUSTRATION_LEVELS } from './frustrationModel.js';
+import { syncUnlock } from './engagementSync.js';
 
 const BASE_STORAGE_KEY = 'scipath_unlocks';
 
@@ -352,6 +353,18 @@ export function markUnlocked(itemId, opts = {}) {
   };
 
   writeStore(store);
+  const catalogItem = UNLOCK_ITEMS.find((i) => i.id === itemId);
+  syncUnlock(
+    itemId,
+    {
+      itemName: catalogItem?.name || itemId,
+      category: catalogItem?.category || 'other',
+      basePrice: catalogItem?.basePrice ?? 0,
+      pricePaid: opts.pricePaid ?? catalogItem?.basePrice ?? 0,
+      purchasedAtLevel: level,
+    },
+    getCurrentStudent(),
+  );
   return store.owned;
 }
 

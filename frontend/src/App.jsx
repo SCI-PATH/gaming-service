@@ -35,6 +35,11 @@ import {
   getCurrentStudent,
   logoutStudent,
 } from './data/mockStudents.js';
+import {
+  syncStudentLogin,
+  syncStudentLogout,
+  syncFrustration,
+} from './data/engagementSync.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
@@ -94,6 +99,11 @@ function createInitialFarm() {
  */
 export default function App() {
   const [student, setStudent] = useState(() => getCurrentStudent());
+
+  useEffect(() => {
+    const existing = getCurrentStudent();
+    if (existing?.id) syncStudentLogin(existing);
+  }, []);
   const [gameReady, setGameReady] = useState(false);
   const [farm, setFarm] = useState(createInitialFarm);
   const [ddaMisses, setDdaMisses] = useState(0);
@@ -187,6 +197,30 @@ export default function App() {
     });
   }, [telemetrySession.frustrationScore, telemetrySession.frustrationLevel]);
 
+  // Mirror frustration into Neon (throttled)
+  useEffect(() => {
+    if (!student?.id) return;
+    const score = Number(telemetrySession.frustrationScore);
+    if (!Number.isFinite(score)) return;
+    const handle = window.setTimeout(() => {
+      syncFrustration(
+        {
+          frustrationScore: score,
+          frustrationLevel: telemetrySession.frustrationLevel || 'low',
+          levelNumber: farm.levelId,
+          source: 'gameplay',
+        },
+        student,
+      );
+    }, 2500);
+    return () => window.clearTimeout(handle);
+  }, [
+    student,
+    farm.levelId,
+    telemetrySession.frustrationScore,
+    telemetrySession.frustrationLevel,
+  ]);
+
   // While avatar / quizzes / shop / quest scroll need focus, disable Phaser key capture
   useEffect(() => {
     const locked = Boolean(
@@ -277,15 +311,20 @@ export default function App() {
     (nextStudent) => {
       resetSessionUi();
       setStudent(nextStudent);
+      syncStudentLogin(nextStudent);
     },
     [resetSessionUi],
   );
 
   const handleLogout = useCallback(() => {
+    syncStudentLogout({
+      endLevel: farm.levelId,
+      quizCorrect: farm.questionsAnswered || 0,
+    });
     logoutStudent();
     resetSessionUi();
     setStudent(null);
-  }, [resetSessionUi]);
+  }, [resetSessionUi, farm.levelId, farm.questionsAnswered]);
 
   const maxQuestions = farm.maxQuestions ?? DDA_CONFIG.maxQuestions;
 

@@ -81,11 +81,79 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     const { dbPath } = await import('./lib/db.mjs');
+    const { getPgStatus, isPostgresEnabled } = await import('./lib/pg.mjs');
     sendJson(res, 200, {
       ok: true,
       service: 'gaming-service-backend',
       db: dbPath(),
+      postgres: {
+        ...getPgStatus(),
+        enabled: isPostgresEnabled(),
+      },
     });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname.startsWith('/api/engagement/')) {
+    try {
+      const body = await readJson(req);
+      const eng = await import('./lib/engagementDb.mjs');
+      if (!eng.engagementAvailable()) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'DATABASE_URL_not_configured',
+          message:
+            'Add DATABASE_URL (Neon connection string) to .env and restart the backend.',
+        });
+        return;
+      }
+
+      const route = url.pathname.replace('/api/engagement/', '');
+      let result = null;
+      switch (route) {
+        case 'student':
+          result = await eng.upsertStudent(body);
+          break;
+        case 'session/start':
+          result = await eng.startSession(body);
+          break;
+        case 'session/end':
+          result = await eng.endSession(body);
+          break;
+        case 'level':
+          result = await eng.upsertLevelProgress(body);
+          break;
+        case 'lesson':
+          result = await eng.insertLessonCompletion(body);
+          break;
+        case 'quiz':
+          result = await eng.insertQuizAttempt(body);
+          break;
+        case 'unlock':
+          result = await eng.insertStudentUnlock(body);
+          break;
+        case 'points':
+          result = await eng.insertPointsLedger(body);
+          break;
+        case 'frustration':
+          result = await eng.insertFrustrationSnapshot(body);
+          break;
+        case 'mentor':
+          result = await eng.insertMentorIntervention(body);
+          break;
+        case 'event':
+          result = await eng.insertGameplayEvent(body);
+          break;
+        default:
+          sendJson(res, 404, { ok: false, error: 'Unknown engagement route' });
+          return;
+      }
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, { ok: false, error: message });
+    }
     return;
   }
 
@@ -179,5 +247,9 @@ server.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
   console.log(
     `[backend] LLAMA_PROVIDER=${process.env.LLAMA_PROVIDER || 'offline'} MODEL=${process.env.LLAMA_MODEL || 'llama-3.1-8b-instant'} groqKey=${process.env.GROQ_API_KEY ? 'set' : 'missing'}`,
+  );
+  // eslint-disable-next-line no-console
+  console.log(
+    `[backend] DATABASE_URL=${process.env.DATABASE_URL ? 'set (Neon engagement sync ON)' : 'missing (engagement sync skipped)'}`,
   );
 });
