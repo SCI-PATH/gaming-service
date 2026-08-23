@@ -474,7 +474,7 @@ studentId=<userId>
 username=<email-local-part>
 displayName=<fullName>
 sessionId=<platform-session-uuid>
-topicId=<active tutor topic, if any>
+topicId=<always set — see table>
 grade=<grade>
 source=frontend-app
 ```
@@ -487,7 +487,7 @@ source=frontend-app
 | `username` | Email local-part, or `userId` fallback |
 | `displayName` | `useUserStore.fullName` |
 | `sessionId` | `sessionStorage` key per student (tab-scoped play session) |
-| `topicId` | `useTutorStore.activeTopicId` (current lesson topic) |
+| `topicId` | **Always passed.** Tutor `activeTopicId` → else last saved topic for that student → else first curriculum topic for their grade |
 | `grade` | `useUserStore.grade` |
 
 Code: `frontend-app/src/components/features/gaming-service/getGamingLaunchContext.ts`, `buildGamingServiceLaunchUrl.ts`, `GameArenaCard.tsx`.
