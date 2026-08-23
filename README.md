@@ -250,3 +250,14 @@ Frontend is http://127.0.0.1:5173 and proxies `/api` to the backend.
 - AI **writing** science questions
 - School SSO / classroom identity
 - Treating coins as the only result of an answer
+
+---
+
+## Integrating with other SCI-PATH services
+
+**→ See [INTEGRATION.md](INTEGRATION.md)** for:
+
+- Launch URL contract (`studentId`, `username`, `sessionId`, `topicId`)
+- Aptitude test → initial mastery for new users
+- Outbound/inbound API endpoints
+- How frustration score is passed to other components and the engagement DB

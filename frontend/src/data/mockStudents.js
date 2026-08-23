@@ -50,6 +50,8 @@ function loadSession() {
       isMockAptitudeStudent: Boolean(data.isMockAptitudeStudent),
       performanceLabel: data.performanceLabel || null,
       grade: data.grade ?? null,
+      topicId: data.topicId ?? null,
+      sessionId: data.sessionId ?? null,
     };
   } catch {
     return null;
@@ -85,18 +87,24 @@ export function loginStudent(displayName) {
  */
 export function loginStudentFromPlatform({
   id,
+  username,
   displayName,
   grade = null,
+  topicId = null,
+  sessionId = null,
 } = {}) {
   const studentId = String(id || '').trim();
   const name = String(displayName || '').trim();
+  const user = String(username || studentId || '').trim();
   if (!studentId || name.length < 1) return null;
 
   currentStudent = {
     id: studentId,
-    username: studentId,
+    username: user,
     displayName: name,
     grade: grade != null ? Number(grade) : null,
+    topicId: topicId ? String(topicId) : null,
+    sessionId: sessionId ? String(sessionId) : null,
     fromPlatform: true,
   };
   try {
