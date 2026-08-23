@@ -11,13 +11,43 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setCollideWorldBounds(true);
     this.body.bounce.set(1);
 
+    this.verticalMove = Boolean(verticalMove);
     const moveSpeed = Number.isFinite(speed) ? speed : ENEMY_SPEED;
-    this.patrolVx = verticalMove ? 0 : moveSpeed;
-    this.patrolVy = verticalMove ? moveSpeed : 0;
-    if (verticalMove) {
+    this.basePatrolSpeed = moveSpeed;
+    this.patrolVx = this.verticalMove ? 0 : moveSpeed;
+    this.patrolVy = this.verticalMove ? moveSpeed : 0;
+    if (this.verticalMove) {
       this.body.velocity.y = moveSpeed;
     } else {
       this.body.velocity.x = moveSpeed;
+    }
+  }
+
+  /**
+   * Dynamically change patrol speed (frustration / DDA pressure).
+   * Preserves direction of current motion when possible.
+   */
+  setPatrolSpeed(speed) {
+    const moveSpeed = Math.max(12, Number(speed) || ENEMY_SPEED);
+    this.basePatrolSpeed = moveSpeed;
+    if (!this.body) {
+      this.patrolVx = this.verticalMove ? 0 : moveSpeed;
+      this.patrolVy = this.verticalMove ? moveSpeed : 0;
+      return;
+    }
+
+    const vx = this.body.velocity.x;
+    const vy = this.body.velocity.y;
+    if (this.verticalMove) {
+      const dir = vy === 0 ? Math.sign(this.patrolVy) || 1 : Math.sign(vy) || 1;
+      this.patrolVx = 0;
+      this.patrolVy = dir * moveSpeed;
+      if (this.body.moves) this.setVelocity(0, this.patrolVy);
+    } else {
+      const dir = vx === 0 ? Math.sign(this.patrolVx) || 1 : Math.sign(vx) || 1;
+      this.patrolVx = dir * moveSpeed;
+      this.patrolVy = 0;
+      if (this.body.moves) this.setVelocity(this.patrolVx, 0);
     }
   }
 

@@ -25,6 +25,21 @@ export default function GameplayPerformancePanel({
         <span>Adaptive enemies / timers (not question difficulty)</span>
       </div>
 
+      {settings?.frustrationGameplayLabel || settings?.personalized ? (
+        <p className="gp-frust-note">
+          Live CSF personalization:{' '}
+          <strong>
+            {settings.frustrationGameplayLabel ||
+              settings.frustrationLevel ||
+              'on'}
+          </strong>
+          {settings.answerTimerMs != null
+            ? ` · quiz ${Math.round(settings.answerTimerMs / 1000)}s`
+            : ''}
+          {settings.hintLevel ? ` · hints ${settings.hintLevel}` : ''}
+        </p>
+      ) : null}
+
       <dl className="gameplay-perf-grid">
         <div>
           <dt>Current level</dt>

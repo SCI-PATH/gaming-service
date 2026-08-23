@@ -5,6 +5,10 @@
 import { bandFromMastery, getMasteryForLevelStart } from '../data/masteryModel.js';
 import { DDA_BANDS } from '../data/dda.js';
 import {
+  buildFrustrationAdaptation,
+  frustrationLevelFromScore,
+} from '../data/frustrationModel.js';
+import {
   CONCEPT_CATALOG,
   resolveTopicKey,
 } from './conceptMaps.js';
@@ -188,7 +192,30 @@ function collectAttempts({
   });
 }
 
-function mindMapProfile({ mastery, band } = {}) {
+function mindMapProfile({ mastery, band, frustrationScore, frustrationLevel } = {}) {
+  // Frustration personalization takes priority when available (CSF adaptation).
+  const frScore =
+    frustrationScore != null && Number.isFinite(Number(frustrationScore))
+      ? Number(frustrationScore)
+      : null;
+  const frLevel =
+    frustrationLevel ||
+    (frScore != null ? frustrationLevelFromScore(frScore) : null);
+
+  if (frLevel) {
+    const adapt = buildFrustrationAdaptation(frScore ?? frLevel);
+    const mm = adapt.mindMap || {};
+    return {
+      maxAttempts: mm.maxBranches ?? 5,
+      extraLinks: Boolean(mm.extraLinks),
+      tone: mm.tone || 'practice',
+      label: mm.label || 'Personalized map',
+      explainDepth: mm.explainDepth || 'medium',
+      simplifyLanguage: Boolean(mm.simplifyLanguage),
+      frustrationLevel: adapt.level,
+    };
+  }
+
   const resolved = band || bandFromMastery(mastery ?? 0.5);
   if (resolved === DDA_BANDS.WEAK || resolved === DDA_BANDS.EMERGING) {
     return {
@@ -272,6 +299,8 @@ export function buildPersonalizedMindMap({
   masteryBand = null,
   masterySource = null,
   levelId = 1,
+  frustrationScore = null,
+  frustrationLevel = null,
 } = {}) {
   const masteryInfo = resolveMindMapMastery({
     mastery: masteryIn,
@@ -279,7 +308,11 @@ export function buildPersonalizedMindMap({
     masterySource,
     levelId,
   });
-  const profile = mindMapProfile(masteryInfo);
+  const profile = mindMapProfile({
+    ...masteryInfo,
+    frustrationScore,
+    frustrationLevel,
+  });
 
   const attempts = collectAttempts({
     attemptsIn,
@@ -439,13 +472,18 @@ export function buildPersonalizedMindMap({
     sourceAttempts: list,
     primaryAttempt: list[0],
     samplePrompts: list.map((a) => a.prompt).filter(Boolean),
-    personalizedNote: `${profile.label} map (${Math.round((masteryInfo.mastery || 0) * 100)}%, ${masteryInfo.source || 'mastery'}). ${totalMisses} miss${totalMisses === 1 ? '' : 'es'}.`,
+    personalizedNote: profile.frustrationLevel
+      ? `${profile.label} (${profile.frustrationLevel}). ${totalMisses} miss${totalMisses === 1 ? '' : 'es'}.`
+      : `${profile.label} map (${Math.round((masteryInfo.mastery || 0) * 100)}%, ${masteryInfo.source || 'mastery'}). ${totalMisses} miss${totalMisses === 1 ? '' : 'es'}.`,
     learningPath: branches.map((b) => b.id),
     layout: 'all-misses-ai',
     generatedBy: 'local',
     mastery: masteryInfo.mastery,
     masteryBand: masteryInfo.band,
     masterySource: masteryInfo.source,
+    frustrationScore:
+      frustrationScore != null ? Number(frustrationScore) : null,
+    frustrationLevel: profile.frustrationLevel || frustrationLevel || null,
   };
 }
 

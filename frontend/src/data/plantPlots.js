@@ -29,6 +29,19 @@ export const LOADING_ZONE = {
   h: 4,
 };
 
+/**
+ * Physical Farm Shop — west of the load dock; customers queue south of the door.
+ * Keep clear of plant beds, animal paddock (y≥43), and cleaning yard.
+ */
+export const FARM_SHOP_ZONE = {
+  id: 'farm_shop',
+  label: 'Farm Shop',
+  x: 40,
+  y: 28,
+  w: 6,
+  h: 5,
+};
+
 export function gridKey(gridX, gridY) {
   return `${gridX},${gridY}`;
 }
@@ -54,6 +67,10 @@ export function isLoadingTile(gridX, gridY) {
   return isTileInPlot(gridX, gridY, LOADING_ZONE);
 }
 
+export function isFarmShopTile(gridX, gridY) {
+  return isTileInPlot(gridX, gridY, FARM_SHOP_ZONE);
+}
+
 export function loadingZoneCenter(tileSize = 16) {
   return {
     x: (LOADING_ZONE.x + LOADING_ZONE.w / 2) * tileSize,
@@ -61,6 +78,32 @@ export function loadingZoneCenter(tileSize = 16) {
     tileX: LOADING_ZONE.x + LOADING_ZONE.w / 2,
     tileY: LOADING_ZONE.y + LOADING_ZONE.h / 2,
   };
+}
+
+export function farmShopZoneCenter(tileSize = 16) {
+  return {
+    x: (FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) * tileSize,
+    y: (FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h / 2) * tileSize,
+    tileX: FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2,
+    tileY: FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h / 2,
+  };
+}
+
+/** Queue slots south of the shop door (world pixels). */
+export function farmShopQueueSlots(count = 5, tileSize = 16) {
+  const doorX =
+    (FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) * tileSize;
+  const doorY =
+    (FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h) * tileSize + tileSize * 0.6;
+  const slots = [];
+  for (let i = 0; i < count; i += 1) {
+    slots.push({
+      x: doorX,
+      y: doorY + i * tileSize * 1.55,
+      index: i,
+    });
+  }
+  return slots;
 }
 
 export function cellsInPlot(plot, tileSize = 16) {

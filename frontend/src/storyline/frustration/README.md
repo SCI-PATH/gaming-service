@@ -2,7 +2,9 @@
 
 SCI_PATH turns **17 behavioral metrics** into a single **frustration score (0–100)** and a **frustration level**. That profile is what the storyline generator sends to Grok.
 
-Implementation: [`FrustrationEngine.js`](./FrustrationEngine.js).
+This file is the **aptitude / storyline** engine. Live farm play uses a different scorer in [`frustrationModel.js`](../../data/frustrationModel.js) (companion-signal caps, shop prices, Sage). Feature overview: [project README](../../../../README.md).
+
+Implementation: [`FrustrationEngine.js`](./FrustrationEngine.js). The engine **rounds** the mixed score to an integer 0–100.
 
 ```
 Student Performance
@@ -159,19 +161,21 @@ Frustration Score = 55.80  →  MODERATE
 
 ## 5. Frustration categories
 
+These buckets match `frustrationLevelFromScore` in the engine (after rounding):
+
 | Score | Level |
 | ---: | --- |
-| 0 – 20 | `VERY_LOW` |
-| 21 – 40 | `LOW` |
-| 41 – 60 | `MODERATE` |
-| 61 – 80 | `HIGH` |
-| 81 – 100 | `VERY_HIGH` |
+| 0 – 25 | `LOW` |
+| 26 – 50 | `MILD` |
+| 51 – 70 | `MODERATE` |
+| 71 – 85 | `HIGH` |
+| 86 – 100 | `VERY_HIGH` |
 
-Example payload passed downstream:
+Example payload passed downstream (55.80 rounds to 56 → `MODERATE`):
 
 ```json
 {
-  "frustrationScore": 55.8,
+  "frustrationScore": 56,
   "frustrationLevel": "MODERATE"
 }
 ```

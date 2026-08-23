@@ -155,9 +155,15 @@ export function buildMessages(body = {}) {
 
   let instruct;
   if (studentMessage && !auto) {
+    const frLevel = String(
+      context?.frustration_level ||
+        context?.sage_adaptation?.level ||
+        'moderate',
+    ).toLowerCase();
     instruct =
       `TURN TYPE: FOLLOW-UP — PERSONALIZED SCIENCE MENTOR for low performance. ` +
       `FROZEN cause: ${problem}. FROZEN concept: ${concept}. ` +
+      `Private affect band: ${frLevel} (never say this word to the student; match tone/pace from sage_adaptation). ` +
       `Guidance level: ${focus.guidance_level ?? focus.conversation_session?.guidance_level ?? 0} ` +
       `(0=diagnostic, 1=scaffold, 2=repair, 3=microstep). ` +
       `The student JUST answered: "${studentMessage.slice(0, 320)}". ` +
@@ -165,10 +171,16 @@ export function buildMessages(body = {}) {
       `(3) give guidance at the current guidance level tied ONLY to ${problem}/${concept}, ` +
       `(4) one new check question that fits their answer depth. ` +
       `Evidence: wrong="${focus.last_wrong_answer || ''}", farmQ="${String(focus.current_question || '').slice(0, 80)}". ` +
-      `FORBIDDEN: re-greeting, replaying opener, general chatbot topics, ability ranks, MCQ letter.`;
+      `FORBIDDEN: re-greeting, replaying opener, general chatbot topics, ability ranks, MCQ letter, saying frustrated/struggling.`;
   } else if (auto || nonWrong || focus.code) {
+    const frLevel = String(
+      context?.frustration_level ||
+        context?.sage_adaptation?.level ||
+        'moderate',
+    ).toLowerCase();
     instruct =
       `TURN TYPE: OPENER only. Detected problem: ${problem}. Concept: ${concept}. ` +
+      `Private affect band: ${frLevel} — match sage_adaptation voice (never mention the band). ` +
       `Diagnostic to ask: ${focus.diagnostic_question || 'one soft concept check'}. ` +
       `${focus.mentor_brief || ''} ` +
       'Under 3 sentences: (1) kind name why you came, (2) ask the trigger-matched diagnostic, (3) optional tiny tip. ' +
@@ -176,10 +188,10 @@ export function buildMessages(body = {}) {
       (allowMap ? ' Mention mind-map idea gently if provided.' : '');
   } else if (allowMap) {
     instruct =
-      'Adaptive reply under 3 sentences. Use incorrect-answer mind map for Socratic repair only. Never give the MCQ answer.';
+      'Adaptive reply under 3 sentences. Use incorrect-answer mind map for Socratic repair only. Never give the MCQ answer. Match private affect band tone.';
   } else {
     instruct =
-      'Adaptive personalized reply under 3 sentences. Stay on farm science. Never give the MCQ answer.';
+      'Adaptive personalized reply under 3 sentences. Stay on farm science. Never give the MCQ answer. Match private affect band tone.';
   }
 
   const spokenLabel = auto

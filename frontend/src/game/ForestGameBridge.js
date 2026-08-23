@@ -36,6 +36,16 @@ export const FARM_EVENTS = {
   /** Lock farm input while unlock shop is open */
   UNLOCK_SHOP_OPEN: 'UNLOCK_SHOP_OPEN',
   UNLOCK_SHOP_CLOSE: 'UNLOCK_SHOP_CLOSE',
+  /** Physical farm shop unload panel (walk to shop + E/Q) */
+  OPEN_FARM_CUSTOMER_SHOP: 'OPEN_FARM_CUSTOMER_SHOP',
+  CLOSE_FARM_CUSTOMER_SHOP: 'CLOSE_FARM_CUSTOMER_SHOP',
+  FARM_CUSTOMER_SHOP_RESULT: 'FARM_CUSTOMER_SHOP_RESULT',
+  /** React → Phaser: unload cart item(s) into shop stock */
+  FARM_SHOP_UNLOAD: 'FARM_SHOP_UNLOAD',
+  /** Phaser → React: live shop stock / queue snapshot */
+  FARM_SHOP_STATE: 'FARM_SHOP_STATE',
+  /** Phaser → React: shop telemetry events */
+  FARM_SHOP_TELEMETRY: 'FARM_SHOP_TELEMETRY',
   /** Start / restart GameScene at a farm level id */
   START_FARM_LEVEL: 'START_FARM_LEVEL',
   /** Active unlock-item challenges for this level */

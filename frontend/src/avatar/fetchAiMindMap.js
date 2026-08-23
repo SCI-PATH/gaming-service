@@ -1,9 +1,12 @@
 /**
- * Client: AI mind map covering ALL incorrect answers.
+ * Client: AI mind map covering incorrect answers, personalized by frustration.
  */
 export async function fetchAiMindMap({
   attempts = [],
   misconceptions = [],
+  frustrationScore = null,
+  frustrationLevel = null,
+  frustrationAdaptation = null,
   signal,
 } = {}) {
   const controller = new AbortController();
@@ -21,6 +24,9 @@ export async function fetchAiMindMap({
       body: JSON.stringify({
         attempts,
         misconceptions,
+        frustrationScore,
+        frustrationLevel,
+        frustrationAdaptation,
       }),
     });
 
@@ -33,6 +39,7 @@ export async function fetchAiMindMap({
       provider: data.provider || 'unknown',
       note: data.note || '',
       aiError: Boolean(data.aiError),
+      frustrationLevel: data.frustrationLevel || frustrationLevel || null,
     };
   } finally {
     clearTimeout(timer);

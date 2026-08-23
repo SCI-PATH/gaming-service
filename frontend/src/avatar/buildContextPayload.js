@@ -25,6 +25,10 @@ import {
 } from './interventionFocus.js';
 import { friendlyStudentName } from './kidFriendlySpeech.js';
 import { asQuestionText, friendlyWrongAnswer } from './kidFriendlySpeech.js';
+import {
+  buildFrustrationAdaptation,
+  calculateFrustrationScore,
+} from '../data/frustrationModel.js';
 
 /**
  * @param {object} input
@@ -197,6 +201,32 @@ export function buildContextPayload({
     focus?.code ||
     (isNonWrongTrigger ? String(triggerReason || '').toUpperCase() : null);
 
+  const frComputed =
+    m.frustration ||
+    (m.frustration_score != null || telemetry.frustrationScore != null
+      ? null
+      : calculateFrustrationScore(m));
+  const frustrationScore = Number(
+    telemetry.frustrationScore ??
+      m.frustration_score ??
+      frComputed?.score ??
+      0,
+  );
+  const frustrationLevel = String(
+    telemetry.frustrationLevel ||
+      m.frustration_level ||
+      frComputed?.level ||
+      'low',
+  ).toLowerCase();
+  const frustrationSignals =
+    telemetry.frustrationSignals ||
+    m.frustration_signals ||
+    frComputed?.signals ||
+    [];
+  const frustrationAdaptation =
+    frComputed?.adaptation ||
+    buildFrustrationAdaptation(frustrationScore, frustrationSignals);
+
   return {
     student_profile: {
       grade_level: grade,
@@ -205,6 +235,12 @@ export function buildContextPayload({
       overall_progress_trend: trend,
       historical_accuracy_pct: accuracyPct,
     },
+    frustration_score: frustrationScore,
+    frustration_level: frustrationLevel,
+    frustration_signals: frustrationSignals,
+    frustration_adaptation: frustrationAdaptation,
+    sage_adaptation: frustrationAdaptation.sage,
+    mind_map_adaptation: frustrationAdaptation.mindMap,
     metrics: {
       level_retries_count:
         m.level_retries_count ??
@@ -227,6 +263,8 @@ export function buildContextPayload({
       performance_delta: performanceDelta,
       performance_delta_points: deltaPts,
       overall_progress_trend: trend,
+      frustration_score: frustrationScore,
+      frustration_level: frustrationLevel,
     },
     intervention_focus: focus,
     non_wrong_scenario_code: scenarioCode,
@@ -264,6 +302,7 @@ export function buildContextPayload({
       perceived_state: perceived,
       trigger_reason: triggerReason || telemetry.lastTriggerReason || null,
       gameplay_band: band || 'average',
+      frustration_level: frustrationLevel,
     },
     current_question: questionText
       ? {
@@ -289,6 +328,7 @@ export function buildContextPayload({
       'trigger_reason_to_concept_lock',
       'socratic_hints_not_answers',
       'no_general_chatbot',
+      'frustration_aware_tone_private',
       allowMindMap
         ? 'concept_repair_via_mind_map'
         : 'targeted_dialogue_no_mind_map',

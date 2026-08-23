@@ -45,6 +45,8 @@ export function useBehavioralTelemetry({
   enemyHits = 0,
   enemyDeaths = 0,
   levelRestarts = 0,
+  /** Soft CSF gameplay signal: customers who left the farm shop queue */
+  shopCustomersLeft = 0,
   previousAvgAnswerTimeSec = 0,
   /** Current DDA / gameplay band (e.g. weak | medium | smart) */
   gameplayBand = null,
@@ -61,6 +63,7 @@ export function useBehavioralTelemetry({
   const [activeMindMap, setActiveMindMap] = useState(null);
 
   const clicksRef = useRef([]);
+  const metricsSnapRef = useRef({});
   const questionOpenedAtRef = useRef(null);
   const questionAttemptsRef = useRef(0);
   const consecutiveFailsRef = useRef(0);
@@ -100,14 +103,28 @@ export function useBehavioralTelemetry({
     levelId,
   });
   masteryRef.current = { mastery, masteryBand, masterySource, levelId };
-  const withMastery = (args) =>
-    buildPersonalizedMindMap({
+  const withMastery = (args) => {
+    const snap = metricsSnapRef.current || {};
+    const fr =
+      snap.frustration ||
+      (snap.frustration_score != null
+        ? {
+            score: snap.frustration_score,
+            level: snap.frustration_level,
+          }
+        : null);
+    return buildPersonalizedMindMap({
       ...args,
       mastery: masteryRef.current.mastery,
       masteryBand: masteryRef.current.masteryBand,
       masterySource: masteryRef.current.masterySource,
       levelId: masteryRef.current.levelId,
+      frustrationScore:
+        args.frustrationScore ?? fr?.score ?? snap.frustration_score ?? null,
+      frustrationLevel:
+        args.frustrationLevel || fr?.level || snap.frustration_level || null,
     });
+  };
   const interventionMgrRef = useRef(createInterventionManager());
   const lastNonWrongCodeRef = useRef(null);
   const lastFocusRef = useRef(null);
@@ -281,10 +298,15 @@ export function useBehavioralTelemetry({
       milestone_just_achieved: milestoneFlagRef.current,
       consecutive_fails: consecutiveFailsRef.current,
       max_concept_misses: maxConceptMisses,
+      same_concept_misses: maxConceptMisses,
+      concept_miss_count: maxConceptMisses,
       top_missed_concept: topMissed?.topic || null,
+      recent_correct_streak: firstAttemptCorrectStreakRef.current || 0,
+      consecutive_correct: firstAttemptCorrectStreakRef.current || 0,
       enemy_hits: Number(enemyHits) || 0,
       enemy_deaths: Number(enemyDeaths) || 0,
       level_restarts: Number(levelRestarts) || 0,
+      shop_customers_left: Number(shopCustomersLeft) || 0,
       previous_avg_answer_time_sec: Number(previousAvgAnswerTimeSec) || 0,
       baseline_avg_answer_time_sec: Number(previousAvgAnswerTimeSec) || 0,
       // Rolling support for performance-locked diagnostics
@@ -297,6 +319,8 @@ export function useBehavioralTelemetry({
     next.frustration = calculateFrustrationScore(next);
     next.frustration_score = next.frustration.score;
     next.frustration_level = next.frustration.level;
+    next.frustration_signals = next.frustration.signals;
+    metricsSnapRef.current = next;
 
     setMetrics(next);
     setSession((prev) => ({
@@ -309,7 +333,7 @@ export function useBehavioralTelemetry({
       metrics: next,
     }));
     return next;
-  }, [externalRetries, levelElapsedSec, thresholds, enemyHits, enemyDeaths, levelRestarts, previousAvgAnswerTimeSec]);
+  }, [externalRetries, levelElapsedSec, thresholds, enemyHits, enemyDeaths, levelRestarts, shopCustomersLeft, previousAvgAnswerTimeSec]);
 
   const raiseFromEval = useCallback(
     (evaluation, snapshot, reasonExtra = null) => {

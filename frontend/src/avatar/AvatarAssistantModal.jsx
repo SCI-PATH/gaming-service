@@ -292,7 +292,13 @@ export default function AvatarAssistantModal({
     if (misconceptions?.length) {
       return (
         localMap ||
-        buildPersonalizedMindMap({ misconceptions }) ||
+        buildPersonalizedMindMap({
+          misconceptions,
+          frustrationScore:
+            telemetry.frustrationScore ?? m.frustration_score ?? null,
+          frustrationLevel:
+            telemetry.frustrationLevel || m.frustration_level || null,
+        }) ||
         mindMapProp ||
         telemetry.mindMap
       );
@@ -690,6 +696,10 @@ export default function AvatarAssistantModal({
                 null,
               misconceptions,
               attempts: misconceptions.flatMap((x) => x.attempts || []),
+              frustrationScore:
+                telemetry.frustrationScore ?? m.frustration_score ?? null,
+              frustrationLevel:
+                telemetry.frustrationLevel || m.frustration_level || null,
             })
           : null)
       : null;
@@ -896,7 +906,13 @@ export default function AvatarAssistantModal({
     }
     let map =
       (misconceptions?.length
-        ? buildPersonalizedMindMap({ misconceptions })
+        ? buildPersonalizedMindMap({
+            misconceptions,
+            frustrationScore:
+              telemetry.frustrationScore ?? m.frustration_score ?? null,
+            frustrationLevel:
+              telemetry.frustrationLevel || m.frustration_level || null,
+          })
         : null) || mindMap;
     if (!map && onShowMindMap) {
       map = onShowMindMap();
@@ -989,6 +1005,10 @@ export default function AvatarAssistantModal({
                   null,
                 misconceptions,
                 attempts: misconceptions.flatMap((x) => x.attempts || []),
+                frustrationScore:
+                  telemetry.frustrationScore ?? m.frustration_score ?? null,
+                frustrationLevel:
+                  telemetry.frustrationLevel || m.frustration_level || null,
               })
             : null)
         : null;
@@ -1299,6 +1319,16 @@ export default function AvatarAssistantModal({
                   currentWord={spokenCurrentWord}
                   activePhrase={spokenSubtitle}
                   segmentText={spokenCaption}
+                  frustrationScore={
+                    telemetry.frustrationScore ??
+                    m.frustration_score ??
+                    null
+                  }
+                  frustrationLevel={
+                    telemetry.frustrationLevel ||
+                    m.frustration_level ||
+                    null
+                  }
                 />
               </div>
               <button

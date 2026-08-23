@@ -320,6 +320,14 @@ export function emitUnlockShopClose() {
   ForestGameBridge.emit(FARM_EVENTS.UNLOCK_SHOP_CLOSE);
 }
 
+export function emitFarmCustomerShopResult(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.FARM_CUSTOMER_SHOP_RESULT, payload);
+}
+
+export function emitFarmShopUnload(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.FARM_SHOP_UNLOAD, payload);
+}
+
 /** Lock Phaser keyboard + pause farm physics/music while React overlays are open. */
 export function emitUiInputLock(locked, options = {}) {
   ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, {

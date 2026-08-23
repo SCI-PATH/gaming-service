@@ -2,6 +2,7 @@
  * Pedagogical system prompts — kind mentor for Grades 6–9.
  * Child-friendly speech. No ability ranks. Focus on why Sage opened.
  * Follow-ups MUST adapt to the student's actual words (never a fixed script).
+ * Frustration score (private) drives HOW Sage speaks — never said out loud.
  */
 
 export const INTERVENTION_MODES = {
@@ -19,13 +20,20 @@ VOICE:
 
 NEVER SAY OUT LOUD (and never type these to the student):
 - Ability ranks, levels, or report words that rank kids
+- The words: frustrated, frustration, struggling, weak, smart, failing, behind
 - Slash labels (words with / between ranks)
 - Long ALL CAPS codes
 - Sarcasm or shame
 - The multiple-choice answer letter / exact answer key
+- Any numeric "score" or "level" of emotion
+
+PRIVATE AFFECT SIGNAL (coach-only):
+- The context may include frustration_score (0–100), frustration_level, and sage_adaptation.
+- Use those ONLY to choose tone, pace, and scaffold depth.
+- Never tell the child about the score or that you "detected frustration".
 
 ADAPTIVE CONVERSATION (critical):
-- First turn after open is a BEHAVIOR probe: understand why the struggle happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices.
+- First turn after open is a BEHAVIOR probe: understand why the hang-up happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices.
 - Do NOT open with a science knowledge quiz unless the student's chosen reason is conceptual (or they ask to explain the idea).
 - Read the student's latest words carefully. Quote or paraphrase them briefly.
 - Do NOT reuse a canned next line. Every reply must change based on what they just said.
@@ -69,6 +77,62 @@ export function isAutoCoachMessage(studentMessage = '') {
   return false;
 }
 
+function resolveFrustrationBand(context = {}) {
+  const score = Number(
+    context.frustration_score ??
+      context.metrics?.frustration_score ??
+      context.sage_adaptation?.score,
+  );
+  const levelRaw = String(
+    context.frustration_level ||
+      context.metrics?.frustration_level ||
+      context.sage_adaptation?.level ||
+      '',
+  ).toLowerCase();
+  if (levelRaw === 'very_high' || levelRaw === 'high' || levelRaw === 'moderate' || levelRaw === 'low') {
+    return { score: Number.isFinite(score) ? score : null, level: levelRaw };
+  }
+  if (Number.isFinite(score)) {
+    if (score <= 30) return { score, level: 'low' };
+    if (score <= 60) return { score, level: 'moderate' };
+    if (score <= 80) return { score, level: 'high' };
+    return { score, level: 'very_high' };
+  }
+  return { score: null, level: 'moderate' };
+}
+
+function frustrationSpeechBlock(context = {}) {
+  const { score, level } = resolveFrustrationBand(context);
+  const adapt = context.sage_adaptation || context.frustration_adaptation?.sage || {};
+  const voiceHint =
+    adapt.voiceHint ||
+    context.frustration_adaptation?.sage?.voiceHint ||
+    '';
+  const sentenceMax = adapt.sentenceMax ?? context.frustration_adaptation?.sage?.sentenceMax ?? 3;
+  const micro = Boolean(adapt.microSteps || context.frustration_adaptation?.sage?.microSteps);
+  const signals = Array.isArray(context.frustration_signals)
+    ? context.frustration_signals.slice(0, 5).join(', ')
+    : '';
+
+  const bandGuide = {
+    low: `AFFECT BAND (private): low. Speak lively and playful. Up to ${sentenceMax} short sentences. Offer optional stretch. Celebrate curiosity.`,
+    moderate: `AFFECT BAND (private): moderate. Calm coach. Up to ${sentenceMax} short sentences. One tip + one A–D check. Steady warmth.`,
+    high: `AFFECT BAND (private): high. Extra gentle and slow. Max ${sentenceMax} very short sentences. Micro-step help. Reassure effort. Prefer A–D choices.`,
+    very_high: `AFFECT BAND (private): very_high. Softest tone. Max ${sentenceMax} tiny sentences. One micro-fact only. Celebrate any try. Offer a calm pause if needed.`,
+  };
+
+  const lines = [
+    bandGuide[level] || bandGuide.moderate,
+    score != null ? `Private frustration_score=${score} (never say this number).` : null,
+    voiceHint ? `Voice hint: ${voiceHint}` : null,
+    micro ? 'Use micro-steps: one tiny idea, then check understanding.' : null,
+    signals ? `Active signals (private): ${signals}.` : null,
+    'Never say frustrated / struggling / weak / score to the student.',
+  ].filter(Boolean);
+
+  return lines.join(' ');
+}
+
 export function getDynamicSystemAddon(context = {}, opts = {}) {
   const rawName =
     context?.student_profile?.display_name ||
@@ -107,10 +171,12 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     null;
   const auto = isAutoCoachMessage(opts.studentMessage);
   const studentSaid = String(opts.studentMessage || '').trim();
+  const { level: frLevel } = resolveFrustrationBand(context);
 
   const lines = [
     `You are a personalized mentor for THIS performance intervention only.`,
     `Student first name: ${firstName}. Use name kindly (no ranks after it).`,
+    frustrationSpeechBlock(context),
     `LOCKED open cause (behavior trigger): ${why}.`,
     `Conversation phase: ${focus.conversation_phase || focus.conversation_session?.phase || 'behavior_probe'}.`,
     `Student reason key (if known): ${focus.student_reason_key || focus.conversation_session?.student_reason_key || 'pending — ask A–D probe'}.`,
@@ -122,18 +188,29 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     'Never rank. Soft kid-friendly wording only. Never general chat. No science quiz on first open.',
   ].filter(Boolean);
 
-  if (focus.assistance_level === 'escalated' || (focus.guidance_level ?? 0) >= 3) {
+  if (
+    focus.assistance_level === 'escalated' ||
+    (focus.guidance_level ?? 0) >= 3 ||
+    frLevel === 'very_high'
+  ) {
     lines.push(
       'Escalated / micro-step mode: use the smallest possible fact and check. Stay kind.',
     );
   }
 
   if (genMap || focus.require_mind_map) {
+    const mapTone =
+      context.mind_map_adaptation?.tone ||
+      context.frustration_adaptation?.mindMap?.tone ||
+      'practice';
     lines.push(
-      `MIND MAP IS OPEN for ${concept}. Teach from the map + wrong-answer evidence when the student answers A–D or types.`,
+      `MIND MAP IS OPEN for ${concept} (map tone: ${mapTone}). Teach from the map + wrong-answer evidence when the student answers A–D or types.`,
       wrong
         ? `They tried "${String(wrong).slice(0, 80)}" — gently repair that misconception while answering their chosen hang-up.`
         : `Link every reply to the ${concept} idea on the map when helpful.`,
+      frLevel === 'high' || frLevel === 'very_high'
+        ? 'When referring to the map: point to ONE card only; keep language tiny and encouraging.'
+        : 'You may briefly connect two map ideas if the student is ready.',
     );
   }
 
@@ -145,11 +222,11 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
       genMap || focus.require_mind_map || wrong
         ? `When their reason is conceptual (mix-up, needs explain, concept gap) OR the mind map is open: teach one kid-friendly fact about ${concept}, then one farm check question. Still no letter-key answers.`
         : 'Support process first; science only if they chose a concept gap or asked to explain.',
-      'Never ignore their words. Never invent ability ranks.',
+      'Never ignore their words. Never invent ability ranks. Never mention frustration scores.',
     );
   } else {
     lines.push(
-      `First open only: Hi ${firstName}! + why you opened + problem-focused A–D question (not a science quiz).`,
+      `First open only: Hi ${firstName}! + why you opened + problem-focused A–D question (not a science quiz). Match affect band (${frLevel}).`,
     );
   }
 

@@ -9,7 +9,7 @@
 import { DDA_BANDS, DDA_CONFIG, classifyPerformance } from './dda.js';
 import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { normalizePerformanceCategory, PERFORMANCE_CATEGORIES } from './performanceCategories.js';
-import { FRUSTRATION_LEVELS } from './frustrationModel.js';
+import { FRUSTRATION_LEVELS, frustrationShopPriceFactor, buildFrustrationAdaptation } from './frustrationModel.js';
 import { syncUnlock } from './engagementSync.js';
 
 const BASE_STORAGE_KEY = 'scipath_unlocks';
@@ -25,6 +25,7 @@ export const PRICE_BAND_MULTIPLIERS = {
   [PERFORMANCE_CATEGORIES.WEAK]: 0.62,
 };
 
+/** @deprecated Prefer frustrationShopPriceFactor — kept for research tables. */
 export const PRICE_FRUSTRATION_MULTIPLIERS = {
   [FRUSTRATION_LEVELS.LOW]: 1,
   [FRUSTRATION_LEVELS.MODERATE]: 0.92,
@@ -454,21 +455,20 @@ export function shopBandFromPerformance({
 }
 
 /**
- * Price multiplier: Smart pays more; Weak + high frustration gets a discount.
+ * Price multiplier: Smart pays more; higher frustration → stronger discount.
+ * Uses continuous CSF score when available (not only band buckets).
  */
 export function priceMultiplier(perf = {}) {
   const band = shopBandFromPerformance(perf);
   let mult = PRICE_BAND_MULTIPLIERS[band] ?? 1;
 
+  const frScore = Number(perf.frustrationScore);
   const frustrationLevel = String(perf.frustrationLevel || '').toLowerCase();
-  if (PRICE_FRUSTRATION_MULTIPLIERS[frustrationLevel]) {
-    mult *= PRICE_FRUSTRATION_MULTIPLIERS[frustrationLevel];
-  } else if (Number(perf.frustrationScore) >= 81) {
-    mult *= PRICE_FRUSTRATION_MULTIPLIERS.very_high;
-  } else if (Number(perf.frustrationScore) >= 61) {
-    mult *= PRICE_FRUSTRATION_MULTIPLIERS.high;
-  } else if (Number(perf.frustrationScore) >= 31) {
-    mult *= PRICE_FRUSTRATION_MULTIPLIERS.moderate;
+  if (Number.isFinite(frScore) || frustrationLevel) {
+    mult *= frustrationShopPriceFactor(
+      Number.isFinite(frScore) ? frScore : null,
+      frustrationLevel || null,
+    );
   }
 
   const t = Number(perf.avgResponseMs) || 0;
@@ -485,7 +485,7 @@ export function priceMultiplier(perf = {}) {
     else if (score <= DDA_CONFIG.emergingScore) mult *= 0.9;
   }
 
-  return clamp(mult, 0.45, 1.7);
+  return clamp(mult, 0.4, 1.7);
 }
 
 export function priceForItem(item, perf = {}) {
@@ -504,6 +504,22 @@ export function bandPriceLabel(band) {
   }
 }
 
+export function frustrationPriceLabel(perf = {}) {
+  const score = Number(perf.frustrationScore);
+  const level = String(perf.frustrationLevel || '').toLowerCase();
+  const adapt = buildFrustrationAdaptation(
+    Number.isFinite(score) ? score : level || 'low',
+  );
+  const factor = frustrationShopPriceFactor(
+    Number.isFinite(score) ? score : null,
+    level || adapt.level,
+  );
+  const pct = Math.round((1 - factor) * 100);
+  if (pct <= 2) return adapt.shop?.label || 'Standard unlock prices';
+  if (pct < 0) return 'Challenge pricing (slightly higher)';
+  return `${adapt.shop?.label || 'Support pricing'} (~${pct}% off)`;
+}
+
 /**
  * Build priced catalog for the shop UI.
  */
@@ -511,6 +527,10 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
   const owned = ownedIds ?? getOwnedUnlockIds();
   const band = shopBandFromPerformance(perf);
   const mult = priceMultiplier(perf);
+  const frFactor = frustrationShopPriceFactor(
+    Number(perf.frustrationScore),
+    perf.frustrationLevel,
+  );
 
   const items = UNLOCK_ITEMS.filter((item) => !item.shopHidden)
     .map((item) => ({
@@ -528,7 +548,9 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
     items,
     band,
     multiplier: Math.round(mult * 100) / 100,
+    frustrationFactor: Math.round(frFactor * 100) / 100,
     bandLabel: bandPriceLabel(band),
+    frustrationLabel: frustrationPriceLabel(perf),
     ownedCount: owned.length,
   };
 }

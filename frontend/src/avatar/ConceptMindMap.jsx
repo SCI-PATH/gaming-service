@@ -48,9 +48,14 @@ function attemptsFromProps(map, misconceptions) {
   return [];
 }
 
-function localMapFromAttempts(attempts, misconceptions) {
+function localMapFromAttempts(attempts, misconceptions, frustration = {}) {
   if (attempts.length) {
-    return buildPersonalizedMindMap({ attempts, misconceptions });
+    return buildPersonalizedMindMap({
+      attempts,
+      misconceptions,
+      frustrationScore: frustration.score ?? null,
+      frustrationLevel: frustration.level || null,
+    });
   }
   return null;
 }
@@ -140,18 +145,30 @@ export default function ConceptMindMap({
   /** Current subtitle sentence being spoken */
   activePhrase = '',
   segmentText = '',
+  frustrationScore = null,
+  frustrationLevel = null,
 }) {
   const seedAttempts = useMemo(
     () => attemptsFromProps(seedMap, misconceptions),
     [seedMap, misconceptions],
   );
 
+  const resolvedFrustrationScore =
+    frustrationScore ??
+    seedMap?.frustrationScore ??
+    null;
+  const resolvedFrustrationLevel =
+    frustrationLevel ||
+    seedMap?.frustrationLevel ||
+    null;
+
   const attemptKey = useMemo(
     () =>
       seedAttempts
         .map((a) => `${a.prompt}|${a.studentAnswer}|${a.correctAnswer}`)
-        .join('||'),
-    [seedAttempts],
+        .join('||') +
+      `|fr:${resolvedFrustrationScore ?? ''}:${resolvedFrustrationLevel || ''}`,
+    [seedAttempts, resolvedFrustrationScore, resolvedFrustrationLevel],
   );
 
   const [liveMap, setLiveMap] = useState(null);
@@ -167,7 +184,10 @@ export default function ConceptMindMap({
     const fallback =
       seedMap?.layout === 'all-misses-ai'
         ? seedMap
-        : localMapFromAttempts(seedAttempts, misconceptions) || seedMap;
+        : localMapFromAttempts(seedAttempts, misconceptions, {
+            score: resolvedFrustrationScore,
+            level: resolvedFrustrationLevel,
+          }) || seedMap;
 
     if (!seedAttempts.length && !seedMap) {
       setLiveMap(null);
@@ -199,6 +219,8 @@ export default function ConceptMindMap({
         const result = await fetchAiMindMap({
           attempts: seedAttempts,
           misconceptions,
+          frustrationScore: resolvedFrustrationScore,
+          frustrationLevel: resolvedFrustrationLevel,
         });
         if (cancelled) return;
         if (result.mindMap) {

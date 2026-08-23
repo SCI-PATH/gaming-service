@@ -12,6 +12,7 @@ import {
   PERFORMANCE_LABELS,
   normalizePerformanceCategory,
 } from './performanceCategories.js';
+import { frustrationCombatFactor, buildFrustrationAdaptation } from './frustrationModel.js';
 
 const BASE_STORAGE_KEY = 'scipath_gameplay_perf';
 const HISTORY_WINDOW = 3;
@@ -138,6 +139,99 @@ function writeStore(data) {
 export function getGameplaySettings(band) {
   const key = normalizePerformanceCategory(band);
   return { ...GAMEPLAY_SETTINGS_BY_BAND[key] };
+}
+
+/**
+ * Blend mastery/gameplay band settings with live CSF frustration.
+ * Higher frustration → calmer combat, longer quiz timers, more hints/retries,
+ * slightly higher cash, and a supportive farm mood.
+ */
+export function applyFrustrationToGameplaySettings(
+  settings = {},
+  frustrationScore = 0,
+  frustrationLevel = null,
+) {
+  const base = { ...(settings || getGameplaySettings('medium')) };
+  const adapt = buildFrustrationAdaptation(
+    Number.isFinite(Number(frustrationScore))
+      ? Number(frustrationScore)
+      : frustrationLevel || 'moderate',
+  );
+  const combat = adapt.combat || frustrationCombatFactor(frustrationScore, frustrationLevel);
+  const gp = adapt.gameplay || {};
+
+  const enemySpeed = Math.max(
+    22,
+    Math.round((Number(base.enemySpeed) || 60) * (combat.speedMult || 1)),
+  );
+  const enemyCountFactor = Math.max(
+    0.25,
+    Math.round((Number(base.enemyCountFactor) || 1) * (combat.countMult || 1) * 100) /
+      100,
+  );
+  const enemyDistanceTiles =
+    (Number(base.enemyDistanceTiles) || 0) + (combat.distanceBoost || 0);
+
+  const timerMult = Number(gp.timerMult) || 1;
+  const answerTimerMs = Math.max(
+    12000,
+    Math.min(
+      60000,
+      Math.round((Number(base.answerTimerMs) || 25000) * timerMult),
+    ),
+  );
+  const maxRetriesPerQuestion = Math.max(
+    1,
+    Math.min(
+      6,
+      (Number(base.maxRetriesPerQuestion) || 2) + (Number(gp.retryBonus) || 0),
+    ),
+  );
+  const hintLevel = gp.hintLevel || base.hintLevel || 'limited';
+  const cashRewardMultiplier = Math.max(
+    0.9,
+    Math.round((Number(base.cashRewardMultiplier) || 1) * (Number(gp.cashMult) || 1) * 100) /
+      100,
+  );
+  const playerSpeedMult = Math.max(
+    0.9,
+    Math.min(1.2, Number(gp.playerSpeedMult) || 1),
+  );
+
+  return {
+    ...base,
+    enemySpeed,
+    enemyCountFactor,
+    enemyDistanceTiles,
+    hurtInvulnMult: combat.hurtInvulnMult || 1,
+    enemyDamageChance: combat.damageChance ?? 1,
+    answerTimerMs,
+    maxRetriesPerQuestion,
+    hintLevel,
+    cashRewardMultiplier,
+    playerSpeedMult,
+    farmMood: gp.farmMood || 'steady',
+    frustrationCombatLabel: combat.label,
+    frustrationGameplayLabel: gp.label || 'Balanced farm support',
+    frustrationLevel: adapt.level,
+    frustrationScore: Number(frustrationScore) || 0,
+    personalized: true,
+  };
+}
+
+/**
+ * Convenience: band settings already adapted for a frustration snapshot.
+ */
+export function getGameplaySettingsForFrustration(
+  band,
+  frustrationScore = 0,
+  frustrationLevel = null,
+) {
+  return applyFrustrationToGameplaySettings(
+    getGameplaySettings(band),
+    frustrationScore,
+    frustrationLevel,
+  );
 }
 
 /**

@@ -69,6 +69,11 @@ export default function UnlockShopModal({
             <p className="unlock-shop-kicker">Level complete</p>
             <h2 id="unlock-shop-title">Unlock Shop</h2>
             <p className="unlock-shop-sub">{catalog.bandLabel}</p>
+            {catalog.frustrationLabel ? (
+              <p className="unlock-shop-sub unlock-shop-frust">
+                {catalog.frustrationLabel}
+              </p>
+            ) : null}
           </div>
           <div className="unlock-shop-cash" aria-live="polite">
             <span>Cash</span>
@@ -77,9 +82,9 @@ export default function UnlockShopModal({
         </header>
 
         <p className="unlock-shop-hint">
-        Faster, stronger quiz results → higher prices. Average results →
-        standard prices. Weaker results → lower prices. Bought items appear on
-        your next farm — no extra quests for them.
+          Prices adapt to how this level went: stronger quiz results raise
+          prices; higher support need lowers them so unlocks stay reachable.
+          Bought items appear on your next farm — no extra quests for them.
         </p>
 
         {message && <p className="unlock-shop-message">{message}</p>}

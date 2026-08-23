@@ -84,10 +84,10 @@ export default function LevelQuestScroll({
       });
       list.push({
         id: 'sell',
-        title: 'Go to the shop and sell',
-        detail: `Sold ${sold}/${target} ${name}. Press Q to sell the cart.`,
+        title: 'Bring harvests to the Farm Shop',
+        detail: `Sold ${sold}/${target} ${name}. Unload at the shop for customers.`,
         done: sold >= target,
-        hint: 'Load at the blue dock, then sell at the shop.',
+        hint: 'Load at the blue dock, walk to the Farm Shop (west), press E/Q to unload into shop stock.',
         kind: 'sell',
       });
     }
@@ -120,10 +120,10 @@ export default function LevelQuestScroll({
       });
       list.push({
         id: 'animal-sell',
-        title: `Sell ${produce} at the shop`,
-        detail: `Sold ${animalSold}/${animalTarget} ${produce}. Press Q to sell the cart.`,
+        title: `Sell ${produce} at the Farm Shop`,
+        detail: `Sold ${animalSold}/${animalTarget} ${produce}. Unload at the shop.`,
         done: animalSold >= animalTarget,
-        hint: 'Load at the blue dock, then sell.',
+        hint: 'Load at the blue dock, walk to the Farm Shop, press E/Q to unload.',
         kind: 'animal',
       });
     }
@@ -156,10 +156,10 @@ export default function LevelQuestScroll({
       });
       list.push({
         id: 'clean-sell',
-        title: `Sell ${waste} at the shop`,
-        detail: `Sold ${cleanSold}/${cleanTarget} ${waste}. Press Q to sell the cart.`,
+        title: `Sell ${waste} at the Farm Shop`,
+        detail: `Sold ${cleanSold}/${cleanTarget} ${waste}. Unload at the shop.`,
         done: cleanSold >= cleanTarget,
-        hint: 'Load at the blue dock, then sell compost at the shop.',
+        hint: 'Load at the blue dock, walk to the Farm Shop, press E/Q to unload.',
         kind: 'clean',
       });
     }

@@ -237,7 +237,7 @@ function mergeAiOntoAttempts(attempts, ai) {
   };
 }
 
-function buildPrompt(attempts) {
+function buildPrompt(attempts, adaptation = null) {
   const payload = attempts.map((a, i) => ({
     miss_number: i + 1,
     topic: a.topic,
@@ -247,16 +247,49 @@ function buildPrompt(attempts) {
     hint: a.hint || null,
   }));
 
+  const level = String(adaptation?.level || 'moderate').toLowerCase();
+  const map = adaptation?.mindMap || {};
+  const maxBranches = map.maxBranches || attempts.length;
+  const depth = map.explainDepth || 'medium';
+  const simplify = Boolean(map.simplifyLanguage);
+  const tone = map.tone || 'practice';
+
+  const depthGuide = {
+    micro:
+      'Each branch: one tiny why_wrong (≤12 words), one micro key_concept_explain (≤18 words), farm_link ≤12 words.',
+    simple:
+      'Each branch: short friendly why_wrong (≤20 words), simple key_concept_explain (≤30 words), farm_link ≤18 words.',
+    medium:
+      'Each branch: clear why_wrong (1 short sentence), key_concept_explain (1–2 short sentences), farm_link one sentence.',
+    rich:
+      'Each branch: rich but kid-friendly why_wrong, fuller key_concept_explain, and a creative farm_link that connects ideas.',
+  };
+
+  const bandGuide = {
+    low: 'Student is ready to explore. Allow richer connections. Encourage curiosity.',
+    moderate: 'Balanced repair map. Clear and encouraging.',
+    high: 'Gentle repair only. Fewer words. No shame. Focus on the correct idea first.',
+    very_high:
+      'Softest map. Tiny language. One step per branch. Reassure effort. Prefer the most important misses only.',
+  };
+
   return `You are an expert educational mind-map designer for students in Grades 6–9.
 
 Create ONE clear interactive mind map from EVERY incorrect answer below.
+Personalization band (PRIVATE — never write these words on the map): frustration_level=${level}, tone=${tone}, explain_depth=${depth}.
+${bandGuide[level] || bandGuide.moderate}
+${depthGuide[depth] || depthGuide.medium}
+${simplify ? 'Use very simple Grade-6 words. Avoid long clauses.' : 'Use clear school language.'}
+This request is already capped to ${attempts.length} miss(es) for personalization (maxBranches=${maxBranches}).
+
 Rules:
 1. Output ONLY valid JSON (no markdown, no prose outside JSON).
 2. Include EXACTLY ${attempts.length} branches — one per miss, miss_index 1..${attempts.length}.
 3. Do NOT invent extra mistakes. Do NOT drop any miss.
-4. Keep language simple, encouraging, short (school-aged).
+4. Keep language encouraging and age-appropriate. Never say frustrated/struggling/weak.
 5. Use farm / plants analogies when natural.
 6. Never invent a different correct answer than the one given.
+7. summary and big_picture must match the personalization band (${tone}).
 
 Incorrect answers (ground truth):
 ${JSON.stringify(payload, null, 2)}
@@ -265,8 +298,8 @@ JSON schema:
 {
   "title": "short map title",
   "central_idea": "what this whole map is about",
-  "summary": "1–2 sentences",
-  "big_picture": "how all misses connect in one story (2–3 sentences)",
+  "summary": "1–2 sentences matching tone ${tone}",
+  "big_picture": "how all misses connect in one story (2–3 sentences; shorter if high/very_high)",
   "study_path": ["Miss 1: …", "Miss 2: …"],
   "branches": [
     {
@@ -286,7 +319,7 @@ JSON schema:
 }
 
 /**
- * Generate mind map for all misses (AI + guaranteed merge).
+ * Generate mind map for all misses (AI + guaranteed merge), personalized by frustration.
  */
 export async function generateMindMapFromMistakes(body = {}) {
   const attempts = normalizeAttempts(body);
@@ -299,16 +332,31 @@ export async function generateMindMapFromMistakes(body = {}) {
     };
   }
 
-  // Always start from full local list — AI only enriches
-  const local = buildLocalMindMap(attempts);
+  const frustrationScore = Number(body.frustrationScore ?? body.frustration_score);
+  const frustrationLevel = String(
+    body.frustrationLevel || body.frustration_level || '',
+  ).toLowerCase();
+  const adaptation =
+    body.frustrationAdaptation ||
+    body.frustration_adaptation ||
+    buildAdaptationFromScore(frustrationScore, frustrationLevel);
+
+  // Cap attempts for very high frustration (still keep earliest misses)
+  const capped = attempts.slice(0, adaptation.mindMap.maxBranches || attempts.length);
+
+  const local = buildLocalMindMap(capped);
   const cfg = getLlamaConfig();
 
   if (cfg.provider === 'offline' || cfg.provider === 'fallback') {
     return {
       ok: true,
-      mindMap: toClientShape(local),
+      mindMap: toClientShape({
+        ...local,
+        summary: `${adaptation.mindMap.label}: ${local.summary}`,
+      }),
       provider: 'offline',
       note: 'Local mind map (set GROQ_API_KEY for AI enrichment).',
+      frustrationLevel: adaptation.level,
     };
   }
 
@@ -318,28 +366,35 @@ export async function generateMindMapFromMistakes(body = {}) {
         {
           role: 'system',
           content:
-            'You design student mind maps. Reply with JSON only. Always include one branch per incorrect answer given.',
+            'You design personalized student mind maps. Reply with JSON only. Always include one branch per incorrect answer given. Never mention frustration scores to students.',
         },
-        { role: 'user', content: buildPrompt(attempts) },
+        { role: 'user', content: buildPrompt(capped, adaptation) },
       ],
       maxTokens: Math.max(
         900,
         Number(process.env.MINDMAP_MAX_TOKENS || 1200) || 1200,
       ),
-      temperature: 0.35,
+      temperature: adaptation.level === 'very_high' ? 0.25 : 0.35,
     });
 
     const parsed = extractJson(result.content);
-    const merged = mergeAiOntoAttempts(attempts, parsed);
+    const merged = mergeAiOntoAttempts(capped, parsed);
     return {
       ok: true,
-      mindMap: toClientShape(merged),
+      mindMap: toClientShape({
+        ...merged,
+        summary: merged.summary || `${adaptation.mindMap.label} map`,
+      }),
       provider: result.provider,
       model: result.model,
       note:
         merged.generatedBy === 'ai'
-          ? 'AI mind map covering every incorrect answer.'
+          ? `AI personalized mind map (${adaptation.mindMap.label}).`
           : 'Mind map of every incorrect answer.',
+      frustrationLevel: adaptation.level,
+      frustrationScore: Number.isFinite(frustrationScore)
+        ? frustrationScore
+        : null,
     };
   } catch (err) {
     return {
@@ -348,8 +403,60 @@ export async function generateMindMapFromMistakes(body = {}) {
       provider: 'local-fallback',
       note: err instanceof Error ? err.message : 'AI unavailable; used local map.',
       aiError: true,
+      frustrationLevel: adaptation.level,
     };
   }
+}
+
+function buildAdaptationFromScore(score, levelIn) {
+  const s = Number(score);
+  let level = String(levelIn || '').toLowerCase();
+  if (!level || level === 'null') {
+    if (!Number.isFinite(s)) level = 'moderate';
+    else if (s <= 30) level = 'low';
+    else if (s <= 60) level = 'moderate';
+    else if (s <= 80) level = 'high';
+    else level = 'very_high';
+  }
+  const mindMapByLevel = {
+    low: {
+      maxBranches: 8,
+      extraLinks: true,
+      explainDepth: 'rich',
+      tone: 'challenge',
+      simplifyLanguage: false,
+      label: 'Explore connections',
+    },
+    moderate: {
+      maxBranches: 5,
+      extraLinks: false,
+      explainDepth: 'medium',
+      tone: 'practice',
+      simplifyLanguage: false,
+      label: 'Repair practice',
+    },
+    high: {
+      maxBranches: 3,
+      extraLinks: false,
+      explainDepth: 'simple',
+      tone: 'support',
+      simplifyLanguage: true,
+      label: 'Gentle repair',
+    },
+    very_high: {
+      maxBranches: 2,
+      extraLinks: false,
+      explainDepth: 'micro',
+      tone: 'support',
+      simplifyLanguage: true,
+      label: 'One step at a time',
+    },
+  };
+  return {
+    level,
+    score: Number.isFinite(s) ? s : null,
+    mindMap: mindMapByLevel[level] || mindMapByLevel.moderate,
+  };
 }
 
 /** Shape used by the React mind-map component */
