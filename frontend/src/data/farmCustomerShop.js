@@ -394,6 +394,35 @@ export function adaptWorldShopFrustration(shop, frustrationScore, frustrationLev
 }
 
 /**
+ * Move harvested carry stack directly into shop stock, then FIFO fulfill.
+ */
+export function loadCarryStackToShop(shop, carryStack = [], fallbacks = {}) {
+  if (!shop || shop.closed) return { ok: false, reason: 'closed' };
+  const stock = inventoryFromCartStack(carryStack, fallbacks);
+  const moved = {};
+  for (const [id, qty] of Object.entries(stock)) {
+    const n = Math.max(0, Math.floor(Number(qty) || 0));
+    if (!n) continue;
+    shop.shopStock[id] = (shop.shopStock[id] || 0) + n;
+    moved[id] = n;
+  }
+  const unloadEv = emitLocal(shop, SHOP_EVENTS.SHOP_ITEM_UNLOADED, {
+    itemId: Object.keys(moved).join(','),
+    qty: Object.values(moved).reduce((a, b) => a + b, 0),
+    shopStockAfter: { ...shop.shopStock },
+    source: 'farm_shop',
+  });
+  const fulfill = autoFulfillQueue(shop);
+  return {
+    ok: true,
+    moved,
+    shopStock: shop.shopStock,
+    unloadEvent: unloadEv,
+    ...fulfill,
+  };
+}
+
+/**
  * Move qty of itemId from player stock map into shopStock, then FIFO fulfill.
  */
 export function unloadItemsToShop(shop, playerStock, itemId, qty = 1) {

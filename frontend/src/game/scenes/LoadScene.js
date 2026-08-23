@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
+import { createBrandLoadBar } from '../ui/menuBackdrop.js';
 import { LIBRARY_LOAD_ITEMS } from '../../data/assetLibrary.js';
 import { SITUATION_LOAD_ITEMS } from '../../storyline/storylineSituations.js';
 import { GROUND_TILE_KEYS, UNLOCK_ITEMS } from '../../data/unlockShop.js';
 import { HARVEST_LOAD_ITEMS } from '../../data/harvestAssets.js';
 import { FARM_LIFE_LOAD_ITEMS } from '../../data/farmLifeAssets.js';
+import { FARM_SHOP_LOAD_ITEMS } from '../../data/farmShopAssets.js';
 
 export default class LoadScene extends Phaser.Scene {
   constructor() {
@@ -11,18 +13,7 @@ export default class LoadScene extends Phaser.Scene {
   }
 
   preload() {
-    this.add
-      .text(400, 200, 'SCI_PATH', {
-        fontFamily: 'Impact, Haettenschweiler, Arial Black, sans-serif',
-        fontSize: '64px',
-        fontStyle: 'bold',
-        color: '#5aaf45',
-        stroke: '#0a1208',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5)
-      .setShadow(3, 3, '#000000', 0, false, true);
-    this.createLoadBar();
+    createBrandLoadBar(this);
     this.loadImages();
     this.loadMaps();
     this.loadAudio();
@@ -50,16 +41,6 @@ export default class LoadScene extends Phaser.Scene {
     this.scene.start('MenuScene');
   }
 
-  createLoadBar() {
-    const bar = this.add.graphics({ fillStyle: { color: 0xffffff } });
-
-    this.load.on('progress', (percent) => {
-      bar.clear();
-      bar.fillStyle(0xffffff, 1);
-      bar.fillRect(0, this.scale.height / 2, this.scale.width * percent, 50);
-    });
-  }
-
   loadImages() {
     this.load.image('title-bg', '/assets/sprites/title-screen-bg.png');
     this.load.image('enter', '/assets/sprites/press-enter-text.png');
@@ -77,6 +58,7 @@ export default class LoadScene extends Phaser.Scene {
     this.loadUnlockShopAssets();
     this.loadHarvestAssets();
     this.loadFarmLifeAssets();
+    this.loadFarmShopAssets();
     this.loadAssetLibrary();
     this.loadStorylineSituationAssets();
   }
@@ -97,6 +79,19 @@ export default class LoadScene extends Phaser.Scene {
   loadFarmLifeAssets() {
     for (const item of FARM_LIFE_LOAD_ITEMS) {
       this.load.image(item.textureKey, item.image);
+    }
+  }
+
+  loadFarmShopAssets() {
+    for (const item of FARM_SHOP_LOAD_ITEMS) {
+      if (item.frameWidth && item.frameHeight) {
+        this.load.spritesheet(item.textureKey, item.image, {
+          frameWidth: item.frameWidth,
+          frameHeight: item.frameHeight,
+        });
+      } else {
+        this.load.image(item.textureKey, item.image);
+      }
     }
   }
 

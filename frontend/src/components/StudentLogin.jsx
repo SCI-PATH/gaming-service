@@ -1,13 +1,8 @@
 import { useState } from 'react';
-import {
-  loginStudent,
-  loginMockStorylineStudent,
-  MOCK_STORYLINE_STUDENTS,
-} from '../data/mockStudents.js';
+import { loginStudent } from '../data/mockStudents.js';
+import { GAME_NAME, GAME_PLATFORM } from '../data/gameBrand.js';
 
-/**
- * Student sign-in: own name, or a mock performance profile for testing.
- */
+/** Student sign-in before entering the farm. */
 export default function StudentLogin({ onLogin }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -23,23 +18,13 @@ export default function StudentLogin({ onLogin }) {
     onLogin?.(student);
   };
 
-  const handleMock = (studentId) => {
-    const student = loginMockStorylineStudent(studentId);
-    if (!student) {
-      setError('Could not load that mock profile.');
-      return;
-    }
-    setError('');
-    onLogin?.(student);
-  };
-
   return (
     <div className="student-login">
       <div className="student-login-card">
-        <p className="student-login-kicker">SCI_PATH</p>
+        <p className="student-login-kicker">{GAME_PLATFORM} · {GAME_NAME}</p>
         <h1>Student Login</h1>
         <p className="student-login-sub">
-          Enter your name to start, or pick a mock profile for testing.
+          Enter your name to start your farm adventure.
         </p>
 
         <form className="student-login-form" onSubmit={handleSubmit}>
@@ -55,32 +40,7 @@ export default function StudentLogin({ onLogin }) {
           {error && <p className="student-login-error">{error}</p>}
           <button type="submit">Enter farm</button>
         </form>
-
-        <div className="student-gameplay-tests">
-          <p>Mock performance profiles</p>
-          <div className="student-gameplay-btns">
-            {MOCK_STORYLINE_STUDENTS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className={`student-gameplay-btn ${profileButtonClass(s.id)}`}
-                onClick={() => handleMock(s.id)}
-              >
-                <strong>
-                  {s.displayName} · {s.performanceLabel}
-                </strong>
-                <span>Loads mock metrics for gameplay testing</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
-}
-
-function profileButtonClass(id) {
-  if (id === 'mock_student_1') return 'gp-smart';
-  if (id === 'mock_student_2') return 'gp-medium';
-  return 'gp-weak';
 }

@@ -67,10 +67,11 @@ function rememberSession(sessionId) {
   }
 }
 
-export async function syncStudentLogin(student) {
+export async function syncStudentLogin(student, options = {}) {
   if (!student?.id) return null;
   rememberStudent(student.id);
-  const sessionId = newId('sess');
+  const sessionId =
+    String(options.sessionId || '').trim() || newId('sess');
   rememberSession(sessionId);
 
   await post('/api/engagement/student', {

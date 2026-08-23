@@ -1,58 +1,31 @@
 /**
- * Farm Shop unload panel — move cart items into shop stock.
- * Customers auto-fulfill in the Phaser world (FIFO); this UI only unloads.
+ * Farm Shop panel — view customer queue and shop stock.
+ * Press E at the stall to unload harvests; customers auto-fulfill from stock (FIFO).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   getShopDifficulty,
   orderLineProgress,
   patienceMood,
   SHOP_EVENTS,
 } from '../data/farmCustomerShop.js';
-import {
-  countInventory,
-  getShopItemById,
-  inventoryFromCartStack,
-} from '../data/farmShopCatalog.js';
+import { getShopItemById } from '../data/farmShopCatalog.js';
 
 export default function FarmCustomerShopModal({
   open,
   cash = 0,
-  cartStack = [],
   shopStock = {},
   customers = [],
-  cropId = 'tomato',
-  animalProduceId = 'milk',
   frustrationScore = 0,
   frustrationLevel = 'low',
   difficulty = null,
   onClose,
-  onUnload,
   onShopEvent,
 }) {
   const [message, setMessage] = useState(null);
-  const [qtyById, setQtyById] = useState({});
 
   const diff =
     difficulty || getShopDifficulty(frustrationScore, frustrationLevel);
-
-  const playerStock = useMemo(
-    () =>
-      inventoryFromCartStack(cartStack, {
-        cropId,
-        animalProduceId,
-      }),
-    [cartStack, cropId, animalProduceId],
-  );
-
-  const playerLines = useMemo(() => {
-    return Object.entries(playerStock)
-      .filter(([, q]) => q > 0)
-      .map(([id, qty]) => ({
-        ...getShopItemById(id),
-        qty,
-      }));
-  }, [playerStock]);
 
   const shopLines = useMemo(() => {
     return Object.entries(shopStock || {})
@@ -71,30 +44,20 @@ export default function FarmCustomerShopModal({
   useEffect(() => {
     if (!open) {
       setMessage(null);
-      setQtyById({});
       return undefined;
     }
     onShopEvent?.({
       type: SHOP_EVENTS.SHOP_OPENED,
       frustrationScore,
-      mode: 'unload',
+      mode: 'shop',
       difficulty: diff,
     });
     setMessage(
-      'Unload items into the shop. Customers at the counter take what they need automatically.',
+      'Customers take what they need from shop stock automatically. Press E at the stall to unload more.',
     );
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  const unload = useCallback(
-    (itemId, qty) => {
-      const n = Math.max(1, Math.floor(Number(qty) || 1));
-      onUnload?.({ itemId, qty: n });
-      setMessage(`Unloaded ${getShopItemById(itemId).icon} ×${n} into the shop.`);
-    },
-    [onUnload],
-  );
 
   if (!open) return null;
 
@@ -104,7 +67,7 @@ export default function FarmCustomerShopModal({
         <header className="fcs-head">
           <div>
             <p className="fcs-kicker">Physical Farm Shop</p>
-            <h2>Unload to Shop Stock</h2>
+            <h2>Shop Stock &amp; Queue</h2>
             <p className="fcs-sub">
               {diff.label} · CSF {Math.round(frustrationScore)} · FIFO queue
             </p>
@@ -168,65 +131,11 @@ export default function FarmCustomerShopModal({
           </section>
 
           <section className="fcs-stock">
-            <h3>Your cart ({countInventory(playerStock)})</h3>
-            {!playerLines.length && (
-              <p className="fcs-empty">
-                Cart is empty — harvest and load at the blue dock first.
-              </p>
-            )}
-            <div className="fcs-stock-grid">
-              {playerLines.map((line) => {
-                const qty = Math.min(
-                  line.qty,
-                  Math.max(1, Number(qtyById[line.id]) || 1),
-                );
-                return (
-                  <div key={line.id} className="fcs-unload-row">
-                    <button
-                      type="button"
-                      className="fcs-stock-btn"
-                      onClick={() => unload(line.id, qty)}
-                    >
-                      <span className="fcs-icon">{line.icon}</span>
-                      <span>
-                        {line.name}
-                        <br />
-                        <small>×{line.qty} in cart</small>
-                      </span>
-                    </button>
-                    <label className="fcs-qty">
-                      Qty
-                      <input
-                        type="number"
-                        min={1}
-                        max={line.qty}
-                        value={qty}
-                        onChange={(e) =>
-                          setQtyById((prev) => ({
-                            ...prev,
-                            [line.id]: Math.min(
-                              line.qty,
-                              Math.max(1, Number(e.target.value) || 1),
-                            ),
-                          }))
-                        }
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="fcs-unload-all"
-                      onClick={() => unload(line.id, line.qty)}
-                    >
-                      Unload all
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-
             <h3>Shop stock</h3>
             {!shopLines.length && (
-              <p className="fcs-empty">Shop shelves are empty.</p>
+              <p className="fcs-empty">
+                Shop shelves are empty — press E at the Farm Shop while carrying harvests.
+              </p>
             )}
             <ul className="fcs-lines">
               {shopLines.map((l) => (
@@ -235,16 +144,13 @@ export default function FarmCustomerShopModal({
                 </li>
               ))}
             </ul>
-            {diff.showHints && (
+            {diff.showHints && queue[0] && (
               <p className="fcs-hint">
-                Tip: unload what the front customer still needs
-                {queue[0]
-                  ? ` (${orderLineProgress(queue[0])
-                      .filter((l) => !l.done)
-                      .map((l) => l.icon)
-                      .join(' ')})`
-                  : ''}
-                .
+                Tip: front customer still needs{' '}
+                {orderLineProgress(queue[0])
+                  .filter((l) => !l.done)
+                  .map((l) => l.icon)
+                  .join(' ') || 'nothing'}.
               </p>
             )}
           </section>

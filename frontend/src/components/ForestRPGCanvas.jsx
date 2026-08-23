@@ -33,7 +33,8 @@ function overlayBlocksWalk() {
     document.querySelector('.science-quiz-overlay') ||
       document.querySelector('.quest-scroll-overlay') ||
       document.querySelector('.unlock-shop-overlay') ||
-      document.querySelector('.motivation-overlay'),
+      document.querySelector('.motivation-overlay') ||
+      document.querySelector('.game-over-overlay'),
   );
 }
 
@@ -105,7 +106,7 @@ export default function ForestRPGCanvas({
         startingMoney: Number(payload.startingMoney) || 0,
         storyline: nextStoryline,
       };
-      ['GameOverScene', 'LeaderBoardScene', 'MenuScene', 'GuideScene'].forEach(
+      ['GameOverScene', 'MenuScene', 'GuideScene'].forEach(
         (key) => {
           try {
             if (game.scene.isActive(key) || game.scene.isPaused(key)) {
@@ -227,6 +228,18 @@ export default function ForestRPGCanvas({
     window.addEventListener('keyup', onFarmKeyUp, true);
     game.events.on(Phaser.Core.Events.POST_STEP, applyFarmMove);
 
+    const handleReturnToMenu = () => {
+      if (!gameRef.current) return;
+      const game = gameRef.current;
+      try {
+        if (game.scene.isActive('GameScene')) game.scene.stop('GameScene');
+      } catch {
+        /* ignore */
+      }
+      ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
+      game.scene.start('MenuScene');
+    };
+
     ForestGameBridge.on(FARM_EVENTS.READY, handleReady);
     ForestGameBridge.on(FARM_EVENTS.FARM_STATE, handleFarmState);
     ForestGameBridge.on(FARM_EVENTS.INVENTORY_UPDATED, handleInventory);
@@ -237,6 +250,7 @@ export default function ForestRPGCanvas({
     ForestGameBridge.on(FARM_EVENTS.INTERACTION, handleInteraction);
     ForestGameBridge.on(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
     ForestGameBridge.on(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
+    ForestGameBridge.on(FARM_EVENTS.RETURN_TO_MENU, handleReturnToMenu);
 
     // Focus canvas on click so Phaser keys work after React UI usage
     const focusCanvas = () => {
@@ -269,6 +283,7 @@ export default function ForestRPGCanvas({
       ForestGameBridge.off(FARM_EVENTS.INTERACTION, handleInteraction);
       ForestGameBridge.off(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
       ForestGameBridge.off(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
+      ForestGameBridge.off(FARM_EVENTS.RETURN_TO_MENU, handleReturnToMenu);
       game.destroy(true);
       gameRef.current = null;
       parent.innerHTML = '';
@@ -285,7 +300,7 @@ export default function ForestRPGCanvas({
   return (
     <div className="forest-stage">
       <div ref={hostRef} className="phaser-host" id="forest-game-root" />
-      {!ready && <div className="forest-loading">Loading SCI_PATH…</div>}
+      {!ready && <div className="forest-loading forest-loading--minimal" aria-hidden />}
     </div>
   );
 }
@@ -350,7 +365,6 @@ export function emitSyncStudentState(payload) {
   ForestGameBridge.emit(FARM_EVENTS.SYNC_STUDENT_STATE, payload);
 }
 
-/** Jump the farm to a vegetable or animal challenge (test catalog). */
-export function emitSetTestChallenge(payload) {
-  ForestGameBridge.emit(FARM_EVENTS.SET_TEST_CHALLENGE, payload);
+export function emitReturnToMenu() {
+  ForestGameBridge.emit(FARM_EVENTS.RETURN_TO_MENU);
 }

@@ -27,6 +27,22 @@ export const FARM_EVENTS = {
   PLAYER_MAP_POS: 'PLAYER_MAP_POS',
   /** true while GameScene (farm) is active — hide map on menu/opening */
   FARM_SCENE_ACTIVE: 'FARM_SCENE_ACTIVE',
+  /** Phaser scene phase for React lobby overlays */
+  GAME_PHASE: 'GAME_PHASE',
+  /** Phaser → React: run ended with stats */
+  GAME_OVER: 'GAME_OVER',
+  /** React → Phaser: return to title / menu */
+  RETURN_TO_MENU: 'RETURN_TO_MENU',
+  /** React → Phaser menu / lobby actions */
+  MENU_START: 'MENU_START',
+  /** React → Phaser: whether menu can advance (aptitude complete) */
+  LOBBY_GATE: 'LOBBY_GATE',
+  MENU_LEADERBOARD: 'MENU_LEADERBOARD',
+  /** React opens global leaderboard modal */
+  LEADERBOARD_OPEN: 'LEADERBOARD_OPEN',
+  MENU_TOGGLE_MUSIC: 'MENU_TOGGLE_MUSIC',
+  /** Phaser → React soundtrack state */
+  MUSIC_STATE: 'MUSIC_STATE',
   TARGET_REACHED: 'TARGET_REACHED',
   LEVEL_GOAL_REACHED: 'LEVEL_GOAL_REACHED',
   GOAL_COMPLETED: 'GOAL_COMPLETED',
@@ -57,8 +73,6 @@ export const FARM_EVENTS = {
    * GameScene also pauses physics + music while locked. */
   UI_INPUT_LOCK: 'UI_INPUT_LOCK',
   SYNC_STUDENT_STATE: 'SYNC_STUDENT_STATE',
-  /** Dev/test: jump to a vegetable or animal challenge by index */
-  SET_TEST_CHALLENGE: 'SET_TEST_CHALLENGE',
 };
 
 export const SCIENCE_EVENTS = {

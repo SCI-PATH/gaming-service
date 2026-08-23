@@ -94,6 +94,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/engagement/leaderboard') {
+    try {
+      const eng = await import('./lib/engagementDb.mjs');
+      if (!eng.engagementAvailable()) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'DATABASE_URL_not_configured',
+          entries: [],
+        });
+        return;
+      }
+      const period = url.searchParams.get('period') === 'today' ? 'today' : 'all';
+      const limit = Number(url.searchParams.get('limit') || 10);
+      const studentId = url.searchParams.get('studentId') || '';
+      const result = await eng.getLeaderboard({ period, limit, studentId });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, { ok: false, error: message, entries: [] });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname.startsWith('/api/engagement/')) {
     try {
       const body = await readJson(req);
@@ -144,6 +168,9 @@ const server = http.createServer(async (req, res) => {
           break;
         case 'event':
           result = await eng.insertGameplayEvent(body);
+          break;
+        case 'leaderboard/score':
+          result = await eng.submitLeaderboardScore(body);
           break;
         default:
           sendJson(res, 404, { ok: false, error: 'Unknown engagement route' });

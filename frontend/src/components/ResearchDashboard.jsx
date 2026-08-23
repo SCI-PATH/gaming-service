@@ -43,7 +43,7 @@ export default function ResearchDashboard({
     <div className="research-dash">
       <header className="research-dash-head">
         <div>
-          <p className="research-dash-kicker">SCI_PATH · Research console</p>
+          <p className="research-dash-kicker">Discovery Grove · Research console</p>
           <h2>
             {student?.displayName || 'Student'}{' '}
             <span className="research-dash-id">({student?.id})</span>

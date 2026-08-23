@@ -6,7 +6,6 @@ import MenuScene from '../scenes/MenuScene';
 import GuideScene from '../scenes/GuideScene';
 import GameScene from '../scenes/GameScene';
 import GameOverScene from '../scenes/GameOverScene';
-import LeaderBoardScene from '../scenes/LeaderBoardScene';
 import FarmingVisualPlugin from '../plugins/FarmingVisualPlugin.js';
 
 /**
@@ -18,7 +17,7 @@ export function createGameConfig(parent) {
     parent,
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
-    backgroundColor: '#0b1a12',
+    backgroundColor: '#f8f9fa',
     pixelArt: true,
     roundPixels: true,
     scale: {
@@ -50,7 +49,6 @@ export function createGameConfig(parent) {
       GuideScene,
       GameScene,
       GameOverScene,
-      LeaderBoardScene,
     ],
   };
 }

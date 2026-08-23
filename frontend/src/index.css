@@ -1,16 +1,25 @@
 ﻿@import 'tailwindcss';
 
 :root {
-  --forest-deep: #0b1a12;
-  --forest-mid: #1a3a28;
-  --forest-leaf: #2f5d3f;
-  --ink: #e8f0e9;
-  --muted: #9bb5a3;
-  --gold: #c9a227;
-  --panel: rgba(12, 28, 18, 0.92);
-  font-family: 'Courier New', Courier, monospace;
+  --brand-primary: #00a8e8;
+  --brand-secondary: #70e000;
+  --brand-accent: #ff6b35;
+  --brand-special: #7209b7;
+  --brand-text: #212529;
+  --brand-surface: #e9ecef;
+  --brand-background: #f8f9fa;
+
+  --forest-deep: var(--brand-background);
+  --forest-mid: #ffffff;
+  --forest-leaf: var(--brand-primary);
+  --ink: var(--brand-text);
+  --muted: rgba(33, 37, 41, 0.62);
+  --gold: var(--brand-special);
+  --panel: #ffffff;
+
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--ink);
-  background: var(--forest-deep);
+  background: var(--brand-background);
 }
 
 * {
@@ -25,8 +34,8 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(ellipse at top, #1a3a28 0%, #0b1a12 55%, #050a08 100%);
+  background: var(--brand-background);
+  color: var(--brand-text);
 }
 
 .app-shell {

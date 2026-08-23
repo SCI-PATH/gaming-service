@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ForestRPGCanvas, {
-  emitSellCrops,
-  emitPlantCrop,
   emitUnlockShopOpen,
   emitUnlockShopClose,
-  emitFarmCustomerShopResult,
-  emitFarmShopUnload,
   emitUiInputLock,
   emitStartFarmLevel,
   emitSyncStudentState,
-  emitSetTestChallenge,
+  emitReturnToMenu,
 } from './components/ForestRPGCanvas.jsx';
 import { ForestGameBridge, FARM_EVENTS } from './components/ForestGameBridge.js';
 import ScienceQuizModal from './components/ScienceQuizModal.jsx';
 import UnlockShopModal from './components/UnlockShopModal.jsx';
-import FarmCustomerShopModal from './components/FarmCustomerShopModal.jsx';
 import MotivationalVideoModal from './components/MotivationalVideoModal.jsx';
 import LevelQuestScroll from './components/LevelQuestScroll.jsx';
-import ChallengeTesterModal from './components/ChallengeTesterModal.jsx';
-import GameplayPerformancePanel from './components/GameplayPerformancePanel.jsx';
-import PersonalizedActivitiesPanel from './components/PersonalizedActivitiesPanel.jsx';
 import StudentLogin from './components/StudentLogin.jsx';
+import GameLobbyOverlay from './components/GameLobbyOverlay.jsx';
+import GameOverOverlay from './components/GameOverOverlay.jsx';
+import GameShellHeader from './components/GameShellHeader.jsx';
+import GlobalLeaderboardModal from './components/GlobalLeaderboardModal.jsx';
+import { GameCanvasLoading, GameProgressButton } from './components/GameShellControls.jsx';
+import {
+  computeArenaScore,
+  submitLeaderboardScore,
+} from './data/leaderboardApi.js';
 import FarmMapPanel from './components/FarmMapPanel.jsx';
 import ResearchDashboard from './components/ResearchDashboard.jsx';
 import {
@@ -40,15 +41,25 @@ import {
   getCurrentStudent,
   logoutStudent,
 } from './data/mockStudents.js';
+import { resolvePlatformLaunch } from './data/platformLaunch.js';
+import { GAME_PLATFORM } from './data/gameBrand.js';
 import {
   syncStudentLogin,
   syncStudentLogout,
   syncFrustration,
   syncGameplayEvent,
 } from './data/engagementSync.js';
+import {
+  bootstrapStudentProgress,
+  resolveLobbyProgress,
+  syncBootstrapStudentProgress,
+} from './data/aptitudeProgress.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
+
+const platformLaunchRef =
+  typeof window !== 'undefined' ? resolvePlatformLaunch() : null;
 
 const DEFAULT_LEVEL = getFarmLevel(1);
 const DEFAULT_TIME_TARGET_MS = DDA_CONFIG.midTargetMs;
@@ -105,14 +116,29 @@ function createInitialFarm() {
  * Phaser canvas stays clean — all HUD lives in React overlays.
  */
 export default function App() {
-  const [student, setStudent] = useState(() => getCurrentStudent());
+  const [student, setStudent] = useState(
+    () => platformLaunchRef?.student || getCurrentStudent(),
+  );
 
   useEffect(() => {
+    if (platformLaunchRef?.student?.id) {
+      syncStudentLogin(platformLaunchRef.student, {
+        sessionId: platformLaunchRef.sessionId || undefined,
+      });
+      return;
+    }
     const existing = getCurrentStudent();
     if (existing?.id) syncStudentLogin(existing);
   }, []);
+
   const [gameReady, setGameReady] = useState(false);
-  const [farm, setFarm] = useState(createInitialFarm);
+  const [farm, setFarm] = useState(() => {
+    const initialStudent = platformLaunchRef?.student || getCurrentStudent();
+    const boot = syncBootstrapStudentProgress(initialStudent);
+    return boot.farmPatch
+      ? { ...createInitialFarm(), ...boot.farmPatch }
+      : createInitialFarm();
+  });
   const [ddaMisses, setDdaMisses] = useState(0);
   const [rpEarned, setRpEarned] = useState(0);
   const [banner, setBanner] = useState(null);
@@ -120,15 +146,20 @@ export default function App() {
   const [quizPayload, setQuizPayload] = useState(null);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopPerformance, setShopPerformance] = useState(null);
-  const [customerShopOpen, setCustomerShopOpen] = useState(false);
-  const [customerShopPayload, setCustomerShopPayload] = useState(null);
   const [motivationOpen, setMotivationOpen] = useState(false);
   const [motivationContext, setMotivationContext] = useState(null);
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
+  const [gamePhase, setGamePhase] = useState('menu');
+  const [gameOverPayload, setGameOverPayload] = useState(null);
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [lobbyProgress, setLobbyProgress] = useState(() => {
+    const initialStudent = platformLaunchRef?.student || getCurrentStudent();
+    return syncBootstrapStudentProgress(initialStudent).lobby;
+  });
   const [challenges, setChallenges] = useState([]);
   const [questScrollOpen, setQuestScrollOpen] = useState(false);
-  const [testerOpen, setTesterOpen] = useState(false);
   /** 'farm' | 'dashboard' — research console vs play view */
   const [appView, setAppView] = useState('farm');
   const correctStreakRef = useRef(0);
@@ -149,6 +180,53 @@ export default function App() {
   /** Level id for which the quest scroll already auto-opened */
   const questScrollLevelRef = useRef(null);
   const storylineChallengesRef = useRef([]);
+
+  useEffect(() => {
+    if (!student?.id) {
+      setLobbyProgress(resolveLobbyProgress(null));
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    void bootstrapStudentProgress(student).then(({ lobby, farmPatch }) => {
+      if (cancelled) return;
+      setLobbyProgress(lobby);
+      if (farmPatch) {
+        setFarm((prev) => ({
+          ...prev,
+          ...farmPatch,
+        }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [student?.id]);
+
+  useEffect(() => {
+    if (!student?.id) return undefined;
+
+    const refreshProgress = () => {
+      void bootstrapStudentProgress(student).then(({ lobby, farmPatch }) => {
+        setLobbyProgress(lobby);
+        if (farmPatch) {
+          setFarm((prev) => ({
+            ...prev,
+            ...farmPatch,
+          }));
+        }
+      });
+    };
+
+    window.addEventListener('focus', refreshProgress);
+    return () => window.removeEventListener('focus', refreshProgress);
+  }, [student?.id]);
+
+  useEffect(() => {
+    ForestGameBridge.emit(FARM_EVENTS.LOBBY_GATE, { canStart: true });
+  }, [lobbyProgress?.phase]);
 
   const quizKey =
     quizPayload?.questionData?.id ||
@@ -207,23 +285,9 @@ export default function App() {
     });
   }, [telemetrySession.frustrationScore, telemetrySession.frustrationLevel]);
 
-  // Physical Farm Shop unload panel (walk to shop + E/Q)
+  // Farm shop money/state sync (no popup — sales happen in Phaser)
   useEffect(() => {
-    const onOpen = (payload = {}) => {
-      setCustomerShopPayload(payload);
-      setCustomerShopOpen(true);
-      emitUiInputLock(true, { freezeCombat: true });
-      setHint('Unload cart items into shop stock — customers take what they need.');
-      window.setTimeout(() => setHint(null), 3200);
-    };
     const onState = (payload = {}) => {
-      setCustomerShopPayload((prev) => ({
-        ...(prev || {}),
-        ...payload,
-        cartStack: payload.cartStack ?? prev?.cartStack,
-        shopStock: payload.shopStock ?? prev?.shopStock,
-        customers: payload.customers ?? prev?.customers,
-      }));
       if (payload.currentMoney != null || payload.earnings != null) {
         setFarm((f) => ({
           ...f,
@@ -242,11 +306,9 @@ export default function App() {
         levelNumber: farm.levelId,
       }, student);
     };
-    ForestGameBridge.on(FARM_EVENTS.OPEN_FARM_CUSTOMER_SHOP, onOpen);
     ForestGameBridge.on(FARM_EVENTS.FARM_SHOP_STATE, onState);
     ForestGameBridge.on(FARM_EVENTS.FARM_SHOP_TELEMETRY, onTelemetry);
     return () => {
-      ForestGameBridge.off(FARM_EVENTS.OPEN_FARM_CUSTOMER_SHOP, onOpen);
       ForestGameBridge.off(FARM_EVENTS.FARM_SHOP_STATE, onState);
       ForestGameBridge.off(FARM_EVENTS.FARM_SHOP_TELEMETRY, onTelemetry);
     };
@@ -302,17 +364,16 @@ export default function App() {
       avatarOpen ||
         quizPayload ||
         shopOpen ||
-        customerShopOpen ||
-        testerOpen ||
         questScrollOpen ||
-        motivationOpen,
+        motivationOpen ||
+        gameOverPayload,
     );
     const freezeCombat = Boolean(
       quizPayload ||
         questScrollOpen ||
         shopOpen ||
-        customerShopOpen ||
-        motivationOpen,
+        motivationOpen ||
+        gameOverPayload,
     );
     emitUiInputLock(locked, { freezeCombat });
     return () => emitUiInputLock(false);
@@ -320,10 +381,9 @@ export default function App() {
     avatarOpen,
     quizPayload,
     shopOpen,
-    customerShopOpen,
-    testerOpen,
     questScrollOpen,
     motivationOpen,
+    gameOverPayload,
   ]);
 
   const resetSessionUi = useCallback(() => {
@@ -338,6 +398,7 @@ export default function App() {
     setShopPerformance(null);
     setMotivationOpen(false);
     setMotivationContext(null);
+    setGameOverPayload(null);
     setInFarm(false);
     setChallenges([]);
     setQuestScrollOpen(false);
@@ -392,12 +453,33 @@ export default function App() {
     (nextStudent) => {
       resetSessionUi();
       setStudent(nextStudent);
+      const boot = syncBootstrapStudentProgress(nextStudent);
+      setLobbyProgress(boot.lobby);
+      if (boot.farmPatch) {
+        setFarm({ ...createInitialFarm(), ...boot.farmPatch });
+      }
       syncStudentLogin(nextStudent);
     },
     [resetSessionUi],
   );
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    if (student?.id) {
+      await submitLeaderboardScore({
+        studentId: student.id,
+        studentName: student.displayName,
+        displayName: student.displayName,
+        score: computeArenaScore({
+          rpEarned,
+          earnings: farm.earnings,
+          levelId: farm.levelId,
+          questionsAnswered: farm.questionsAnswered,
+        }),
+        currentLevel: farm.levelId,
+        quizCorrect: farm.questionsAnswered || 0,
+        walletBalance: farm.earnings,
+      });
+    }
     syncStudentLogout({
       endLevel: farm.levelId,
       quizCorrect: farm.questionsAnswered || 0,
@@ -405,7 +487,7 @@ export default function App() {
     logoutStudent();
     resetSessionUi();
     setStudent(null);
-  }, [resetSessionUi, farm.levelId, farm.questionsAnswered]);
+  }, [resetSessionUi, farm.levelId, farm.questionsAnswered, farm.earnings, rpEarned, student]);
 
   const maxQuestions = farm.maxQuestions ?? DDA_CONFIG.maxQuestions;
 
@@ -417,35 +499,8 @@ export default function App() {
     );
   }, [farm.questionsAnswered, maxQuestions]);
 
-  const progressLabel = useMemo(() => {
-    const q = `Questions ${farm.questionsAnswered || 0} / ${maxQuestions}`;
-    return `${q} · Avg ${
-      farm.avgResponseLabel ?? '—'
-    } / target ${farm.timeTargetLabel ?? formatResponseTime(farm.timeTargetMs || DEFAULT_TIME_TARGET_MS)}`;
-  }, [
-    farm.questionsAnswered,
-    farm.avgResponseLabel,
-    farm.timeTargetLabel,
-    farm.timeTargetMs,
-    maxQuestions,
-  ]);
-
   const bagCount = farm.harvestedCount ?? farm.inventory ?? 0;
   const carriedCount = farm.carriedCount ?? 0;
-
-  const bandLabel = useMemo(() => {
-    const pct = farm.masteryPercent ?? Math.round((farm.mastery || 0) * 100);
-    switch (farm.performanceBand) {
-      case PERFORMANCE_CATEGORIES.SMART:
-      case 'strong':
-        return `Smart (${pct}%)`;
-      case PERFORMANCE_CATEGORIES.WEAK:
-      case 'emerging':
-        return `Weak (${pct}%)`;
-      default:
-        return `Medium (${pct}%)`;
-    }
-  }, [farm.performanceBand, farm.mastery, farm.masteryPercent]);
 
   const handleReady = useCallback(() => setGameReady(true), []);
 
@@ -464,7 +519,87 @@ export default function App() {
   }, []);
 
   const handleFarmSceneActive = useCallback((payload = {}) => {
-    if (payload.active === true) setInFarm(true);
+    setInFarm(payload.active === true);
+  }, []);
+
+  useEffect(() => {
+    const onPhase = (payload = {}) => {
+      if (payload.phase) {
+        setGamePhase(payload.phase);
+        if (payload.phase === 'menu') setGameOverPayload(null);
+      }
+    };
+    const onMusic = (payload = {}) => {
+      setMusicEnabled(payload.enabled !== false);
+    };
+    const onLeaderboardOpen = () => setLeaderboardOpen(true);
+    ForestGameBridge.on(FARM_EVENTS.GAME_PHASE, onPhase);
+    ForestGameBridge.on(FARM_EVENTS.MUSIC_STATE, onMusic);
+    ForestGameBridge.on(FARM_EVENTS.LEADERBOARD_OPEN, onLeaderboardOpen);
+    const onGameOver = (payload = {}) => {
+      setGameOverPayload(payload);
+      setInFarm(false);
+      emitUiInputLock(true, { freezeCombat: true });
+    };
+    ForestGameBridge.on(FARM_EVENTS.GAME_OVER, onGameOver);
+    return () => {
+      ForestGameBridge.off(FARM_EVENTS.GAME_PHASE, onPhase);
+      ForestGameBridge.off(FARM_EVENTS.MUSIC_STATE, onMusic);
+      ForestGameBridge.off(FARM_EVENTS.LEADERBOARD_OPEN, onLeaderboardOpen);
+      ForestGameBridge.off(FARM_EVENTS.GAME_OVER, onGameOver);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!student?.id) return undefined;
+    const score = computeArenaScore({
+      rpEarned,
+      earnings: farm.earnings,
+      levelId: farm.levelId,
+      questionsAnswered: farm.questionsAnswered,
+    });
+    const handle = window.setTimeout(() => {
+      submitLeaderboardScore({
+        studentId: student.id,
+        studentName: student.displayName,
+        displayName: student.displayName,
+        score,
+        currentLevel: farm.levelId,
+        quizCorrect: farm.questionsAnswered || 0,
+        walletBalance: farm.earnings,
+        cash: farm.earnings,
+      });
+    }, 1500);
+    return () => window.clearTimeout(handle);
+  }, [
+    student?.id,
+    student?.displayName,
+    farm.levelId,
+    farm.questionsAnswered,
+    farm.earnings,
+    rpEarned,
+  ]);
+
+  const handleLobbyStart = useCallback(() => {
+    ForestGameBridge.emit(FARM_EVENTS.MENU_START);
+  }, []);
+
+  const handleLobbyLeaderboard = useCallback(() => {
+    setLeaderboardOpen(true);
+  }, []);
+
+  const handleLobbyToggleMusic = useCallback(() => {
+    ForestGameBridge.emit(FARM_EVENTS.MENU_TOGGLE_MUSIC);
+  }, []);
+
+  const handleGameOverContinue = useCallback(() => {
+    setGameOverPayload(null);
+    emitUiInputLock(false);
+    emitReturnToMenu();
+  }, []);
+
+  const handleOpenResearchDashboard = useCallback(() => {
+    setAppView('dashboard');
   }, []);
 
   const handleChallengesState = useCallback((payload = {}) => {
@@ -523,27 +658,31 @@ export default function App() {
   );
 
   const handleFarmState = useCallback((state) => {
-    setFarm((prev) => ({
-      ...prev,
-      ...state,
-      earnings: state.earnings ?? state.currentMoney ?? prev.earnings,
-      target: state.timeTargetMs ?? state.target ?? prev.target,
-      timeTargetMs: state.timeTargetMs ?? prev.timeTargetMs,
-      playerTileX: state.playerTileX ?? prev.playerTileX,
-      playerTileY: state.playerTileY ?? prev.playerTileY,
-      playerMapX: state.playerMapX ?? prev.playerMapX,
-      playerMapY: state.playerMapY ?? prev.playerMapY,
-      harvestedCount:
-        state.harvestedItemsCount ??
-        state.harvestedCount ??
-        state.inventory ??
-        prev.harvestedCount,
-      inventory:
-        state.harvestedItemsCount ??
-        state.inventory ??
-        state.harvestedCount ??
-        prev.inventory,
-    }));
+    setFarm((prev) => {
+      const next = {
+        ...prev,
+        ...state,
+        earnings: state.earnings ?? state.currentMoney ?? prev.earnings,
+        target: state.timeTargetMs ?? state.target ?? prev.target,
+        timeTargetMs: state.timeTargetMs ?? prev.timeTargetMs,
+        playerTileX: state.playerTileX ?? prev.playerTileX,
+        playerTileY: state.playerTileY ?? prev.playerTileY,
+        playerMapX: state.playerMapX ?? prev.playerMapX,
+        playerMapY: state.playerMapY ?? prev.playerMapY,
+        harvestedCount:
+          state.harvestedItemsCount ??
+          state.harvestedCount ??
+          state.inventory ??
+          prev.harvestedCount,
+        inventory:
+          state.harvestedItemsCount ??
+          state.inventory ??
+          state.harvestedCount ??
+          prev.inventory,
+      };
+      setLobbyProgress(resolveLobbyProgress(student, next));
+      return next;
+    });
     if (Array.isArray(state.challenges)) {
       storylineChallengesRef.current = state.challenges.filter(isStorylineChallenge);
       setChallenges(state.challenges);
@@ -573,7 +712,7 @@ export default function App() {
         },
       }));
     }
-  }, [handlePlayerMapPos]);
+  }, [handlePlayerMapPos, student]);
 
   const handleTriggerQuiz = useCallback((payload) => {
     setQuestScrollOpen(false);
@@ -674,21 +813,6 @@ export default function App() {
     }
   }, [motivationContext]);
 
-  const openMotivationTest = useCallback(() => {
-    setQuestScrollOpen(false);
-    setMotivationContext({
-      frustrationScore: telemetrySession.frustrationScore || 0,
-      frustrationLevel: telemetrySession.frustrationLevel || 'low',
-      levelId: farm.levelId || 1,
-      pendingShop: false,
-    });
-    setMotivationOpen(true);
-  }, [
-    telemetrySession.frustrationScore,
-    telemetrySession.frustrationLevel,
-    farm.levelId,
-  ]);
-
   const handleInteraction = useCallback((detail) => {
     if (detail?.type === 'plant_success' && detail.rp) {
       setRpEarned((n) => n + detail.rp);
@@ -721,7 +845,7 @@ export default function App() {
         window.setTimeout(() => setHint(null), 2600);
       } else if (detail.type === 'unload_success') {
         setHint(
-          'Cart ready! Walk to the Farm Shop (west of LOAD) and press E or Q to unload.',
+          'Visit the Farm Shop and press E or Q to see customers and stock.',
         );
         window.setTimeout(() => setHint(null), 3600);
       }
@@ -729,7 +853,7 @@ export default function App() {
     if (detail?.type === 'farm_shop_hint') {
       setHint(
         detail.message ||
-          'Walk to the Farm Shop and press E or Q to unload your cart.',
+          'Visit the Farm Shop and press E or Q to see customers and stock.',
       );
       window.setTimeout(() => setHint(null), 3600);
     }
@@ -747,7 +871,7 @@ export default function App() {
     if (detail?.type === 'load_success') {
       if (detail.rp) setRpEarned((n) => n + detail.rp);
       setHint(
-        `Loaded ${detail.unloaded ?? ''} into the cart — take them to the Farm Shop.`,
+        `Delivered ${detail.unloaded ?? ''} to the shop — customers will buy automatically.`,
       );
       window.setTimeout(() => setHint(null), 2800);
     }
@@ -761,7 +885,7 @@ export default function App() {
     }
     if (detail?.type === 'harvest') {
       setHint(
-        `Carrying ${detail.carriedCount ?? ''} — take them to the blue LOAD dock.`,
+        `Carrying ${detail.carriedCount ?? ''} — walk to the Farm Shop and press E.`,
       );
       window.setTimeout(() => setHint(null), 2000);
     }
@@ -897,9 +1021,9 @@ export default function App() {
     if (detail?.type === 'load_blocked') {
       const msg =
         detail.reason === 'empty_carry'
-          ? 'Harvest crops onto your back first, then come to LOAD.'
+          ? 'Harvest crops onto your back first, then press E at the Farm Shop.'
           : detail.reason === 'not_dock'
-            ? 'Stand on the blue LOAD dock to unload.'
+            ? 'Stand at the Farm Shop and press E to unload.'
             : 'Cannot unload here.';
       setHint(msg);
       window.setTimeout(() => setHint(null), 2200);
@@ -908,10 +1032,10 @@ export default function App() {
       const msg =
         detail.reason === 'not_at_shop'
           ? detail.message ||
-            'Walk to the Farm Shop (west of the blue LOAD dock) and press Q or E.'
+            'Walk to the Farm Shop and press E to unload, or Q to check stock.'
           : detail.reason === 'empty_inventory'
-            ? 'Load harvested items into the cart at LOAD first.'
-            : 'Unload crops into the cart at LOAD first, then take them to the Farm Shop.';
+            ? 'Unload harvests at the Farm Shop with E first.'
+            : 'Carry harvests to the Farm Shop and press E to unload.';
       setHint(msg);
       window.setTimeout(() => setHint(null), 2800);
     }
@@ -1021,89 +1145,27 @@ export default function App() {
     }, 80);
   }, [farm.levelId, farm.earnings, farm.currentMoney, refreshChallenges]);
 
-  const handleCustomerShopClose = useCallback(() => {
-    setCustomerShopOpen(false);
-    emitFarmCustomerShopResult({});
-    setCustomerShopPayload(null);
-    emitUiInputLock(false);
-  }, []);
-
-  const handleCustomerShopUnload = useCallback((payload) => {
-    emitFarmShopUnload(payload);
-  }, []);
-
-  const handleCustomerShopEvent = useCallback(
-    (ev) => {
-      if (!ev?.type) return;
-      syncGameplayEvent(ev.type, {
-        ...ev,
-        levelNumber: farm.levelId,
-      }, student);
-    },
-    [farm.levelId, student],
-  );
-
-  const handleSell = useCallback(() => {
-    emitSellCrops();
-  }, []);
-
   if (!student) {
     return <StudentLogin onLogin={handleLogin} />;
   }
 
   return (
     <div className="app-shell forest-app">
-      <header className="forest-header">
-        <div>
-          <h1>SCI_PATH — Farm &amp; Unlock</h1>
-          <p>
-            Target time from your previous level · 15 questions then shop ·
-            bought items stay on the next farm
-          </p>
-        </div>
-        <div className="forest-stats">
-          <span className="forest-chip student-chip">
-            {student.displayName}
-          </span>
-          <button
-            type="button"
-            className="student-logout"
-            onClick={() =>
-              setAppView((v) => (v === 'dashboard' ? 'farm' : 'dashboard'))
-            }
-          >
-            {appView === 'dashboard' ? 'Farm' : 'Research dashboard'}
-          </button>
-          <button
-            type="button"
-            className="student-logout"
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
-          <span className="forest-chip">
-            {gameReady ? 'Playing' : 'Loading…'}
-          </span>
-          <span>Mastery: {bandLabel}</span>
-          <span>
-            Gameplay:{' '}
-            {gameplay.label || GAMEPLAY_BAND_LABELS[gameplay.band] || PERFORMANCE_LABELS.medium}
-          </span>
-          <span>
-            Target: {farm.timeTargetLabel ?? formatResponseTime(farm.timeTargetMs)}
-          </span>
-          <span>Avg time: {farm.avgResponseLabel ?? '—'}</span>
-          <span>
-            Q: {farm.questionsAnswered || 0}/{maxQuestions}
-          </span>
-          <span>Cash: ${farm.earnings}</span>
-          <span>RP: {rpEarned}</span>
-          <span>Misses: {ddaMisses}</span>
-          <span>Retries: {gameplay.live?.retries ?? farm.retries ?? 0}</span>
-          <span>On back: {carriedCount}</span>
-          <span>Cart: {bagCount}</span>
-        </div>
-      </header>
+      <GameShellHeader
+        mode={
+          appView === 'dashboard'
+            ? 'dashboard'
+            : inFarm
+              ? 'playing'
+              : 'lobby'
+        }
+        student={student}
+        farm={farm}
+        gameReady={gameReady}
+        onOpenDashboard={handleOpenResearchDashboard}
+        onBackToFarm={() => setAppView('farm')}
+        onLogout={handleLogout}
+      />
 
       {appView === 'dashboard' ? (
         <ResearchDashboard
@@ -1118,21 +1180,6 @@ export default function App() {
       ) : (
       <div className="forest-play-layout">
         <div className="forest-stage-wrap">
-              <div className="farm-goal-hud" aria-live="polite">
-                <strong>Level {farm.levelId} Goal</strong>
-                <span>{farm.goalText}</span>
-              </div>
-
-              <div className="farm-progress-hud" aria-live="polite">
-                <div className="farm-progress-label">{progressLabel}</div>
-                <div className="farm-progress-track">
-                  <div
-                    className="farm-progress-fill"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-              </div>
-
           <ForestRPGCanvas
             key={student.id}
             onReady={handleReady}
@@ -1145,19 +1192,42 @@ export default function App() {
             onChallengesState={handleChallengesState}
           />
 
-          <div className="farm-controls">
-            <button
-              type="button"
-              className="avatar-help-btn"
-              onClick={openAvatarHelp}
-              disabled={
-                !gameReady ||
-                Boolean(shopOpen) ||
-                avatarOpen
-              }
-            >
-              Ask mentor
-            </button>
+          {!gameReady && appView === 'farm' && <GameCanvasLoading />}
+
+          {!inFarm && gameReady && (gamePhase === 'menu' || gamePhase === 'guide') && (
+            <GameLobbyOverlay
+              mode={gamePhase === 'guide' ? 'guide' : 'menu'}
+              student={student}
+              farm={farm}
+              lobbyProgress={lobbyProgress}
+              musicEnabled={musicEnabled}
+              gameReady={gameReady}
+              onStart={handleLobbyStart}
+              onLeaderboard={handleLobbyLeaderboard}
+              onToggleMusic={handleLobbyToggleMusic}
+              onOpenProgress={handleOpenResearchDashboard}
+            />
+          )}
+
+          <GameOverOverlay
+            open={Boolean(gameOverPayload)}
+            payload={gameOverPayload}
+            student={student}
+            onContinue={handleGameOverContinue}
+          />
+
+          <GlobalLeaderboardModal
+            open={leaderboardOpen}
+            student={student}
+            onClose={() => setLeaderboardOpen(false)}
+          />
+
+          {inFarm && (
+          <div className="farm-controls farm-controls-minimal">
+            <GameProgressButton
+              onClick={handleOpenResearchDashboard}
+              progressPct={progressPct}
+            />
             <button
               type="button"
               className="quest-scroll-reopen"
@@ -1173,59 +1243,12 @@ export default function App() {
                 ? ` (${challenges.filter((c) => !c.done).length} open)`
                 : ''}
             </button>
-            <button
-              type="button"
-              onClick={() => setTesterOpen(true)}
-              disabled={
-                !gameReady ||
-                Boolean(quizPayload) ||
-                shopOpen ||
-                motivationOpen
-              }
-            >
-              Test challenges
-            </button>
-            <button
-              type="button"
-              onClick={openMotivationTest}
-              disabled={
-                !gameReady ||
-                Boolean(quizPayload) ||
-                shopOpen ||
-                motivationOpen
-              }
-            >
-              Test motivation story
-            </button>
-            <button
-              type="button"
-              onClick={() => emitPlantCrop()}
-              disabled={
-                !gameReady ||
-                Boolean(quizPayload) ||
-                shopOpen ||
-                farm.forestUnlocked
-              }
-            >
-            Plant (E) — at gold bed
-          </button>
-          <button
-            type="button"
-            onClick={handleSell}
-            disabled={
-              !gameReady ||
-              bagCount < 1 ||
-              Boolean(quizPayload) ||
-              shopOpen
-            }
-          >
-            Sell Cart (Q) — ${farm.cropValue}/ea
-          </button>
           </div>
+          )}
 
-          {hint && <div className="farm-hint">{hint}</div>}
+          {inFarm && hint && <div className="farm-hint">{hint}</div>}
 
-          {banner && !shopOpen && (
+          {inFarm && banner && !shopOpen && (
             <div className="farm-banner">
               {banner}
               <button type="button" onClick={() => setBanner(null)}>
@@ -1260,32 +1283,6 @@ export default function App() {
             cash={farm.earnings}
             performance={shopPerformance}
             onClose={handleShopClose}
-          />
-
-          <FarmCustomerShopModal
-            open={customerShopOpen}
-            cash={farm.earnings}
-            cartStack={customerShopPayload?.cartStack || []}
-            shopStock={customerShopPayload?.shopStock || {}}
-            customers={customerShopPayload?.customers || []}
-            cropId={customerShopPayload?.cropId || farm.cropId || 'tomato'}
-            animalProduceId={
-              customerShopPayload?.animalProduceId || 'milk'
-            }
-            frustrationScore={
-              customerShopPayload?.frustrationScore ??
-              telemetrySession.frustrationScore ??
-              0
-            }
-            frustrationLevel={
-              customerShopPayload?.frustrationLevel ||
-              telemetrySession.frustrationLevel ||
-              'low'
-            }
-            difficulty={customerShopPayload?.difficulty || null}
-            onClose={handleCustomerShopClose}
-            onUnload={handleCustomerShopUnload}
-            onShopEvent={handleCustomerShopEvent}
           />
 
           <MotivationalVideoModal
@@ -1345,34 +1342,6 @@ export default function App() {
             cleanStarted={Boolean(farm.cleanStarted)}
             onClose={() => setQuestScrollOpen(false)}
           />
-
-          <ChallengeTesterModal
-            open={testerOpen && !quizPayload && !shopOpen}
-            cropIndex={farm.cropLibraryIndex ?? 0}
-            animalIndex={farm.animalLibraryIndex ?? 0}
-            cleanIndex={farm.cleanLibraryIndex ?? 0}
-            libraryLevel={farm.libraryLevel ?? farm.levelId ?? 1}
-            onJump={(payload) => {
-              if (payload.kind === 'level') {
-                const nextLevelId = Math.max(1, (payload.index || 0) + 1);
-                setFarm((prev) => ({ ...prev, levelId: nextLevelId }));
-                emitStartFarmLevel({ levelId: nextLevelId });
-                setHint(`Testing library level ${nextLevelId}`);
-                window.setTimeout(() => setHint(null), 2200);
-                return;
-              }
-              emitSetTestChallenge(payload);
-              setHint(
-                payload.kind === 'animal'
-                  ? `Testing animal challenge ${payload.index + 1}`
-                  : payload.kind === 'clean'
-                    ? `Testing cleaning challenge ${payload.index + 1}`
-                    : `Testing vegetable challenge ${payload.index + 1}`,
-              );
-              window.setTimeout(() => setHint(null), 2200);
-            }}
-            onClose={() => setTesterOpen(false)}
-          />
         </div>
 
         {inFarm && (
@@ -1385,14 +1354,6 @@ export default function App() {
               performanceBand={farm.performanceBand}
               cropName={farm.cropName || 'crops'}
               challenges={challenges}
-            />
-            <PersonalizedActivitiesPanel
-              board={farm.activityBoard}
-              compact
-            />
-            <GameplayPerformancePanel
-              visible={!shopOpen}
-              gameplay={gameplay}
             />
           </div>
         )}

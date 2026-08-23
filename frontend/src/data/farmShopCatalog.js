@@ -37,6 +37,9 @@ const ANIMAL_PRODUCE = {
   milk: { name: 'Milk', icon: '🥛' },
   eggs: { name: 'Eggs', icon: '🥚' },
   wool: { name: 'Wool', icon: '🧶' },
+  goat_milk: { name: 'Goat milk', icon: '🥛' },
+  grain: { name: 'Grain', icon: '🌾' },
+  hay: { name: 'Hay', icon: '🌾' },
 };
 
 /** Unique sellable produce entries from crop challenges. */
@@ -70,17 +73,28 @@ export function getAnimalProduceShopItems() {
       name: singularName(a.produceName),
       icon: '🧺',
     };
+    // Prefer milk/egg sprites only — sack/pouch/feed look wrong in bubbles
+    const safeAnimalTex =
+      a.produceKey === 'kf_milk' || a.produceKey === 'kf_egg'
+        ? a.produceKey
+        : null;
     out.push({
       id,
       name: meta.name,
       icon: meta.icon,
       kind: 'animal',
-      textureKey: a.produceKey || null,
+      textureKey: safeAnimalTex,
     });
   }
   // Ensure milk exists even if catalog shape varies
   if (!seen.has('milk')) {
-    out.push({ id: 'milk', name: 'Milk', icon: '🥛', kind: 'animal' });
+    out.push({
+      id: 'milk',
+      name: 'Milk',
+      icon: '🥛',
+      kind: 'animal',
+      textureKey: 'kf_milk',
+    });
   }
   return out;
 }
@@ -90,10 +104,49 @@ export function getCleaningShopItems() {
     {
       id: 'compost',
       name: 'Compost',
-      icon: '🪴',
+      icon: '♻️',
       kind: 'clean',
+      // No plant/pot texture — bubbles use the emoji only
+      textureKey: null,
     },
   ];
+}
+
+/** Produce textures that look like real challenge items in tiny bubbles. */
+const SAFE_BUBBLE_TEXTURES = new Set([
+  'kf_tomato',
+  'kf_carrot',
+  'kf_corn',
+  'kf_cabbage',
+  'kf_turnip',
+  'kf_wheat',
+  'kf_sunflower',
+  'kf_milk',
+  'kf_egg',
+  'hm_potato',
+  'hm_turnip',
+  'hm_berry',
+  'hm_corn',
+  'hm_tomato',
+  'crop_flower',
+  'crop_corn',
+]);
+
+/**
+ * Icon + optional safe produce sprite for order bubbles.
+ * Never returns sack/pot/bucket stand-ins that confuse challenge items.
+ */
+export function getBubbleItemVisual(itemId) {
+  const meta = getShopItemById(itemId);
+  const tex = meta.textureKey;
+  const useTexture = Boolean(tex && SAFE_BUBBLE_TEXTURES.has(tex));
+  return {
+    id: meta.id,
+    name: meta.name,
+    icon: meta.icon || '🛒',
+    textureKey: useTexture ? tex : null,
+    kind: meta.kind,
+  };
 }
 
 export function getAllShopCatalogItems() {

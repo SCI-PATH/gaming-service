@@ -77,7 +77,7 @@ export default function LevelQuestScroll({
       list.push({
         id: 'harvest',
         title: `Pick ${target} ${name}`,
-        detail: `Harvested ${harvested}/${target}. Carry them on your back, then unload at the blue LOAD dock.`,
+        detail: `Harvested ${harvested}/${target}. Carry them on your back, then press E at the Farm Shop.`,
         done: harvested >= target,
         hint: 'Answer the harvest quiz, then run over ready crops.',
         kind: 'harvest',
@@ -85,9 +85,9 @@ export default function LevelQuestScroll({
       list.push({
         id: 'sell',
         title: 'Bring harvests to the Farm Shop',
-        detail: `Sold ${sold}/${target} ${name}. Unload at the shop for customers.`,
+        detail: `Sold ${sold}/${target} ${name}. Press E at the stall to unload.`,
         done: sold >= target,
-        hint: 'Load at the blue dock, walk to the Farm Shop (west), press E/Q to unload into shop stock.',
+        hint: 'Walk to the Farm Shop and press E to unload into shop stock.',
         kind: 'sell',
       });
     }
@@ -113,7 +113,7 @@ export default function LevelQuestScroll({
       list.push({
         id: 'animal-collect',
         title: `Collect ${animalTarget} ${produce}`,
-        detail: `Collected ${collected}/${animalTarget}. Carry them, then unload at LOAD.`,
+        detail: `Collected ${collected}/${animalTarget}. Carry them, then press E at the Farm Shop.`,
         done: collected >= animalTarget,
         hint: 'After feeding, run over milk, eggs, or wool in the pen.',
         kind: 'animal',
@@ -121,9 +121,9 @@ export default function LevelQuestScroll({
       list.push({
         id: 'animal-sell',
         title: `Sell ${produce} at the Farm Shop`,
-        detail: `Sold ${animalSold}/${animalTarget} ${produce}. Unload at the shop.`,
+        detail: `Sold ${animalSold}/${animalTarget} ${produce}. Press E at the stall to unload.`,
         done: animalSold >= animalTarget,
-        hint: 'Load at the blue dock, walk to the Farm Shop, press E/Q to unload.',
+        hint: 'Walk to the Farm Shop and press E to unload.',
         kind: 'animal',
       });
     }
@@ -149,7 +149,7 @@ export default function LevelQuestScroll({
       list.push({
         id: 'clean-sweep',
         title: `Sweep ${cleanTarget} ${mess}`,
-        detail: `Swept ${swept}/${cleanTarget}. Carry them, then unload at LOAD.`,
+        detail: `Swept ${swept}/${cleanTarget}. Carry them, then press E at the Farm Shop.`,
         done: swept >= cleanTarget,
         hint: 'After starting, run over weeds, rocks, or other mess in the yard.',
         kind: 'clean',
@@ -157,9 +157,9 @@ export default function LevelQuestScroll({
       list.push({
         id: 'clean-sell',
         title: `Sell ${waste} at the Farm Shop`,
-        detail: `Sold ${cleanSold}/${cleanTarget} ${waste}. Unload at the shop.`,
+        detail: `Sold ${cleanSold}/${cleanTarget} ${waste}. Press E at the stall to unload.`,
         done: cleanSold >= cleanTarget,
-        hint: 'Load at the blue dock, walk to the Farm Shop, press E/Q to unload.',
+        hint: 'Walk to the Farm Shop and press E to unload.',
         kind: 'clean',
       });
     }

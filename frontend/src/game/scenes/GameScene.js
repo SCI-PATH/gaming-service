@@ -8,6 +8,7 @@ import {
   DIRECTIONS,
   HURT_INVULN_MS,
   KILLS_TO_OPEN_EXIT,
+  MAX_WRONG_ANSWERS,
   PLAYER_SPEED,
   SCORE_TIME_OFFSET_SEC,
   TILE_SIZE,
@@ -58,10 +59,7 @@ import {
   coveringCellsInPlot,
   findPlotAt,
   isPlantableTile,
-  isLoadingTile,
   isFarmShopTile,
-  LOADING_ZONE,
-  loadingZoneCenter,
   PLANT_PLOTS,
 } from '../../data/plantPlots.js';
 import { getCreature } from '../../data/assetLibrary.js';
@@ -75,9 +73,7 @@ import {
   createWorldShop,
   snapshotWorldShop,
   tickWorldShopPatience,
-  unloadItemsToShop,
-  inventoryFromCartStack,
-  cartStackFromInventory,
+  loadCarryStackToShop,
   SHOP_EVENTS,
 } from '../../data/farmCustomerShop.js';
 import {
@@ -164,8 +160,8 @@ export default class GameScene extends Phaser.Scene {
     this.baseCropValue = this.farmLevel.cropValue;
     this.currentMoney = this.devStartingMoney || 0;
     this.earnings = 0;
-    this.harvestedItemsCount = 0; // crops loaded into cart (sellable)
-    this.carriedCount = 0; // crops on the runner's back (not yet unloaded)
+    this.harvestedItemsCount = 0; // items delivered to shop stock (sellable)
+    this.carriedCount = 0; // crops on the runner's back (not yet unloaded at shop)
     this.inventory = 0;
     this.carrySprites = [];
     this.pendingQuizMode = null;
@@ -193,7 +189,7 @@ export default class GameScene extends Phaser.Scene {
     this.plantDoneForChallenge = false;
     this.harvestUnlocked = false;
     this.loadUnlocked = false;
-    this.unloadUnlocked = false;
+    this.unloadUnlocked = true;
     this.animalCollectUnlocked = false;
     this.cleanSweepUnlocked = false;
     this.enemyHits = 0;
@@ -243,7 +239,6 @@ export default class GameScene extends Phaser.Scene {
     this.cleanStarted = false;
     this.cleanSweepArmedUntil = 0;
     this.carryStack = [];
-    this.cartStack = [];
     const patch = plantPatchFromMastery(this.mastery);
 
     // Adaptive GAMEPLAY (enemies / timers / retries / hints) — not question DDA
@@ -317,8 +312,6 @@ export default class GameScene extends Phaser.Scene {
     this.refreshActiveChallenges();
     this.refreshChallengeMarkers();
     this.createPlantPlotMarkers();
-    this.createLoadingZoneMarker();
-    this.createHarvestCart();
     this.farmShopLayer = new FarmShopLayer(this);
     try {
       this.farmShopLayer.spawn();
@@ -369,6 +362,7 @@ export default class GameScene extends Phaser.Scene {
     this.emitPlayerMapPos();
 
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
+    ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'farm' });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     });
@@ -434,7 +428,7 @@ export default class GameScene extends Phaser.Scene {
     this.plantDoneForChallenge = false;
     this.harvestUnlocked = false;
     this.loadUnlocked = false;
-    this.unloadUnlocked = false;
+    this.unloadUnlocked = true;
     this.animalCollectUnlocked = false;
     this.cleanSweepUnlocked = false;
     this.currentTargetTile = null;
@@ -449,7 +443,6 @@ export default class GameScene extends Phaser.Scene {
     this.carriedCount = 0;
     this.inventory = 0;
     this.carryStack = [];
-    this.cartStack = [];
     this.clearAllCrops({ silent: true });
 
     this.quizCorrect = 0;
@@ -536,7 +529,6 @@ export default class GameScene extends Phaser.Scene {
     this.refreshActiveChallenges();
     this.refreshChallengeMarkers();
     this.createPlantPlotMarkers();
-    this.refreshHarvestCartVisual?.();
 
     this.enemiesGroup?.clear(true, true);
     this.populateEnemies();
@@ -989,10 +981,6 @@ export default class GameScene extends Phaser.Scene {
       if (!this.sys?.isActive()) return;
       this.handleFarmShopUnload(payload);
     };
-    this._onTestChallenge = (payload = {}) => {
-      if (!this.sys?.isActive()) return;
-      this.jumpToTestChallenge(payload);
-    };
     this._onShopOpen = () => {
       if (!this.sys?.isActive()) return;
       this.farmInputLocked = true;
@@ -1008,7 +996,7 @@ export default class GameScene extends Phaser.Scene {
     };
     this._onFarmCustomerShopResult = (payload) => {
       if (!this.sys?.isActive()) return;
-      // Close unload panel — cart/shop already live; payload may carry leftover sync
+      // Close shop panel — world shop already live; payload may carry leftover sync
       this.closeFarmShopUnload(payload || {});
     };
     this._onUiInputLock = (payload = {}) => {
@@ -1106,7 +1094,6 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.removeAllListeners(FARM_EVENTS.UI_INPUT_LOCK);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.START_ITEM_CHALLENGE);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SYNC_STUDENT_STATE);
-    ForestGameBridge.removeAllListeners(FARM_EVENTS.SET_TEST_CHALLENGE);
     // NOTE: do NOT removeAllListeners(START_FARM_LEVEL) â€” ForestRPGCanvas owns that
 
     ForestGameBridge.on(FARM_EVENTS.PLANT_CROP, this._onPlant);
@@ -1127,7 +1114,6 @@ export default class GameScene extends Phaser.Scene {
       this._onStartItemChallenge,
     );
     ForestGameBridge.on(FARM_EVENTS.SYNC_STUDENT_STATE, this._onStudentState);
-    ForestGameBridge.on(FARM_EVENTS.SET_TEST_CHALLENGE, this._onTestChallenge);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       ForestGameBridge.off(FARM_EVENTS.PLANT_CROP, this._onPlant);
@@ -1148,7 +1134,6 @@ export default class GameScene extends Phaser.Scene {
         this._onStartItemChallenge,
       );
       ForestGameBridge.off(FARM_EVENTS.SYNC_STUDENT_STATE, this._onStudentState);
-      ForestGameBridge.off(FARM_EVENTS.SET_TEST_CHALLENGE, this._onTestChallenge);
     });
   }
 
@@ -1181,7 +1166,6 @@ export default class GameScene extends Phaser.Scene {
       harvestedCount: this.harvestedItemsCount,
       harvestedItemsCount: this.harvestedItemsCount,
       carriedCount: this.carriedCount,
-      cartCount: this.harvestedItemsCount,
       harvestTarget: this.harvestTarget,
       cropsHarvestedTotal: this.cropsHarvestedTotal,
       cropsSoldThisChallenge: this.cropsSoldThisChallenge || 0,
@@ -1247,6 +1231,12 @@ export default class GameScene extends Phaser.Scene {
       masterySource: this.masterySource,
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
+      wrongAnswersRemaining: Math.max(
+        0,
+        MAX_WRONG_ANSWERS - (this.quizIncorrect || 0),
+      ),
+      maxWrongAnswers: MAX_WRONG_ANSWERS,
+      playerHealth: this.player?.playerModel?.health ?? 3,
       questionsAnswered: answered,
       ddaCalibrated: true,
       accuracy:
@@ -1574,7 +1564,7 @@ export default class GameScene extends Phaser.Scene {
       this.plantDoneForChallenge = false;
       this.harvestUnlocked = false;
       this.loadUnlocked = false;
-      this.unloadUnlocked = false;
+      this.unloadUnlocked = true;
       this.harvestArmedUntil = 0;
     }
     this.farmLevel = {
@@ -1778,39 +1768,6 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  jumpToTestChallenge(payload = {}) {
-    const kind =
-      payload.kind === 'animal' ||
-      payload.kind === 'clean'
-        ? payload.kind
-        : 'crop';
-    const index = Math.max(0, Number(payload.index) || 0);
-    this.libraryOverride = true;
-    if (kind === 'animal') {
-      setAnimalChallengeIndex(index);
-      this.applyCurrentAnimalChallenge({ resetProgress: true });
-    } else if (kind === 'clean') {
-      setCleaningChallengeIndex(index);
-      this.applyCurrentCleaningChallenge({ resetProgress: true });
-    } else {
-      setCropChallengeIndex(index);
-      this.clearAllCrops({ silent: true });
-      this.applyCurrentCropChallenge({ resetProgress: true });
-      this.createPlantPlotMarkers();
-    }
-    this.emitFarmState();
-    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-      type: 'test_challenge_jump',
-      kind,
-      index,
-      cropName: this.farmLevel?.cropName,
-      animalName: this.animalChallenge?.animalName,
-      produceName: this.animalChallenge?.produceName,
-      messName: this.cleaningChallenge?.messName,
-      wasteName: this.cleaningChallenge?.wasteName,
-    });
-  }
-
   canPlantMore() {
     // Free replant stays available until the level is finished
     return !this.forestUnlocked;
@@ -1895,80 +1852,68 @@ export default class GameScene extends Phaser.Scene {
     this.emitFarmState();
   }
 
-  /** World cart at the loading dock â€” fills when unload quiz succeeds. */
-  createHarvestCart() {
-    const center = loadingZoneCenter(TILE_SIZE);
-    const x = center.x;
-    const y = center.y + TILE_SIZE;
-    if (this.textures.exists('unlock_cart')) {
-      this.harvestCart = this.add.image(x, y, 'unlock_cart');
-      this.harvestCart.setScale(0.28);
-      this.harvestCart.setDepth(4);
-    } else {
-      this.harvestCart = null;
-    }
-
-    this.harvestCartCrops = this.add.container(x - 6, y - 10);
-    this.harvestCartCrops.setDepth(5);
-    this.refreshHarvestCartVisual();
+  getShopStockFallbacks() {
+    return {
+      cropId: this.farmLevel?.cropId || 'tomato',
+      animalProduceId: String(this.animalChallenge?.produceName || 'milk')
+        .toLowerCase()
+        .replace(/\s+/g, '_'),
+    };
   }
 
-  createLoadingZoneMarker() {
-    if (this.loadingZoneMarker) this.loadingZoneMarker.destroy(true);
-    this.loadingZoneMarker = this.add.container(0, 0);
-    this.loadingZoneMarker.setDepth(1.5);
+  applyShopFulfillmentResult(result, { rp = 0 } = {}) {
+    if (!result?.ok || !this.worldShop) return;
 
-    const z = LOADING_ZONE;
-    const px = z.x * TILE_SIZE;
-    const py = z.y * TILE_SIZE;
-    const pw = z.w * TILE_SIZE;
-    const ph = z.h * TILE_SIZE;
-
-    const g = this.add.graphics();
-    g.fillStyle(0x1a4a6e, 0.35);
-    g.fillRect(px, py, pw, ph);
-    g.lineStyle(2, 0x7ec8ff, 0.95);
-    g.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
-
-    const label = this.add
-      .text(px + pw / 2, py - 4, 'LOAD', {
-        fontFamily: 'Courier New, monospace',
-        fontSize: '8px',
-        color: '#7ec8ff',
-        stroke: '#061018',
-        strokeThickness: 2,
-      })
-      .setOrigin(0.5, 1);
-
-    this.loadingZoneMarker.add([g, label]);
-    this.tweens.add({
-      targets: g,
-      alpha: { from: 0.7, to: 1 },
-      duration: 900,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-  }
-
-  refreshHarvestCartVisual() {
-    if (!this.harvestCartCrops) return;
-    this.harvestCartCrops.removeAll(true);
-
-    const cropKey = this.cropCarryTextureKey();
-    if (!this.textures.exists(cropKey)) return;
-
-    const n = Math.min(8, this.harvestedItemsCount || 0);
-    const scale = this.cropSpriteScale(cropKey, 0.55);
-    for (let i = 0; i < n; i += 1) {
-      const img = this.add.image(
-        (i % 4) * 7 - 10,
-        -Math.floor(i / 4) * 8,
-        cropKey,
-      );
-      img.setScale(scale);
-      this.harvestCartCrops.add(img);
+    const beforeCoins = this.worldShop.coinsEarned || 0;
+    const gained = Math.max(
+      0,
+      (this.worldShop.coinsEarned || 0) - beforeCoins,
+    );
+    if (gained > 0) {
+      this.currentMoney += gained;
+      this.syncMoneyAliases();
     }
+
+    for (const customer of result.completed || []) {
+      this.farmShopLayer?.flashThanks?.(customer.id);
+      this.applyShopSaleProgress(customer);
+    }
+
+    this.farmShopLayer?.sync?.(this.worldShop);
+    this.emitFarmShopTelemetry(
+      [result.unloadEvent, ...(result.events || [])].filter(Boolean),
+    );
+    this.emitFarmShopState();
+    this.emitFarmState();
+
+    if (gained > 0) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'farm_shop_sale',
+        reward: gained,
+        completedCount: result.completed?.length || 0,
+        rp,
+      });
+    }
+
+    if (
+      !this.forestUnlocked &&
+      (this.cropsSoldThisChallenge || 0) >= this.harvestTarget
+    ) {
+      this.advanceVegetableChallenge();
+    }
+    if (
+      !this.forestUnlocked &&
+      (this.animalSoldThisChallenge || 0) >= this.animalCollectTarget
+    ) {
+      this.advanceAnimalChallenge();
+    }
+    if (
+      !this.forestUnlocked &&
+      (this.cleanSoldThisChallenge || 0) >= this.cleanSweepTarget
+    ) {
+      this.advanceCleaningChallenge();
+    }
+    this.checkTargetReached();
   }
 
   /** Long vertical stack of harvested crops carried behind the runner. */
@@ -2112,7 +2057,6 @@ export default class GameScene extends Phaser.Scene {
     this.currentTargetTile = null;
     this.clearCarryTrail();
     this.cropsGroup?.clear(true, true);
-    this.refreshHarvestCartVisual?.();
     if (!silent) this.emitFarmState();
   }
 
@@ -3170,23 +3114,28 @@ export default class GameScene extends Phaser.Scene {
     return true;
   }
 
-  /** E: load dock, nearby world task, plant bed, or unlock-item challenge. */
+  /** E: Farm Shop unload, nearby world task, plant bed, or unlock-item challenge. */
   handleInteractKey() {
     if (!this.player) return;
     if (this.farmInputLocked) return;
     if (!this.guardFarmAction('interact')) return;
 
     const cell = this.getPlayerGridCell();
-    if (isLoadingTile(cell.gridX, cell.gridY)) {
-      this.handleLoadingAttempt({ skipGuard: true });
-      return;
-    }
-
-    if (
+    const nearShop =
       isFarmShopTile(cell.gridX, cell.gridY) ||
-      this.farmShopLayer?.isNear?.(this.player.x, this.player.y)
-    ) {
-      this.openFarmShopUnload();
+      this.farmShopLayer?.isNear?.(this.player.x, this.player.y);
+
+    if (nearShop) {
+      // Carrying harvest → unload into shop stock. No popup.
+      if ((this.carriedCount || 0) > 0) {
+        this.handleLoadingAttempt({ skipGuard: true });
+      } else {
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'farm_shop_hint',
+          message:
+            'Carry harvests here and press E to unload — customers buy automatically.',
+        });
+      }
       return;
     }
 
@@ -3447,6 +3396,7 @@ export default class GameScene extends Phaser.Scene {
     this.emitFarmState();
   }
 
+  /** Unload carry stack into Farm Shop stock (quiz once per challenge cycle). */
   handleLoadingAttempt(options = {}) {
     if (this.farmInputLocked || !this.player) return;
     if (!options.skipGuard && !this.guardFarmAction('load')) return;
@@ -3460,7 +3410,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const cell = this.getPlayerGridCell();
-    if (!isLoadingTile(cell.gridX, cell.gridY)) {
+    const nearShop =
+      isFarmShopTile(cell.gridX, cell.gridY) ||
+      this.farmShopLayer?.isNear?.(this.player.x, this.player.y);
+    if (!nearShop) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'load_blocked',
         reason: 'not_dock',
@@ -3476,9 +3429,9 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    // One load quiz per challenge cycle, then free unloading to cart
+    // One load quiz per challenge cycle, then free delivery to shop stock
     if (this.loadUnlocked) {
-      this.finishLoadToCart({ rp: 0 });
+      this.finishLoadToShop({ rp: 0 });
       return;
     }
 
@@ -3512,29 +3465,35 @@ export default class GameScene extends Phaser.Scene {
     this.emitFarmState();
   }
 
-  finishLoadToCart({ rp = 0 } = {}) {
+  finishLoadToShop({ rp = 0 } = {}) {
     const unloaded = this.carriedCount || 0;
     if (unloaded < 1) return;
-    this.harvestedItemsCount += unloaded;
-    this.cartStack = [
-      ...(this.cartStack || []),
-      ...(this.carryStack || []),
-    ];
+
+    this.ensurePhysicalFarmShop();
+    const stack = [...(this.carryStack || [])];
+    const result = loadCarryStackToShop(
+      this.worldShop,
+      stack,
+      this.getShopStockFallbacks(),
+    );
+
+    this.harvestedItemsCount = (this.harvestedItemsCount || 0) + unloaded;
     this.carryStack = [];
     this.clearCarryTrail();
-    this.refreshHarvestCartVisual();
+    this.carriedCount = 0;
     this.loadUnlocked = true;
     this.pendingQuizMode = null;
     this.audioItem?.play();
     this.cameras.main.flash(180, 120, 200, 255);
+
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
       type: 'load_success',
       unloaded,
-      cartCount: this.harvestedItemsCount,
+      deliveredToShop: true,
       rp,
     });
-    this.emitFarmState();
-    this.checkTargetReached();
+
+    this.applyShopFulfillmentResult(result, { rp });
   }
 
   /**
@@ -3843,7 +3802,7 @@ export default class GameScene extends Phaser.Scene {
     if (!crop?.active || !crop.isReady()) return;
 
     crop.playHarvestFx();
-    // Harvested crops ride on the runner's back until unloaded at the LOAD dock
+    // Harvested crops ride on the runner's back until unloaded at the Farm Shop
     this.carriedCount = (this.carriedCount || 0) + 1;
     this.cropsHarvestedTotal = (this.cropsHarvestedTotal || 0) + 1;
     this.carryStack.push(crop.cropType || this.farmLevel?.cropId || 'tomato');
@@ -3918,35 +3877,19 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Science question required before selling the cart (unload).
+   * Science question before unload — now just starts unload at the stall.
    */
   openUnloadQuestion() {
     if (!this.player || this.farmInputLocked) return;
-    if ((this.harvestedItemsCount || 0) < 1) return;
-    this.pendingQuizMode = 'unload';
-    this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'unload',
-    );
-    this.lastQuestionId = question.id;
-    this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'unload',
-        challenge: 'unload',
-        cartCount: this.harvestedItemsCount,
-        cropType: this.farmLevel.cropId,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    if ((this.carriedCount || 0) > 0) {
+      this.handleLoadingAttempt({ skipGuard: true });
+      return;
+    }
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'farm_shop_hint',
+      message:
+        'Carry harvests to the Farm Shop and press E to unload.',
+    });
   }
 
   onScienceCorrect(payload = {}) {
@@ -4058,15 +4001,14 @@ export default class GameScene extends Phaser.Scene {
         this.ensurePhysicalFarmShop();
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'farm_shop_hint',
-          message:
-            'Walk to the Farm Shop (west of the blue dock) and press E or Q to unload.',
+          message: 'Press E at the Farm Shop to unload harvests into stock.',
         });
         this.emitFarmState();
         return;
       }
 
       if (mode === 'load') {
-        this.finishLoadToCart({ rp: payload.rp ?? 0 });
+        this.finishLoadToShop({ rp: payload.rp ?? 0 });
         return;
       }
 
@@ -4191,6 +4133,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   onScienceIncorrect(payload = {}) {
+    let skipResume = false;
     try {
       this.recordQuizAttempt(false, payload.responseTimeMs);
       const mode = this.pendingQuizMode || payload.mode || 'plant';
@@ -4242,31 +4185,35 @@ export default class GameScene extends Phaser.Scene {
 
       this.emitFarmState();
       this.checkTargetReached();
+
+      if (this.checkWrongAnswerGameOver()) {
+        skipResume = true;
+      }
     } finally {
-      this.resumeAfterQuiz();
+      if (!skipResume) this.resumeAfterQuiz();
     }
   }
 
   /**
-   * Q key / Sell Inventory button:
-   * Near physical Farm Shop → unload panel. Elsewhere → hint (no instant sell).
+   * End the run after too many wrong science answers (not enemy hits).
+   * @returns {boolean} true if game over was triggered
+   */
+  checkWrongAnswerGameOver() {
+    if ((this.quizIncorrect || 0) < MAX_WRONG_ANSWERS) return false;
+    this.time.delayedCall(420, () => {
+      if (this.sys?.isActive()) this.gameOver('wrong_answers');
+    });
+    return true;
+  }
+
+  /**
+   * Q key: same as E at the Farm Shop — unload if carrying, else a short hint.
+   * No popup panel.
    */
   handleSellInventory() {
     if (!this.sys?.isActive()) return;
-    if (this.pendingQuizMode && this.pendingQuizMode !== 'unload') return;
+    if (this.pendingQuizMode) return;
     if (!this.guardFarmAction('sell')) return;
-
-    if (!this.unloadUnlocked) {
-      if (this.harvestedItemsCount <= 0) {
-        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-          type: 'sell_blocked',
-          reason: 'empty_inventory',
-        });
-        return;
-      }
-      this.openUnloadQuestion();
-      return;
-    }
 
     const cell = this.getPlayerGridCell();
     const nearShop =
@@ -4278,31 +4225,36 @@ export default class GameScene extends Phaser.Scene {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'sell_blocked',
         reason: 'not_at_shop',
-        message:
-          'Bring your cart to the Farm Shop (gold SHOP marker west of LOAD) and press Q or E.',
+        message: 'Go to the Farm Shop and press E to unload.',
       });
       return;
     }
 
-    this.openFarmShopUnload();
+    if ((this.carriedCount || 0) > 0) {
+      this.handleLoadingAttempt({ skipGuard: true });
+      return;
+    }
+
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'farm_shop_hint',
+      message:
+        'Carry harvests here and press E to unload — customers buy automatically.',
+    });
   }
 
   getFarmShopSellableIds() {
+    // Only active farm challenges — never invent off-level items for bubbles
     const ids = [];
     const cropId = this.farmLevel?.cropId;
     if (cropId) ids.push(cropId);
-    const animalId = String(this.animalChallenge?.produceName || '')
-      .toLowerCase()
-      .replace(/\s+/g, '_');
-    if (animalId) ids.push(animalId);
-    if (this.cleaningChallenge) ids.push('compost');
-    for (const raw of this.cartStack || []) {
-      let id = String(raw || '').toLowerCase();
-      if (id === 'crop') id = cropId || 'tomato';
-      if (id === 'animal') id = animalId || 'milk';
-      if (id === 'clean') id = 'compost';
-      if (id) ids.push(id);
+    if (this.animalChallenge) {
+      const animalId = String(this.animalChallenge.produceName || '')
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+      if (animalId) ids.push(animalId);
     }
+    if (this.cleaningChallenge) ids.push('compost');
+    if (!ids.length) ids.push(cropId || 'tomato');
     return [...new Set(ids.filter(Boolean))];
   }
 
@@ -4341,34 +4293,18 @@ export default class GameScene extends Phaser.Scene {
     return this.worldShop;
   }
 
+  /** No React popup — sales happen in-world when stock is unloaded. */
   openFarmShopUnload() {
     if (!this.sys?.isActive()) return;
     this.ensurePhysicalFarmShop();
-    this.farmShopUnloadOpen = true;
-    this.farmInputLocked = true;
-    this.freezeFarmForQuiz();
-
-    const animalProduceId = String(
-      this.animalChallenge?.produceName || 'milk',
-    )
-      .toLowerCase()
-      .replace(/\s+/g, '_');
-
-    ForestGameBridge.emit(FARM_EVENTS.OPEN_FARM_CUSTOMER_SHOP, {
-      mode: 'unload',
-      cartStack: [...(this.cartStack || [])],
-      shopStock: { ...(this.worldShop?.shopStock || {}) },
-      customers: snapshotWorldShop(this.worldShop)?.customers || [],
-      harvestedItemsCount: this.harvestedItemsCount,
-      cropId: this.farmLevel?.cropId || 'tomato',
-      animalProduceId,
-      unitValue: this.worldShop?.unitValue || 10,
-      cashMult: this.worldShop?.cashMult || 1,
-      frustrationScore: this.frustrationScore || 0,
-      frustrationLevel: this.frustrationLevel || 'low',
-      difficulty: this.worldShop?.difficulty || null,
-      earnings: this.currentMoney,
-      currentMoney: this.currentMoney,
+    if ((this.carriedCount || 0) > 0) {
+      this.handleLoadingAttempt({ skipGuard: true });
+      return;
+    }
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'farm_shop_hint',
+      message:
+        'Carry harvests here and press E to unload — customers buy automatically.',
     });
   }
 
@@ -4380,7 +4316,6 @@ export default class GameScene extends Phaser.Scene {
   emitFarmShopState() {
     const snap = snapshotWorldShop(this.worldShop);
     ForestGameBridge.emit(FARM_EVENTS.FARM_SHOP_STATE, {
-      cartStack: [...(this.cartStack || [])],
       harvestedItemsCount: this.harvestedItemsCount || 0,
       shopStock: snap?.shopStock || {},
       customers: snap?.customers || [],
@@ -4403,81 +4338,8 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  handleFarmShopUnload(payload = {}) {
-    if (!this.sys?.isActive() || !this.worldShop) return;
-    const itemId = payload.itemId;
-    const qty = Math.max(1, Math.floor(Number(payload.qty) || 1));
-    if (!itemId) return;
-
-    const playerStock = inventoryFromCartStack(this.cartStack || [], {
-      cropId: this.farmLevel?.cropId || 'tomato',
-      animalProduceId: String(this.animalChallenge?.produceName || 'milk')
-        .toLowerCase()
-        .replace(/\s+/g, '_'),
-    });
-
-    const beforeCoins = this.worldShop.coinsEarned || 0;
-    const result = unloadItemsToShop(this.worldShop, playerStock, itemId, qty);
-    if (!result.ok) {
-      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'shop_unload_blocked',
-        reason: result.reason,
-      });
-      return;
-    }
-
-    this.cartStack = cartStackFromInventory(result.playerStock);
-    this.harvestedItemsCount = this.cartStack.length;
-    this.refreshHarvestCartVisual();
-
-    const gained = Math.max(
-      0,
-      (this.worldShop.coinsEarned || 0) - beforeCoins,
-    );
-    if (gained > 0) {
-      this.currentMoney += gained;
-      this.syncMoneyAliases();
-    }
-
-    for (const customer of result.completed || []) {
-      this.farmShopLayer?.flashThanks?.(customer.id);
-      this.applyShopSaleProgress(customer);
-    }
-
-    this.farmShopLayer?.sync?.(this.worldShop);
-    this.emitFarmShopTelemetry(
-      [result.unloadEvent, ...(result.events || [])].filter(Boolean),
-    );
-    this.emitFarmShopState();
-    this.emitFarmState();
-
-    if (gained > 0) {
-      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'farm_shop_sale',
-        reward: gained,
-        completedCount: result.completed?.length || 0,
-      });
-    }
-
-    if (
-      !this.forestUnlocked &&
-      (this.cropsSoldThisChallenge || 0) >= this.harvestTarget
-    ) {
-      this.advanceVegetableChallenge();
-    }
-    if (
-      !this.forestUnlocked &&
-      (this.animalSoldThisChallenge || 0) >= this.animalCollectTarget
-    ) {
-      this.advanceAnimalChallenge();
-    }
-    if (
-      !this.forestUnlocked &&
-      (this.cleanSoldThisChallenge || 0) >= this.cleanSweepTarget
-    ) {
-      this.advanceCleaningChallenge();
-    }
-    this.checkTargetReached();
+  handleFarmShopUnload() {
+    // Cart removed — unload at the Farm Shop stall with E.
   }
 
   applyShopSaleProgress(customer) {
@@ -4553,22 +4415,9 @@ export default class GameScene extends Phaser.Scene {
     this.harvestedItemsCount = 0;
     this.currentMoney += coinsEarned;
     this.syncMoneyAliases();
-    this.refreshHarvestCartVisual();
-    const soldKinds = this.cartStack || [];
-    const animalSold = soldKinds.filter((k) =>
-      /milk|egg|wool|animal/.test(String(k)),
-    ).length;
-    const cleanSold = soldKinds.filter((k) =>
-      /compost|clean/.test(String(k)),
-    ).length;
-    const cropSold = Math.max(0, harvestedItemsCount - animalSold - cleanSold);
+    const cropSold = harvestedItemsCount;
     this.cropsSoldThisChallenge =
       (this.cropsSoldThisChallenge || 0) + cropSold;
-    this.animalSoldThisChallenge =
-      (this.animalSoldThisChallenge || 0) + animalSold;
-    this.cleanSoldThisChallenge =
-      (this.cleanSoldThisChallenge || 0) + cleanSold;
-    this.cartStack = [];
 
     this.audioItem?.play();
     this.cameras.main.flash(180, 255, 220, 80);
@@ -5159,24 +5008,35 @@ export default class GameScene extends Phaser.Scene {
     });
 
     player.setAlpha(0.5);
-    playerModel.health -= 1;
+    playerModel.health = Math.max(0, playerModel.health - 1);
     this.enemyHits = (this.enemyHits || 0) + 1;
     this.audioHurt.play();
-
-    if (playerModel.health < 1) {
-      playerModel.scoreCalc -= 200;
-      this.enemyDeaths = (this.enemyDeaths || 0) + 1;
-      this.levelRestarts = (this.levelRestarts || 0) + 1;
-      this.registry.set('enemyDeaths', this.enemyDeaths);
-      this.registry.set('levelRestarts', this.levelRestarts);
-      this.gameOver();
-    }
+    this.emitFarmState();
   }
 
-  gameOver() {
+  gameOver(reason = 'wrong_answers') {
+    if (!this.sys?.isActive()) return;
+    this.farmInputLocked = true;
     this.clearAllCrops({ silent: true });
+    ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
+    ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'gameover' });
+    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+      type: 'game_over',
+      reason,
+      quizCorrect: this.quizCorrect,
+      quizIncorrect: this.quizIncorrect,
+      maxWrongAnswers: MAX_WRONG_ANSWERS,
+      levelId: this.farmLevel?.id,
+      earnings: this.currentMoney,
+    });
     this.scene.start('GameOverScene', {
-      score: this.player.playerModel.scoreCalc,
+      score: this.player?.playerModel?.scoreCalc ?? 0,
+      reason,
+      quizCorrect: this.quizCorrect ?? 0,
+      quizIncorrect: this.quizIncorrect ?? 0,
+      maxWrong: MAX_WRONG_ANSWERS,
+      levelId: this.farmLevel?.id ?? 1,
+      earnings: this.currentMoney ?? 0,
     });
   }
 

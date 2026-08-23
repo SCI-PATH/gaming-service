@@ -12,6 +12,7 @@ import {
   MOCK_APTITUDE_DATA,
   getMockStorylineStudent,
 } from './mockStudentProfiles.js';
+import { readStoredAptitudeResult } from '../../data/aptitudeProgress.js';
 
 export const MockAptitudeDataProvider = {
   id: 'mock',
@@ -41,16 +42,11 @@ export const MockAptitudeDataProvider = {
   },
 };
 
-/**
- * Placeholder for the real aptitude-test component.
- * Wire this in without changing FrustrationEngine or StorylineGenerator.
- */
 export const RealAptitudeDataProvider = {
   id: 'real',
-  getByStudentId() {
-    throw new Error(
-      'RealAptitudeDataProvider is not connected. Use MockAptitudeDataProvider until the aptitude-test component is wired.',
-    );
+  getByStudentId(studentId) {
+    if (!studentId) return null;
+    return readStoredAptitudeResult(studentId);
   },
   listStudentIds() {
     return [];

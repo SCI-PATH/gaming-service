@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { FARM_SHOP_ZONE, LOADING_ZONE, PLANT_PLOTS } from '../data/plantPlots.js';
+import { FARM_SHOP_ZONE, PLANT_PLOTS } from '../data/plantPlots.js';
 import { ANIMAL_PADDOCK } from '../data/animalChallenges.js';
 import { CLEANING_YARD } from '../data/cleaningChallenges.js';
 import {
@@ -14,7 +14,7 @@ export const FARM_MAP_TILES = { width: 100, height: 75 };
 export const FARM_LANDMARKS = [];
 
 /**
- * Farm map: plant beds (gold), load dock (blue), unlock landmarks, live YOU pin.
+ * Farm map: plant beds (gold), farm shop, unlock landmarks, live YOU pin.
  */
 export default function FarmMapPanel({
   playerMapX,
@@ -74,17 +74,14 @@ export default function FarmMapPanel({
   const tileY = Math.floor(py);
   const nearest = nearestTarget(px, py);
 
-  const loadCx = ((LOADING_ZONE.x + LOADING_ZONE.w / 2) / width) * 100;
-  const loadCy = ((LOADING_ZONE.y + LOADING_ZONE.h / 2) / height) * 100;
-
   return (
     <aside
       className={`farm-map-panel${compact ? ' is-compact' : ''}`}
-      aria-label="Farm map with plant beds, load dock, and unlock locations"
+      aria-label="Farm map with plant beds, farm shop, and unlock locations"
     >
       <div className="farm-map-head">
         <strong>Farm Map</strong>
-        <span>Gold = plant · Blue = load · Shop = market</span>
+        <span>Gold = plant · Shop = unload</span>
       </div>
 
       <div
@@ -154,16 +151,6 @@ export default function FarmMapPanel({
           })}
 
           <div
-            className={`farm-map-load${
-              nearest?.id === LOADING_ZONE.id ? ' is-closest' : ''
-            }`}
-            style={{ left: `${loadCx}%`, top: `${loadCy}%` }}
-            title="Load Dock — unload crops here"
-          >
-            <span>LOAD</span>
-          </div>
-
-          <div
             className={`farm-map-shop${
               nearest?.id === FARM_SHOP_ZONE.id ? ' is-closest' : ''
             }`}
@@ -171,7 +158,7 @@ export default function FarmMapPanel({
               left: `${((FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) / width) * 100}%`,
               top: `${((FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h / 2) / height) * 100}%`,
             }}
-            title="Farm Shop — unload cart for customers"
+            title="Farm Shop — press E to unload"
           >
             <span>SHOP</span>
           </div>
@@ -253,9 +240,6 @@ export default function FarmMapPanel({
           <i className="farm-map-key farm-map-key-clean" /> Clean
         </li>
         <li>
-          <i className="farm-map-key farm-map-key-load" /> Load
-        </li>
-        <li>
           <i className="farm-map-key farm-map-key-quest" /> Job
         </li>
         <li>
@@ -328,13 +312,6 @@ function nearestTarget(tileX, tileY) {
       cx: CLEANING_YARD.x + CLEANING_YARD.w / 2,
       cy: CLEANING_YARD.y + CLEANING_YARD.h / 2,
       kind: 'clean',
-    },
-    {
-      id: LOADING_ZONE.id,
-      label: LOADING_ZONE.label,
-      cx: LOADING_ZONE.x + LOADING_ZONE.w / 2,
-      cy: LOADING_ZONE.y + LOADING_ZONE.h / 2,
-      kind: 'load',
     },
     {
       id: FARM_SHOP_ZONE.id,

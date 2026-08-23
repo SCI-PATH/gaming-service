@@ -12,7 +12,12 @@ export const KILLS_TO_OPEN_EXIT = 6;
 export const HURT_INVULN_MS = 2000;
 export const SCORE_TIME_OFFSET_SEC = 5;
 
-export const LEADERBOARD_DISPLAY_COUNT = 5;
+export const LEADERBOARD_DISPLAY_COUNT = 10;
+
+/** Wrong science answers before the run ends (enemy hits no longer end the run). */
+export const MAX_WRONG_ANSWERS = 6;
+
+export const PLAYER_MAX_HEALTH = 3;
 
 export const DIRECTIONS = Object.freeze({
   UP: 'up',

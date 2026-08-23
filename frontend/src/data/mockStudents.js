@@ -80,6 +80,33 @@ export function loginStudent(displayName) {
   return currentStudent;
 }
 
+/**
+ * Parent app (SCI-PATH Next.js) passed real student id + display name.
+ */
+export function loginStudentFromPlatform({
+  id,
+  displayName,
+  grade = null,
+} = {}) {
+  const studentId = String(id || '').trim();
+  const name = String(displayName || '').trim();
+  if (!studentId || name.length < 1) return null;
+
+  currentStudent = {
+    id: studentId,
+    username: studentId,
+    displayName: name,
+    grade: grade != null ? Number(grade) : null,
+    fromPlatform: true,
+  };
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentStudent));
+  } catch {
+    // ignore
+  }
+  return currentStudent;
+}
+
 export function loginMockStorylineStudent(studentId) {
   const profile = getMockStorylineStudent(studentId);
   if (!profile) return null;

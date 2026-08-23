@@ -453,3 +453,175 @@ export async function insertGameplayEvent(body = {}) {
   );
   return { eventId };
 }
+
+function normalizeLeaderboardRow(row, rank) {
+  return {
+    rank,
+    studentId: row.student_id,
+    displayName: row.display_name || row.student_name || 'Player',
+    currentLevel: Number(row.current_level) || 1,
+    score: Number(row.score) || 0,
+    quizCorrect: Number(row.quiz_correct) || 0,
+  };
+}
+
+/**
+ * Global top-N leaderboard (all students in engagement DB).
+ * @param {{ period?: 'today'|'all', limit?: number, studentId?: string }} opts
+ */
+export async function getLeaderboard(opts = {}) {
+  const period = opts.period === 'today' ? 'today' : 'all';
+  const limit = Math.min(50, Math.max(1, Number(opts.limit) || 10));
+  const studentId = String(opts.studentId || '').trim();
+
+  let rows = [];
+  if (period === 'today') {
+    const result = await query(
+      `SELECT
+         s.student_id,
+         COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+         COALESCE(MAX(s.current_level), 1) AS current_level,
+         (
+           COALESCE(SUM(GREATEST(qa.points_delta, 0)), 0)
+           + COUNT(*) FILTER (WHERE qa.is_correct) * 10
+         )::int AS score,
+         COUNT(*) FILTER (WHERE qa.is_correct)::int AS quiz_correct
+       FROM engagement_gaming.quiz_attempts qa
+       JOIN engagement_gaming.students s ON s.student_id = qa.student_id
+       WHERE qa.answered_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
+       GROUP BY s.student_id, s.display_name, s.student_name
+       HAVING COUNT(*) > 0
+       ORDER BY score DESC, quiz_correct DESC, display_name ASC
+       LIMIT $1`,
+      [limit],
+    );
+    rows = result.rows || [];
+  } else {
+    const result = await query(
+      `SELECT
+         s.student_id,
+         COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+         COALESCE(s.current_level, 1) AS current_level,
+         GREATEST(
+           COALESCE(s.total_points_earned, 0),
+           COALESCE(stats.quiz_correct, 0) * 10 + COALESCE(s.current_level, 1) * 50
+         )::int AS score,
+         COALESCE(stats.quiz_correct, 0)::int AS quiz_correct
+       FROM engagement_gaming.students s
+       LEFT JOIN (
+         SELECT
+           student_id,
+           SUM(quiz_correct)::int AS quiz_correct,
+           SUM(points_earned)::int AS points_earned
+         FROM engagement_gaming.level_progress
+         GROUP BY student_id
+       ) stats ON stats.student_id = s.student_id
+       WHERE s.last_seen_at IS NOT NULL
+       ORDER BY score DESC, current_level DESC, s.last_seen_at DESC
+       LIMIT $1`,
+      [limit],
+    );
+    rows = result.rows || [];
+  }
+
+  const entries = rows.map((row, index) => normalizeLeaderboardRow(row, index + 1));
+
+  let you = null;
+  if (studentId) {
+    const inTop = entries.find((e) => e.studentId === studentId);
+    if (inTop) {
+      you = inTop;
+    } else {
+      you = await getStudentLeaderboardRank(studentId, period);
+    }
+  }
+
+  return { period, limit, entries, you };
+}
+
+async function getStudentLeaderboardRank(studentId, period = 'all') {
+  if (period === 'today') {
+    const result = await query(
+      `WITH ranked AS (
+         SELECT
+           s.student_id,
+           COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+           COALESCE(MAX(s.current_level), 1) AS current_level,
+           (
+             COALESCE(SUM(GREATEST(qa.points_delta, 0)), 0)
+             + COUNT(*) FILTER (WHERE qa.is_correct) * 10
+           )::int AS score,
+           COUNT(*) FILTER (WHERE qa.is_correct)::int AS quiz_correct,
+           RANK() OVER (
+             ORDER BY
+               (
+                 COALESCE(SUM(GREATEST(qa.points_delta, 0)), 0)
+                 + COUNT(*) FILTER (WHERE qa.is_correct) * 10
+               ) DESC,
+               COUNT(*) FILTER (WHERE qa.is_correct) DESC
+           ) AS rank
+         FROM engagement_gaming.quiz_attempts qa
+         JOIN engagement_gaming.students s ON s.student_id = qa.student_id
+         WHERE qa.answered_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
+         GROUP BY s.student_id, s.display_name, s.student_name
+       )
+       SELECT * FROM ranked WHERE student_id = $1`,
+      [studentId],
+    );
+    const row = result.rows?.[0];
+    return row ? normalizeLeaderboardRow(row, Number(row.rank) || 0) : null;
+  }
+
+  const result = await query(
+    `WITH ranked AS (
+       SELECT
+         s.student_id,
+         COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+         COALESCE(s.current_level, 1) AS current_level,
+         GREATEST(
+           COALESCE(s.total_points_earned, 0),
+           COALESCE(stats.quiz_correct, 0) * 10 + COALESCE(s.current_level, 1) * 50
+         )::int AS score,
+         COALESCE(stats.quiz_correct, 0)::int AS quiz_correct,
+         RANK() OVER (
+           ORDER BY
+             GREATEST(
+               COALESCE(s.total_points_earned, 0),
+               COALESCE(stats.quiz_correct, 0) * 10 + COALESCE(s.current_level, 1) * 50
+             ) DESC,
+             COALESCE(s.current_level, 1) DESC
+         ) AS rank
+       FROM engagement_gaming.students s
+       LEFT JOIN (
+         SELECT student_id, SUM(quiz_correct)::int AS quiz_correct
+         FROM engagement_gaming.level_progress
+         GROUP BY student_id
+       ) stats ON stats.student_id = s.student_id
+       WHERE s.last_seen_at IS NOT NULL
+     )
+     SELECT * FROM ranked WHERE student_id = $1`,
+    [studentId],
+  );
+  const row = result.rows?.[0];
+  return row ? normalizeLeaderboardRow(row, Number(row.rank) || 0) : null;
+}
+
+/** Upsert a student's public leaderboard stats (arena score). */
+export async function submitLeaderboardScore(body = {}) {
+  const studentId = String(body.studentId || body.student_id || '').trim();
+  if (!studentId) throw new Error('studentId required');
+
+  const score = Math.max(0, Math.round(Number(body.score) || 0));
+  const quizCorrect = Math.max(0, Number(body.quizCorrect ?? body.quiz_correct) || 0);
+
+  await upsertStudent({
+    ...body,
+    studentId,
+    totalPointsEarned: score,
+    currentLevel: body.currentLevel ?? body.current_level ?? 1,
+    lessonsCompleted: body.lessonsCompleted ?? quizCorrect,
+    walletBalance: body.walletBalance ?? body.cash ?? null,
+  });
+
+  return { studentId, score, quizCorrect };
+}

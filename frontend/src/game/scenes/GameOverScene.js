@@ -1,79 +1,48 @@
 import Phaser from 'phaser';
-import { postScore } from '../scores/scores';
-import { bodyStyle, titleStyle } from '../ui/textStyles';
-import { bindPressEnter, makeEnterImageClickable } from '../ui/bindPressEnter.js';
+import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
 
+/**
+ * Cinematic backdrop only — React GameOverOverlay renders the UI.
+ */
 export default class GameOverScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameOverScene' });
   }
 
-  init(data) {
-    this.score = data.score ?? 0;
-    this.isSaving = false;
+  init(data = {}) {
+    this.runData = data;
   }
 
   create() {
-    this.addDisplayElements();
-    if (this.input?.keyboard) this.input.keyboard.enabled = true;
-    this.endKeys = this.input.keyboard.addKeys('enter, space');
-    bindPressEnter(this, () => this.saveScoreAndContinue(), { allowInInput: true });
-    const enterImg = this.children.list.find((c) => c.texture?.key === 'enter');
-    makeEnterImageClickable(this, enterImg, () => this.saveScoreAndContinue());
-  }
+    ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
+    ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'gameover' });
 
-  update() {
-    if (this.isSaving) return;
+    const w = this.scale.width || 800;
+    const h = this.scale.height || 600;
 
-    if (Phaser.Input.Keyboard.JustDown(this.endKeys.space)) {
-      this.toLeaderBoard();
-      return;
+    if (this.textures.exists('title-bg')) {
+      this.add.tileSprite(w / 2, h / 2, w, h, 'title-bg').setDepth(0);
+    } else {
+      this.cameras.main.setBackgroundColor('#0a1220');
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.endKeys.enter)) {
-      this.saveScoreAndContinue();
-    }
-  }
+    this.add.rectangle(w / 2, h / 2, w, h, 0x060a14, 0.78).setDepth(1);
 
-  addDisplayElements() {
-    this.add.tileSprite(400, 300, 800, 600, 'title-bg');
-    const enterImg = this.add.image(400, 400, 'enter').setScale(3);
-
-    this.add.text(400, 50, 'Game Over', titleStyle).setOrigin(0.5);
-    this.add.text(400, 110, `Your score is: ${this.score}`, bodyStyle).setOrigin(0.5);
-    this.add.text(
-      400,
-      200,
-      'Enter your name to save your score locally:',
-      bodyStyle,
-    ).setOrigin(0.5);
-    this.add.text(400, 500, 'Press SPACE to skip this step', bodyStyle).setOrigin(0.5);
-
-    this.inputText = this.add.dom(400, 300, 'input', {
-      type: 'text',
-      name: 'nameField',
-      fontSize: '28px',
-      backgroundColor: '#fff',
-      maxLength: 16,
+    ForestGameBridge.emit(FARM_EVENTS.GAME_OVER, {
+      ...(this.runData || {}),
     });
-  }
 
-  async saveScoreAndContinue() {
-    const name = this.inputText.node.value.trim();
-    if (!name) return;
+    if (this.input?.keyboard) this.input.keyboard.enabled = true;
 
-    this.isSaving = true;
-    try {
-      await postScore(name, this.score);
-    } catch (error) {
-      // Still continue to the board if storage fails.
-      // eslint-disable-next-line no-console
-      console.warn(error.message);
-    }
-    this.toLeaderBoard();
-  }
+    this._returnToMenu = () => {
+      if (!this.sys?.isActive()) return;
+      ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'menu' });
+      this.scene.start('MenuScene');
+    };
 
-  toLeaderBoard() {
-    this.scene.start('LeaderBoardScene');
+    ForestGameBridge.on(FARM_EVENTS.RETURN_TO_MENU, this._returnToMenu);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      ForestGameBridge.off(FARM_EVENTS.RETURN_TO_MENU, this._returnToMenu);
+    });
   }
 }

@@ -17,20 +17,20 @@ export const PLANT_PLOTS = [
 ];
 
 /**
- * Loading dock — run here with crops on your back, answer the load quiz to unload into the cart.
- * Placed near farm spawn / cart so it is easy to find on the map.
+ * @deprecated Load dock removed — unload happens at FARM_SHOP_ZONE.
+ * Kept as an alias so older map helpers don't crash.
  */
 export const LOADING_ZONE = {
   id: 'load_dock',
-  label: 'Load Dock',
-  x: 50,
-  y: 31,
-  w: 5,
-  h: 4,
+  label: 'Farm Shop',
+  x: 40,
+  y: 28,
+  w: 6,
+  h: 5,
 };
 
 /**
- * Physical Farm Shop — west of the load dock; customers queue south of the door.
+ * Physical Farm Shop — press E here to unload harvest into shop stock.
  * Keep clear of plant beds, animal paddock (y≥43), and cleaning yard.
  */
 export const FARM_SHOP_ZONE = {
@@ -64,7 +64,8 @@ export function isPlantableTile(gridX, gridY) {
 }
 
 export function isLoadingTile(gridX, gridY) {
-  return isTileInPlot(gridX, gridY, LOADING_ZONE);
+  // Unload is at the Farm Shop stall (no separate blue dock)
+  return isTileInPlot(gridX, gridY, FARM_SHOP_ZONE);
 }
 
 export function isFarmShopTile(gridX, gridY) {
@@ -72,12 +73,7 @@ export function isFarmShopTile(gridX, gridY) {
 }
 
 export function loadingZoneCenter(tileSize = 16) {
-  return {
-    x: (LOADING_ZONE.x + LOADING_ZONE.w / 2) * tileSize,
-    y: (LOADING_ZONE.y + LOADING_ZONE.h / 2) * tileSize,
-    tileX: LOADING_ZONE.x + LOADING_ZONE.w / 2,
-    tileY: LOADING_ZONE.y + LOADING_ZONE.h / 2,
-  };
+  return farmShopZoneCenter(tileSize);
 }
 
 export function farmShopZoneCenter(tileSize = 16) {
@@ -89,17 +85,20 @@ export function farmShopZoneCenter(tileSize = 16) {
   };
 }
 
-/** Queue slots south of the shop door (world pixels). */
-export function farmShopQueueSlots(count = 5, tileSize = 16) {
-  const doorX =
-    (FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) * tileSize;
-  const doorY =
-    (FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h) * tileSize + tileSize * 0.6;
+/**
+ * Queue on open dirt south of the shop — shifted east so west bushes
+ * never clip the front of the line.
+ */
+export function farmShopQueueSlots(count = 4, tileSize = 16) {
+  const z = FARM_SHOP_ZONE;
+  const rowY = (z.y + z.h + 3.2) * tileSize;
+  const startX = (z.x + 1.8) * tileSize;
+  const spacing = tileSize * 2.8;
   const slots = [];
   for (let i = 0; i < count; i += 1) {
     slots.push({
-      x: doorX,
-      y: doorY + i * tileSize * 1.55,
+      x: startX + i * spacing,
+      y: rowY,
       index: i,
     });
   }

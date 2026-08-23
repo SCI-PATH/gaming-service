@@ -1,76 +1,104 @@
-/** Shared Phaser text styles for menus and HUD. */
+/** Shared Phaser text styles — SCI-PATH brand (light menus). */
+
+const FONT = 'Inter, Segoe UI, system-ui, sans-serif';
+
+export const brandKickerStyle = {
+  fontFamily: FONT,
+  fontSize: '13px',
+  fontStyle: 'bold',
+  color: '#7209b7',
+  align: 'center',
+};
 
 export const brandTitleStyle = {
-  fontFamily: 'Impact, Haettenschweiler, Arial Black, sans-serif',
-  fontSize: '72px',
+  fontFamily: FONT,
+  fontSize: '52px',
   fontStyle: 'bold',
-  color: '#5aaf45',
-  stroke: '#0a1208',
-  strokeThickness: 10,
+  color: '#212529',
+  align: 'center',
+};
+
+export const brandTitleAccentStyle = {
+  fontFamily: FONT,
+  fontSize: '52px',
+  fontStyle: 'bold',
+  color: '#00a8e8',
   align: 'center',
 };
 
 export const brandTaglineStyle = {
-  fontFamily: 'monospace',
-  fontSize: '16px',
-  fontStyle: 'bold',
-  color: '#ffffff',
+  fontFamily: FONT,
+  fontSize: '17px',
+  color: '#495057',
   align: 'center',
-  lineSpacing: 6,
+  lineSpacing: 8,
   wordWrap: { width: 620 },
 };
 
-export const titleStyle = {
-  fontFamily: 'monospace',
-  fontSize: '40px',
+export const enterPromptStyle = {
+  fontFamily: FONT,
+  fontSize: '26px',
   fontStyle: 'bold',
-  color: '#ffffff',
+  color: '#00a8e8',
+  align: 'center',
+};
+
+export const titleStyle = {
+  fontFamily: FONT,
+  fontSize: '36px',
+  fontStyle: 'bold',
+  color: '#212529',
   align: 'center',
 };
 
 export const headingStyle = {
-  fontFamily: 'monospace',
-  fontSize: '32px',
+  fontFamily: FONT,
+  fontSize: '30px',
   fontStyle: 'bold',
-  color: '#ffffff',
+  color: '#212529',
   align: 'center',
 };
 
 export const bodyStyle = {
-  fontFamily: 'monospace',
-  fontSize: '20px',
+  fontFamily: FONT,
+  fontSize: '18px',
+  color: '#495057',
+  align: 'center',
+};
+
+export const bodyStrongStyle = {
+  fontFamily: FONT,
+  fontSize: '18px',
   fontStyle: 'bold',
-  color: '#ffffff',
+  color: '#212529',
   align: 'center',
 };
 
 export const captionStyle = {
-  fontFamily: 'monospace',
-  fontSize: '16px',
-  fontStyle: 'bold',
-  color: '#ffffff',
+  fontFamily: FONT,
+  fontSize: '15px',
+  color: '#6c757d',
   align: 'center',
 };
 
 export const menuStyle = {
-  fontFamily: 'monospace',
-  fontSize: '25px',
-  fontStyle: 'bold',
-  color: '#ffffff',
+  fontFamily: FONT,
+  fontSize: '16px',
+  color: '#6c757d',
   align: 'center',
 };
 
 export const hudStyle = {
-  fontFamily: 'monospace',
+  fontFamily: FONT,
   fontSize: '8px',
   fontStyle: 'bold',
-  color: '#FFFFFF',
+  color: '#212529',
   align: 'center',
 };
 
 export const leaderboardRowStyle = {
-  fontFamily: 'monospace',
-  fontSize: '28px',
-  fontStyle: 'bold',
-  color: '#ffffff',
+  fontFamily: FONT,
+  fontSize: '22px',
+  color: '#212529',
+  align: 'center',
 };

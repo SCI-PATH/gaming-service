@@ -216,8 +216,8 @@ export default function ScienceQuizModal({
         : 'Unload Challenge (Sell Cart)'
       : isLoad
         ? cropLabel
-          ? `Load Challenge — Take ${cropLabel} to the cart`
-          : 'Load Challenge (Unload onto Cart)'
+          ? `Load Challenge — Deliver ${cropLabel} to the shop`
+          : 'Load Challenge (Deliver to Shop)'
         : isHarvest
           ? cropLabel
             ? `Harvest Challenge — Pick ${cropLabel}`
@@ -241,9 +241,9 @@ export default function ScienceQuizModal({
           : isCleanSweep
             ? 'Sweeping unlocked — run over the mess in the yard.'
         : isUnload
-      ? 'Crops sold from the cart — cash added.'
+      ? 'Shop unlocked — customers buy from stock automatically.'
       : isLoad
-        ? 'Crops unloaded into the cart.'
+        ? 'Harvests delivered to the shop — customers will buy automatically.'
         : isHarvest
           ? 'Harvest unlocked — run over ready crops to pick them up.'
           : 'Crops will grow — harvest them onto your back.';
@@ -278,7 +278,7 @@ export default function ScienceQuizModal({
           )}
           {isUnload && (
             <p className="science-quiz-carry">
-              Cart ready to sell — answer to unload for cash
+              Visit the Farm Shop to see customers and stock
             </p>
           )}
         </div>
