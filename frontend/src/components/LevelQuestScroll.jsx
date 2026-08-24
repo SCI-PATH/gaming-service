@@ -3,6 +3,9 @@ import { useEffect, useId, useMemo, useState } from 'react';
 /**
  * Vintage parchment quest scroll for the current farm level.
  * Unfurls horizontally from the center when opened.
+ *
+ * Level challenge-bank tasks are all AVAILABLE — no sequential locking.
+ * Each crop / animal / clean task tracks its own progress independently.
  */
 export default function LevelQuestScroll({
   open = false,
@@ -16,6 +19,9 @@ export default function LevelQuestScroll({
   cropName = 'crops',
   cropChallengeIndex = 0,
   cropChallengeTotal = 2,
+  cropChallengeList = null,
+  cropChallengeStatus = '',
+  levelCropComplete = false,
   libraryLevel = 1,
   libraryLevelCount = 50,
   librarySummary = '',
@@ -28,6 +34,7 @@ export default function LevelQuestScroll({
   animalCollectedTotal = 0,
   animalSoldThisChallenge = 0,
   animalTended = false,
+  levelAnimalComplete = false,
   cleanMessName = '',
   cleanWasteName = 'waste',
   cleanVerb = 'Clean',
@@ -37,6 +44,7 @@ export default function LevelQuestScroll({
   cleanSweptTotal = 0,
   cleanSoldThisChallenge = 0,
   cleanStarted = false,
+  levelCleanComplete = false,
   onClose,
 }) {
   const titleId = useId();
@@ -46,7 +54,7 @@ export default function LevelQuestScroll({
   const tasks = useMemo(() => {
     const list = [];
 
-    if (goalText && harvestTarget <= 0) {
+    if (goalText && harvestTarget <= 0 && !(cropChallengeList?.length > 0)) {
       list.push({
         id: 'level-goal',
         title: `Level ${levelId} goal`,
@@ -54,10 +62,55 @@ export default function LevelQuestScroll({
         done: false,
         hint: null,
         kind: 'goal',
+        status: null,
       });
     }
 
-    if (harvestTarget > 0) {
+    const cropList = Array.isArray(cropChallengeList) ? cropChallengeList : null;
+
+    if (cropList?.length) {
+      for (const crop of cropList) {
+        const name = String(crop.cropName || 'crops').toLowerCase();
+        const status = crop.status || 'AVAILABLE';
+        const completed = status === 'COMPLETED' || Boolean(crop.sellDone);
+        const target = Math.max(1, Number(crop.harvestTarget) || 1);
+        const harvested = Number(crop.cropsHarvestedTotal) || 0;
+        const sold = Number(crop.cropsSoldThisChallenge) || 0;
+        const planted = Boolean(crop.plantDone);
+
+        let detail;
+        let hint = 'Press E on the labelled gold bed — answer the science question to plant.';
+        if (completed) {
+          detail = `Sold ${target}/${target} ${name}. Done!`;
+          hint = null;
+        } else if (!planted) {
+          detail = `Plant ${name} on its gold bed, then pick ${target} and sell.`;
+        } else if (harvested < target) {
+          detail = `Harvested ${harvested}/${target}. Carry them, then press E at the Farm Shop.`;
+          hint = 'Answer the harvest quiz, then run over ready crops.';
+        } else if (sold < target) {
+          detail = `Sold ${sold}/${target} ${name}. Unload at the Farm Shop so customers buy.`;
+          hint = 'Walk to the Farm Shop and press E to unload into shop stock.';
+        } else {
+          detail = `Sold ${sold}/${target} ${name}.`;
+        }
+
+        list.push({
+          id: `crop-${crop.slot ?? crop.id}`,
+          title: `Plant ${name}`,
+          detail,
+          done: completed,
+          hint: !completed ? hint : null,
+          kind: 'crop',
+          status,
+          statusLabel: crop.statusLabel || status,
+          statusIcon: crop.statusIcon || (completed ? '✓' : '▶'),
+          locked: false,
+          available: !completed,
+        });
+      }
+    } else if (harvestTarget > 0) {
+      // Fallback when Phaser has not yet sent cropChallengeList
       const harvested = Number(cropsHarvestedTotal) || 0;
       const sold = Number(cropsSoldThisChallenge) || 0;
       const planted = Number(plantedCount) || 0;
@@ -65,6 +118,7 @@ export default function LevelQuestScroll({
       const name = String(cropName || 'crops').toLowerCase();
       const n = (cropChallengeIndex || 0) + 1;
       const total = Math.max(1, Number(cropChallengeTotal) || 100);
+      const status = cropChallengeStatus || (sold >= target ? 'COMPLETED' : 'AVAILABLE');
 
       list.push({
         id: 'plant',
@@ -73,6 +127,11 @@ export default function LevelQuestScroll({
         done: planted > 0 || harvested > 0 || sold > 0,
         hint: 'Press E on a gold bed — answer the science question to plant.',
         kind: 'plant',
+        status,
+        statusLabel: status,
+        statusIcon: sold >= target ? '✓' : '▶',
+        locked: false,
+        available: sold < target,
       });
       list.push({
         id: 'harvest',
@@ -81,6 +140,7 @@ export default function LevelQuestScroll({
         done: harvested >= target,
         hint: 'Answer the harvest quiz, then run over ready crops.',
         kind: 'harvest',
+        status: null,
       });
       list.push({
         id: 'sell',
@@ -89,6 +149,7 @@ export default function LevelQuestScroll({
         done: sold >= target,
         hint: 'Walk to the Farm Shop and press E to unload into shop stock.',
         kind: 'sell',
+        status: null,
       });
     }
 
@@ -101,30 +162,26 @@ export default function LevelQuestScroll({
       const aIndex = (animalChallengeIndex || 0) + 1;
       const aTotal = Math.max(1, Number(animalChallengeTotal) || 50);
       const verb = animalAction === 'shear' ? 'Shear' : 'Feed';
+      const animalDone =
+        Boolean(levelAnimalComplete) || animalSold >= animalTarget;
+      const animalStatus = animalDone ? 'COMPLETED' : 'AVAILABLE';
 
       list.push({
-        id: 'animal-tend',
+        id: 'animal-track',
         title: `${verb} the ${animals}`,
-        detail: `Walk into the fenced pen and press E (${aIndex} of ${aTotal}).`,
-        done: Boolean(animalTended) || collected > 0 || animalSold > 0,
-        hint: 'Answer the science question to tend the whole herd.',
+        detail: animalDone
+          ? `Sold ${animalTarget}/${animalTarget} ${produce}. Done!`
+          : `Tend pen (${aIndex} of ${aTotal}), collect ${animalTarget} ${produce}, sell at shop.`,
+        done: animalDone,
+        hint: animalDone
+          ? null
+          : 'Walk into the fenced pen and press E, then collect produce and unload at the shop.',
         kind: 'animal',
-      });
-      list.push({
-        id: 'animal-collect',
-        title: `Collect ${animalTarget} ${produce}`,
-        detail: `Collected ${collected}/${animalTarget}. Carry them, then press E at the Farm Shop.`,
-        done: collected >= animalTarget,
-        hint: 'After feeding, run over milk, eggs, or wool in the pen.',
-        kind: 'animal',
-      });
-      list.push({
-        id: 'animal-sell',
-        title: `Sell ${produce} at the Farm Shop`,
-        detail: `Sold ${animalSold}/${animalTarget} ${produce}. Press E at the stall to unload.`,
-        done: animalSold >= animalTarget,
-        hint: 'Walk to the Farm Shop and press E to unload.',
-        kind: 'animal',
+        status: animalStatus,
+        statusLabel: animalStatus,
+        statusIcon: animalDone ? '✓' : '▶',
+        locked: false,
+        available: !animalDone,
       });
     }
 
@@ -137,35 +194,31 @@ export default function LevelQuestScroll({
       const cIndex = (cleaningChallengeIndex || 0) + 1;
       const cTotal = Math.max(1, Number(cleaningChallengeTotal) || 50);
       const verb = cleanVerb || 'Clean';
+      const cleanDone = Boolean(levelCleanComplete) || cleanSold >= cleanTarget;
+      const cleanStatus = cleanDone ? 'COMPLETED' : 'AVAILABLE';
 
       list.push({
-        id: 'clean-start',
+        id: 'clean-track',
         title: `${verb} the ${mess}`,
-        detail: `Walk into the dirty yard and press E (${cIndex} of ${cTotal}).`,
-        done: Boolean(cleanStarted) || swept > 0 || cleanSold > 0,
-        hint: 'Answer the science question to start cleaning the yard.',
+        detail: cleanDone
+          ? `Sold ${cleanTarget}/${cleanTarget} ${waste}. Done!`
+          : `Clean yard (${cIndex} of ${cTotal}), sweep ${cleanTarget}, sell ${waste}.`,
+        done: cleanDone,
+        hint: cleanDone
+          ? null
+          : 'Walk into the dirty yard and press E, then sweep and unload at the shop.',
         kind: 'clean',
-      });
-      list.push({
-        id: 'clean-sweep',
-        title: `Sweep ${cleanTarget} ${mess}`,
-        detail: `Swept ${swept}/${cleanTarget}. Carry them, then press E at the Farm Shop.`,
-        done: swept >= cleanTarget,
-        hint: 'After starting, run over weeds, rocks, or other mess in the yard.',
-        kind: 'clean',
-      });
-      list.push({
-        id: 'clean-sell',
-        title: `Sell ${waste} at the Farm Shop`,
-        detail: `Sold ${cleanSold}/${cleanTarget} ${waste}. Press E at the stall to unload.`,
-        done: cleanSold >= cleanTarget,
-        hint: 'Walk to the Farm Shop and press E to unload.',
-        kind: 'clean',
+        status: cleanStatus,
+        statusLabel: cleanStatus,
+        statusIcon: cleanDone ? '✓' : '▶',
+        locked: false,
+        available: !cleanDone,
       });
     }
 
     for (const c of challenges) {
-      const isAgent = c.source === 'agent' || String(c.itemId || '').startsWith('agent_station_');
+      const isAgent =
+        c.source === 'agent' || String(c.itemId || '').startsWith('agent_station_');
       if (isAgent) continue;
       if (c.source === 'world') continue;
       const isStory =
@@ -183,6 +236,7 @@ export default function LevelQuestScroll({
           done: Boolean(c.done),
           hint: null,
           kind: 'challenge',
+          status: null,
         });
         continue;
       }
@@ -196,6 +250,7 @@ export default function LevelQuestScroll({
         done: Boolean(c.done),
         hint: 'Click the unlock on the farm, or press E nearby',
         kind: 'challenge',
+        status: null,
       });
     }
 
@@ -221,12 +276,17 @@ export default function LevelQuestScroll({
     cleaningChallengeIndex,
     cleaningChallengeTotal,
     cropChallengeIndex,
+    cropChallengeList,
+    cropChallengeStatus,
     cropChallengeTotal,
     cropName,
     cropsHarvestedTotal,
     cropsSoldThisChallenge,
     goalText,
     harvestTarget,
+    levelAnimalComplete,
+    levelCleanComplete,
+    levelCropComplete,
     levelId,
     plantedCount,
   ]);
@@ -268,8 +328,8 @@ export default function LevelQuestScroll({
           <div className="quest-scroll-parchment">
             <header className="quest-scroll-head">
               <p className="quest-scroll-eyebrow">
-                Level {libraryLevel || levelId} of {libraryLevelCount || 50} · 15
-                questions · then shop
+                Level {libraryLevel || levelId} of {libraryLevelCount || 50} · choose any
+                bed → plant → pick → sell
               </p>
               <h2 id={titleId}>Quest To-Do</h2>
               <p className="quest-scroll-sub">
@@ -285,25 +345,37 @@ export default function LevelQuestScroll({
               <ul className="quest-todo-list">
                 {tasks.map((task) => {
                   const checked = task.done || noted.has(task.id);
+                  const locked = Boolean(task.locked);
                   return (
                     <li
                       key={task.id}
                       className={`quest-todo-item${checked ? ' is-checked' : ''}${
                         task.done ? ' is-complete' : ''
+                      }${locked ? ' is-locked' : ''}${
+                        task.available ? ' is-available' : ''
                       }`}
                     >
                       <label className="quest-todo-label">
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={task.done}
+                          disabled={task.done || locked}
                           onChange={() => toggleNoted(task.id, task.done)}
                         />
                         <span className="quest-todo-box" aria-hidden />
                         <span className="quest-todo-copy">
-                          <strong>{task.title}</strong>
+                          <strong>
+                            {task.statusIcon ? `${task.statusIcon} ` : ''}
+                            {task.title}
+                            {task.statusLabel ? (
+                              <span className="quest-todo-status">
+                                {' '}
+                                {task.statusLabel}
+                              </span>
+                            ) : null}
+                          </strong>
                           <em>{task.detail}</em>
-                          {task.hint && !task.done ? (
+                          {task.hint && !task.done && !locked ? (
                             <span className="quest-todo-hint">{task.hint}</span>
                           ) : null}
                         </span>

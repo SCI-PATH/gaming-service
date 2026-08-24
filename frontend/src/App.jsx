@@ -871,7 +871,7 @@ export default function App() {
     if (detail?.type === 'load_success') {
       if (detail.rp) setRpEarned((n) => n + detail.rp);
       setHint(
-        `Delivered ${detail.unloaded ?? ''} to the shop — customers will buy automatically.`,
+        `Sold at the shop — cash updated. Customers buy matching orders automatically.`,
       );
       window.setTimeout(() => setHint(null), 2800);
     }
@@ -948,7 +948,13 @@ export default function App() {
     }
     if (detail?.type === 'crop_challenge_next') {
       setHint(
-        `Next vegetable: plant ${detail.cropName} once, then harvest & sell.`,
+        `Unlocked: plant ${detail.cropName} on any gold bed, then harvest & sell.`,
+      );
+      window.setTimeout(() => setHint(null), 4200);
+    }
+    if (detail?.type === 'crop_challenge_level_done') {
+      setHint(
+        `All vegetables sold! Next: tend the animals, then clean the yard.`,
       );
       window.setTimeout(() => setHint(null), 4200);
     }
@@ -1007,11 +1013,11 @@ export default function App() {
     if (detail?.type === 'plant_blocked') {
       const msg =
         detail.reason === 'not_plot'
-          ? 'Stand on a marked PLANT bed (gold) to plant.'
+          ? 'Stand on a gold plant bed to plant — each bed shows its crop name above.'
           : detail.reason === 'tile_occupied'
             ? 'This plant bed is full — try another marked bed.'
             : detail.reason === 'already_planted'
-              ? `Already planted ${detail.cropName || 'this crop'} — harvest & sell it to unlock the next vegetable.`
+              ? `${detail.cropName || 'This crop'} already planted this level — try another plant, or harvest and sell what you grew.`
               : detail.reason === 'target_reached'
                 ? 'Level complete — open the Unlock Shop or head to the forest!'
                 : 'Cannot plant here.';
@@ -1024,7 +1030,11 @@ export default function App() {
           ? 'Harvest crops onto your back first, then press E at the Farm Shop.'
           : detail.reason === 'not_dock'
             ? 'Stand at the Farm Shop and press E to unload.'
-            : 'Cannot unload here.';
+            : detail.reason === 'plant_first'
+              ? `Plant ${detail.cropName || 'the crop'} on a gold bed first.`
+              : detail.reason === 'harvest_first'
+                ? `Pick ${detail.cropName || 'crops'} first, then unload at the shop.`
+                : 'Cannot unload here.';
       setHint(msg);
       window.setTimeout(() => setHint(null), 2200);
     }
@@ -1319,6 +1329,9 @@ export default function App() {
             cropName={farm.cropName || 'crops'}
             cropChallengeIndex={farm.cropChallengeIndex ?? 0}
             cropChallengeTotal={farm.cropChallengeTotal ?? 2}
+            cropChallengeList={farm.cropChallengeList || null}
+            cropChallengeStatus={farm.cropChallengeStatus || ''}
+            levelCropComplete={Boolean(farm.levelCropComplete)}
             libraryLevel={farm.libraryLevel ?? farm.levelId ?? 1}
             libraryLevelCount={farm.libraryLevelCount ?? 50}
             librarySummary={farm.librarySummary || ''}
@@ -1331,6 +1344,7 @@ export default function App() {
             animalCollectedTotal={farm.animalCollectedTotal ?? 0}
             animalSoldThisChallenge={farm.animalSoldThisChallenge ?? 0}
             animalTended={Boolean(farm.animalTended)}
+            levelAnimalComplete={Boolean(farm.levelAnimalComplete)}
             cleanMessName={farm.cleanMessName || ''}
             cleanWasteName={farm.cleanWasteName || 'waste'}
             cleanVerb={farm.cleanVerb || 'Clean'}
@@ -1340,6 +1354,7 @@ export default function App() {
             cleanSweptTotal={farm.cleanSweptTotal ?? 0}
             cleanSoldThisChallenge={farm.cleanSoldThisChallenge ?? 0}
             cleanStarted={Boolean(farm.cleanStarted)}
+            levelCleanComplete={Boolean(farm.levelCleanComplete)}
             onClose={() => setQuestScrollOpen(false)}
           />
         </div>

@@ -775,6 +775,40 @@ body {
   opacity: 0.72;
 }
 
+.quest-todo-item.is-locked {
+  opacity: 0.62;
+}
+
+.quest-todo-item.is-locked .quest-todo-copy strong,
+.quest-todo-item.is-locked .quest-todo-copy em {
+  color: #7a6550;
+}
+
+.quest-todo-item.is-available:not(.is-complete) {
+  border-bottom-color: rgba(120, 90, 30, 0.45);
+}
+
+.quest-todo-status {
+  margin-left: 6px;
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #8a5a28;
+  vertical-align: middle;
+}
+
+.quest-todo-item.is-complete .quest-todo-status {
+  color: #3d6b2e;
+}
+
+.quest-todo-item.is-locked .quest-todo-status {
+  color: #6a6054;
+}
+
+.quest-todo-item.is-available:not(.is-complete) .quest-todo-status {
+  color: #b07020;
+}
+
 .quest-scroll-actions {
   display: flex;
   justify-content: center;

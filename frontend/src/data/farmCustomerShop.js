@@ -361,6 +361,39 @@ export function addCustomerToQueue(shop, { silent = false } = {}) {
 }
 
 /**
+ * Keep the order pool aligned with the active farm challenge.
+ * Waiting customers whose items are no longer sellable are gently dismissed
+ * and replaced so harvests of the new crop can sell immediately.
+ */
+export function syncWorldShopSellableIds(shop, sellableItemIds = []) {
+  if (!shop || shop.closed) return shop;
+  const pool = [...new Set((sellableItemIds || []).filter(Boolean))];
+  const prevKey = (shop.sellableItemIds || []).slice().sort().join(',');
+  const nextKey = pool.slice().sort().join(',');
+  shop.sellableItemIds = pool;
+  if (!pool.length || prevKey === nextKey) return shop;
+
+  for (const customer of livingCustomers(shop)) {
+    const obsolete = (customer.requestedItems || []).some(
+      (line) =>
+        (line.delivered || 0) < (line.qty || 0) &&
+        !pool.includes(String(line.itemId || '')),
+    );
+    if (!obsolete) continue;
+    customer.status = CUSTOMER_STATUS.LEFT;
+    customer.speech = '🙂 Back soon for the new harvest!';
+    customer.patienceAtEnd = customer.patience;
+  }
+
+  while (livingCustomers(shop).length < shop.difficulty.maxCustomers) {
+    const added = addCustomerToQueue(shop, { silent: true });
+    if (!added) break;
+  }
+  markFrontServing(shop);
+  return shop;
+}
+
+/**
  * Gradually refresh difficulty when CSF changes (new joiners / drain rate).
  * Does not rewrite existing open orders.
  */
@@ -413,12 +446,37 @@ export function loadCarryStackToShop(shop, carryStack = [], fallbacks = {}) {
     source: 'farm_shop',
   });
   const fulfill = autoFulfillQueue(shop);
+
+  // Always pay for every unloaded item so Press-E never leaves cash unchanged.
+  const unit = Math.max(1, Math.round(Number(shop.unitValue) || 10));
+  const unitsSold = Object.values(moved).reduce(
+    (sum, n) => sum + (Number(n) || 0),
+    0,
+  );
+  const pay = unitsSold * unit;
+  if (pay > 0) {
+    shop.coinsEarned = (shop.coinsEarned || 0) + pay;
+    emitLocal(shop, SHOP_EVENTS.CUSTOMER_PAID, {
+      customerId: 'unload_sale',
+      qty: unitsSold,
+      reward: pay,
+    });
+  }
+  // Clear leftover stock so the same items are not sold twice later
+  for (const id of Object.keys(moved)) {
+    delete shop.shopStock[id];
+  }
+
   return {
     ok: true,
     moved,
+    leftoverSold: moved,
     shopStock: shop.shopStock,
     unloadEvent: unloadEv,
-    ...fulfill,
+    completed: fulfill.completed || [],
+    partial: fulfill.partial || [],
+    events: fulfill.events || [],
+    rewards: pay > 0 ? [pay] : [],
   };
 }
 
@@ -454,8 +512,17 @@ export function unloadItemsToShop(shop, playerStock, itemId, qty = 1) {
   };
 }
 
+function customerCanTakeStock(customer, shop) {
+  return (customer?.requestedItems || []).some(
+    (line) =>
+      (line.delivered || 0) < (line.qty || 0) &&
+      (shop.shopStock[line.itemId] || 0) > 0,
+  );
+}
+
 /**
- * FIFO: only the front customer receives stock; partial OK.
+ * Any waiting customer whose order matches shop stock can buy.
+ * Leftover stock is sold as a walk-in so unloading always pays cash.
  */
 export function autoFulfillQueue(shop) {
   if (!shop || shop.closed) {
@@ -466,16 +533,18 @@ export function autoFulfillQueue(shop) {
   const partial = [];
   const rewards = [];
   const events = [];
+  const seenPartial = new Set();
 
-  // Keep serving the front until they leave or stock can't help them further
   let guard = 0;
-  while (guard < 20) {
+  while (guard < 40) {
     guard += 1;
-    const front = livingCustomers(shop)[0];
-    if (!front) break;
+    const customer = livingCustomers(shop).find((c) =>
+      customerCanTakeStock(c, shop),
+    );
+    if (!customer) break;
 
     let progressed = false;
-    for (const line of front.requestedItems) {
+    for (const line of customer.requestedItems) {
       while (
         line.delivered < line.qty &&
         (shop.shopStock[line.itemId] || 0) > 0
@@ -486,8 +555,8 @@ export function autoFulfillQueue(shop) {
         progressed = true;
         events.push(
           emitLocal(shop, SHOP_EVENTS.ITEM_DELIVERED, {
-            customerId: front.id,
-            orderId: front.orderId,
+            customerId: customer.id,
+            orderId: customer.orderId,
             itemId: line.itemId,
             delivered: line.delivered,
             needed: line.qty,
@@ -496,9 +565,9 @@ export function autoFulfillQueue(shop) {
       }
     }
 
-    const done = front.requestedItems.every((l) => l.delivered >= l.qty);
+    const done = customer.requestedItems.every((l) => l.delivered >= l.qty);
     if (done) {
-      const result = completeFrontCustomer(shop);
+      const result = completeCustomer(shop, customer);
       if (result.ok) {
         completed.push(result.customer);
         rewards.push(result.reward);
@@ -507,18 +576,19 @@ export function autoFulfillQueue(shop) {
       continue;
     }
 
-    if (progressed) {
-      partial.push(front);
+    if (progressed && !seenPartial.has(customer.id)) {
+      seenPartial.add(customer.id);
+      partial.push(customer);
       events.push(
         emitLocal(shop, SHOP_EVENTS.CUSTOMER_ORDER_PARTIALLY_FULFILLED, {
-          customerId: front.id,
-          orderId: front.orderId,
-          requestedItems: front.requestedItems,
+          customerId: customer.id,
+          orderId: customer.orderId,
+          requestedItems: customer.requestedItems,
         }),
       );
-      front.speech = '🙂 Almost there — thank you!';
+      customer.speech = '🙂 Almost there — thank you!';
     }
-    break; // front still waiting for missing items
+    continue;
   }
 
   markFrontServing(shop);
@@ -532,42 +602,40 @@ export function autoFulfillQueue(shop) {
   return { completed, partial, rewards, events, shop };
 }
 
-function completeFrontCustomer(shop) {
-  const front = livingCustomers(shop)[0];
-  if (!front) return { ok: false };
+function completeCustomer(shop, customer) {
+  if (!customer) return { ok: false };
 
   const reward = Math.max(
     1,
-    Math.round(front.reward * (shop.cashMult || 1)),
+    Math.round(customer.reward * (shop.cashMult || 1)),
   );
-  front.status = CUSTOMER_STATUS.SERVED;
-  front.served = true;
-  front.patienceAtEnd = front.patience;
-  front.speech = '😊 Thank you!';
+  customer.status = CUSTOMER_STATUS.SERVED;
+  customer.served = true;
+  customer.patienceAtEnd = customer.patience;
+  customer.speech = '😊 Thank you!';
   shop.completedCount += 1;
   shop.coinsEarned += reward;
 
   const ev = emitLocal(shop, SHOP_EVENTS.CUSTOMER_ORDER_COMPLETED, {
-    customerId: front.id,
-    orderId: front.orderId,
+    customerId: customer.id,
+    orderId: customer.orderId,
     reward,
-    requestedItems: front.requestedItems,
-    orderCompletionTime: Date.now() - front.createdAt,
+    requestedItems: customer.requestedItems,
+    orderCompletionTime: Date.now() - customer.createdAt,
   });
   emitLocal(shop, SHOP_EVENTS.CUSTOMER_PAID, {
-    customerId: front.id,
-    orderId: front.orderId,
+    customerId: customer.id,
+    orderId: customer.orderId,
     reward,
   });
-  // aliases for older listeners
   emitLocal(shop, SHOP_EVENTS.ORDER_COMPLETED, {
-    customerId: front.id,
-    orderId: front.orderId,
+    customerId: customer.id,
+    orderId: customer.orderId,
     reward,
   });
 
   markFrontServing(shop);
-  return { ok: true, customer: front, reward, event: ev };
+  return { ok: true, customer, reward, event: ev };
 }
 
 export function tickWorldShopPatience(shop, now = Date.now()) {

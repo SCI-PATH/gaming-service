@@ -120,16 +120,27 @@ export const BED_VARIETY = [
   'onion',
 ];
 
-export function cropIdForPlot(plotId, challenge) {
-  const current = challenge?.cropId || 'tomato';
-  const slot = BED_PLOT_IDS.indexOf(plotId);
-  if (slot <= 0) return current;
-  const pool = BED_VARIETY.filter((id) => id !== current);
-  return pool[(slot - 1) % Math.max(pool.length, 1)] || current;
+/**
+ * Resolve a crop id for a specific plot bed.
+ * When a levelPlan with multiple crops is available each bed is
+ * assigned a different challenge crop (round-robin by plot index).
+ * Passing just a single `challenge` object falls back to that crop.
+ *
+ * @param {string|number} plotId  – plot id or index
+ * @param {object}  challenge     – single active crop challenge (fallback)
+ * @param {object}  [levelPlan]   – from getLevelChallengePlan(); preferred
+ * @param {number}  [plotIndex]   – numeric index of this bed (0-based)
+ */
+export function cropIdForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
+  const crops = levelPlan?.crops;
+  if (crops?.length) {
+    return crops[plotIndex % crops.length]?.cropId || 'tomato';
+  }
+  return challenge?.cropId || 'tomato';
 }
 
-export function cropDefForPlot(plotId, challenge) {
-  const veg = vegById(cropIdForPlot(plotId, challenge));
+export function cropDefForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
+  const veg = vegById(cropIdForPlot(plotId, challenge, levelPlan, plotIndex));
   return {
     cropId: veg.id,
     cropName: veg.name,
@@ -152,5 +163,5 @@ export function pickCountForChallenge(challenge, mastery) {
 export function vegetableGoalText(challenge, harvestTarget) {
   const name = challenge?.cropName || 'crops';
   const n = Math.max(1, Number(harvestTarget) || challenge?.harvestCount || 4);
-  return `Plant ${name} at the gold beds · other beds grow more vegetables · pick ${n} · sell`;
+  return `Plant ${name} at any gold bed · pick ${n} · sell at the farm shop`;
 }
