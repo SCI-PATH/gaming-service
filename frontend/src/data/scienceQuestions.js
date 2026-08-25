@@ -1,5 +1,6 @@
-/** Grade 6 science questions overlaid on ForestRPG */
+/** Grade 6 science questions — unused; farm quizzes use Assessment Engine /next. */
 export const SCIENCE_QUESTIONS = [
+  /*
   {
     id: 'q-photosynthesis',
     topic: 'Life Science',
@@ -27,4 +28,5 @@ export const SCIENCE_QUESTIONS = [
     correctIndex: 2,
     hint: 'The same force that keeps you on the ground.',
   },
+  */
 ];

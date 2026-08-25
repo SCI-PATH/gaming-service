@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { ForestGameBridge } from '../game/ForestGameBridge.js';
+import {
+  isAssessmentQuestion,
+  submitAssessmentAnswer,
+} from '../assessmentEngine/assessmentQuizSession.js';
 
 /**
- * Plant / harvest / load / unload quiz — always reveals the correct answer.
+ * Plant / harvest / load / unload quiz.
+ * Local items reveal the correct answer; Assessment Engine items use grade.is_correct.
  * Optional gameplayAssist controls answer timer + hint visibility only
  * (does not change question selection / difficulty).
  */
@@ -25,6 +30,8 @@ export default function ScienceQuizModal({
   const [result, setResult] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [showHint, setShowHint] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const remoteGrade = isAssessmentQuestion(questionData);
   const isLoad = mode === 'load';
   const isHarvest = mode === 'harvest';
   const isUnload = mode === 'unload' || mode === 'sell';
@@ -50,9 +57,25 @@ export default function ScienceQuizModal({
   }, [onAnswerAttempt]);
 
   useEffect(() => {
+    if (!questionData) return;
+    console.log('[AssessmentEngine] quiz modal showing', {
+      source: questionData.source || (remoteGrade ? 'assessment_engine' : 'local'),
+      id: questionData.id,
+      prompt: questionData.prompt || questionData.question,
+      options: questionData.options,
+      optionLetters: questionData.optionLetters,
+      questionType: questionData.questionType,
+    });
+  }, [
+    questionData,
+    remoteGrade,
+  ]);
+
+  useEffect(() => {
     openedAtRef.current = Date.now();
     finishedRef.current = false;
     setResult(null);
+    setBusy(false);
     setShowHint(hintLevel === 'more' && Boolean(hintText));
   }, [
     questionData?.id,
@@ -125,12 +148,14 @@ export default function ScienceQuizModal({
     if (typeof opt === 'string') {
       return {
         text: opt,
-        isCorrect: idx === questionData.correctIndex,
+        isCorrect: remoteGrade ? false : idx === questionData.correctIndex,
       };
     }
     return {
       ...opt,
-      isCorrect: Boolean(opt.isCorrect) || idx === questionData.correctIndex,
+      isCorrect: remoteGrade
+        ? false
+        : Boolean(opt.isCorrect) || idx === questionData.correctIndex,
     };
   });
 
@@ -159,11 +184,30 @@ export default function ScienceQuizModal({
     onCloseRef.current?.(isCorrect, responseTimeMs);
   };
 
-  const handleAnswer = (isCorrect, selectedIndex) => {
+  const handleAnswer = async (selectedIndex) => {
     if (result || finishedRef.current) return;
     finishedRef.current = true;
     const responseTimeMs = Math.max(0, Date.now() - openedAtRef.current);
     const selectedText = options[selectedIndex]?.text ?? null;
+    let isCorrect = Boolean(options[selectedIndex]?.isCorrect);
+
+    if (remoteGrade) {
+      setBusy(true);
+      const letter =
+        questionData.optionLetters?.[selectedIndex] ?? selectedText;
+      try {
+        const graded = await submitAssessmentAnswer({
+          questionId: questionData.id,
+          studentAnswer: letter,
+          timeTakenSeconds: responseTimeMs / 1000,
+        });
+        isCorrect = Boolean(graded?.isCorrect);
+      } catch {
+        isCorrect = false;
+      }
+      setBusy(false);
+    }
+
     onAnswerAttemptRef.current?.({
       isCorrect,
       selectedIndex,
@@ -310,7 +354,13 @@ export default function ScienceQuizModal({
           {options.map((option, idx) => {
             let tone = '';
             if (result) {
-              if (option.isCorrect) tone = 'is-correct';
+              if (remoteGrade) {
+                if (result.isCorrect && idx === result.selectedIndex) {
+                  tone = 'is-correct';
+                } else if (!result.isCorrect && idx === result.selectedIndex) {
+                  tone = 'is-wrong';
+                }
+              } else if (option.isCorrect) tone = 'is-correct';
               else if (idx === result.selectedIndex) tone = 'is-wrong';
             }
             return (
@@ -318,10 +368,10 @@ export default function ScienceQuizModal({
                 key={`${option.text}-${idx}`}
                 type="button"
                 className={`science-quiz-option ${tone}`}
-                disabled={Boolean(result)}
+                disabled={Boolean(result) || busy}
                 onPointerEnter={() => onOptionSwitch?.(idx)}
                 onFocus={() => onOptionSwitch?.(idx)}
-                onClick={() => handleAnswer(option.isCorrect, idx)}
+                onClick={() => handleAnswer(idx)}
               >
                 {option.text}
               </button>
@@ -342,7 +392,9 @@ export default function ScienceQuizModal({
                 <span>
                   {isStory
                     ? 'You can keep going.'
-                    : `Answer: ${correctText}. ${successBlurb}`}
+                    : remoteGrade
+                      ? successBlurb
+                      : `Answer: ${correctText}. ${successBlurb}`}
                 </span>
               </>
             ) : (
@@ -351,7 +403,9 @@ export default function ScienceQuizModal({
                 <span>
                   {isStory
                     ? 'Try that again when you are ready.'
-                    : `Correct answer: ${correctText}. The farm problem is still there — try again.`}
+                    : remoteGrade
+                      ? 'The farm problem is still there — try again.'
+                      : `Correct answer: ${correctText}. The farm problem is still there — try again.`}
                 </span>
               </>
             )}

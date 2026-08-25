@@ -1010,6 +1010,13 @@ export default function App() {
       setHint(msg);
       window.setTimeout(() => setHint(null), 2600);
     }
+    if (detail?.type === 'quiz_blocked') {
+      setHint(
+        detail.hint ||
+          'Science quiz is unavailable right now. Try again in a moment.',
+      );
+      window.setTimeout(() => setHint(null), 3600);
+    }
     if (detail?.type === 'plant_blocked') {
       const msg =
         detail.reason === 'not_plot'

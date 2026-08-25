@@ -1,4 +1,4 @@
-﻿import Phaser from 'phaser';
+import Phaser from 'phaser';
 import Arrow from '../objects/Arrow';
 import Player from '../objects/Player';
 import Enemy from '../objects/Enemy';
@@ -15,7 +15,12 @@ import {
   FARM_CAMERA_ZOOM,
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
-import { getFarmLevel, pickScienceQuestion } from '../../data/farmLevels';
+import { getFarmLevel } from '../../data/farmLevels';
+import {
+  clearAssessmentSession,
+  resolveScienceQuestion,
+  terminateAssessmentSession,
+} from '../../assessmentEngine/assessmentQuizSession.js';
 import {
   DDA_CONFIG,
   averageScore,
@@ -163,6 +168,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
+    clearAssessmentSession();
     this.farmLevel = getFarmLevel(this.levelId);
     this.baseCropValue = this.farmLevel.cropValue;
     this.currentMoney = this.devStartingMoney || 0;
@@ -1541,6 +1547,56 @@ export default class GameScene extends Phaser.Scene {
       cashEarned,
       baseReward: Math.max(cashEarned, this.farmLevel.cropValue * 10, 50),
     });
+  }
+
+  /**
+   * Open ScienceQuizModal with Assessment Engine /next (local fallback).
+   * Caller must freeze farm + set pendingQuizMode first so actions stay blocked.
+   */
+  async emitScienceQuizFromEngine(mode, pickMode, extraFromQuestion) {
+    const quizGen = (this._scienceQuizGen = (this._scienceQuizGen || 0) + 1);
+    try {
+      const question = await resolveScienceQuestion(
+        this.farmLevel,
+        this.lastQuestionId,
+        pickMode,
+      );
+      if (!this.sys?.isActive() || quizGen !== this._scienceQuizGen) return false;
+      if (!question?.options?.length) {
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'quiz_blocked',
+          reason: 'assessment_unavailable',
+          hint: 'Science quiz is unavailable right now. Check Assessment Engine and try again.',
+        });
+        this.resumeAfterQuiz();
+        return false;
+      }
+      this.lastQuestionId = question.id;
+      const extra =
+        typeof extraFromQuestion === 'function'
+          ? extraFromQuestion(question) || {}
+          : extraFromQuestion || {};
+      ForestGameBridge.emit(
+        FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+        this.withGameplayQuizMeta({
+          mode,
+          challenge: extra.challenge || mode,
+          question,
+          questionData: question,
+          rp: question.rp,
+          levelId: this.farmLevel.id,
+          openedAt: this.quizOpenedAt,
+          ...extra,
+        }),
+      );
+      this.emitFarmState();
+      return true;
+    } catch {
+      if (this.sys?.isActive() && quizGen === this._scienceQuizGen) {
+        this.resumeAfterQuiz();
+      }
+      return false;
+    }
   }
 
   /** Attach gameplay-assist fields to science quiz payloads (not question pick). */
@@ -3012,13 +3068,6 @@ export default class GameScene extends Phaser.Scene {
     this.quizOpenedAt = Date.now();
     this.freezeFarmForQuiz();
 
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'world_challenge',
-    );
-    this.lastQuestionId = question.id;
-
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
       type: 'challenge_started',
       challengeId: task.challengeId,
@@ -3031,24 +3080,19 @@ export default class GameScene extends Phaser.Scene {
       levelId: this.farmLevel.id,
     });
 
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'world_challenge',
-        challenge: 'world_challenge',
+    void this.emitScienceQuizFromEngine(
+      'world_challenge',
+      'world_challenge',
+      (question) => ({
         challengeId: task.challengeId,
         challengeType: task.challengeType,
-        question,
         questionData: {
           ...question,
           rp: question.rp ?? task.reward?.rp ?? 15,
         },
         rp: question.rp ?? task.reward?.rp ?? 15,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
       }),
     );
-    this.emitFarmState();
     return true;
   }
 
@@ -3324,56 +3368,22 @@ export default class GameScene extends Phaser.Scene {
 
     this.pendingQuizMode = 'animal_tend';
     this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'plant',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'animal_tend',
-        challenge: 'animal_tend',
-        animalName: this.animalChallenge?.animalName,
-        cropName: this.animalChallenge?.animalName,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('animal_tend', 'plant', () => ({
+      animalName: this.animalChallenge?.animalName,
+      cropName: this.animalChallenge?.animalName,
+    }));
   }
 
   openAnimalCollectQuestion() {
     if (!this.player || this.farmInputLocked) return;
     this.pendingQuizMode = 'animal_collect';
     this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'harvest',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'animal_collect',
-        challenge: 'animal_collect',
-        animalName: this.animalChallenge?.animalName,
-        cropName: this.animalChallenge?.produceName,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('animal_collect', 'harvest', () => ({
+      animalName: this.animalChallenge?.animalName,
+      cropName: this.animalChallenge?.produceName,
+    }));
   }
 
   collectAnimalProduceUnderfoot() {
@@ -3442,56 +3452,22 @@ export default class GameScene extends Phaser.Scene {
 
     this.pendingQuizMode = 'clean_start';
     this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'plant',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'clean_start',
-        challenge: 'clean_start',
-        messName: this.cleaningChallenge?.messName,
-        cropName: this.cleaningChallenge?.messName,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('clean_start', 'plant', () => ({
+      messName: this.cleaningChallenge?.messName,
+      cropName: this.cleaningChallenge?.messName,
+    }));
   }
 
   openCleanSweepQuestion() {
     if (!this.player || this.farmInputLocked) return;
     this.pendingQuizMode = 'clean_sweep';
     this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'harvest',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'clean_sweep',
-        challenge: 'clean_sweep',
-        messName: this.cleaningChallenge?.messName,
-        cropName: this.cleaningChallenge?.wasteName,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('clean_sweep', 'harvest', () => ({
+      messName: this.cleaningChallenge?.messName,
+      cropName: this.cleaningChallenge?.wasteName,
+    }));
   }
 
   sweepCleaningUnderfoot() {
@@ -3683,37 +3659,17 @@ export default class GameScene extends Phaser.Scene {
 
     this.pendingQuizMode = 'plant';
     this.freezeFarmForQuiz();
-
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'plant',
-    );
-    this.lastQuestionId = question.id;
-
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'plant',
-        challenge: 'plant',
-        tileX: cell.gridX,
-        tileY: cell.gridY,
-        gridKey: cell.key,
-        plotId: plot?.id,
-        patchSize: patchCells.length,
-        patchCols: this.farmLevel.plantPatchCols ?? 4,
-        patchRows: this.farmLevel.plantPatchRows ?? 3,
-        cropType: this.farmLevel.cropId,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('plant', 'plant', () => ({
+      tileX: cell.gridX,
+      tileY: cell.gridY,
+      gridKey: cell.key,
+      plotId: plot?.id,
+      patchSize: patchCells.length,
+      patchCols: this.farmLevel.plantPatchCols ?? 4,
+      patchRows: this.farmLevel.plantPatchRows ?? 3,
+      cropType: this.farmLevel.cropId,
+    }));
   }
 
   /** Spawn the pending patch after a correct plant quiz (once per crop type). */
@@ -3992,27 +3948,10 @@ export default class GameScene extends Phaser.Scene {
     if (!this.player || this.farmInputLocked) return;
     this.pendingQuizMode = 'harvest';
     this.freezeFarmForQuiz();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'harvest',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'harvest',
-        challenge: 'harvest',
-        cropType: this.farmLevel.cropId,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('harvest', 'harvest', () => ({
+      cropType: this.farmLevel.cropId,
+    }));
   }
 
   /**
@@ -5171,6 +5110,14 @@ export default class GameScene extends Phaser.Scene {
 
   gameOver(reason = 'wrong_answers') {
     if (!this.sys?.isActive()) return;
+    if (reason === 'wrong_answers') {
+      void terminateAssessmentSession({
+        reason: 'wrong_answers_exhausted',
+        source: 'component_3',
+      });
+    } else {
+      clearAssessmentSession();
+    }
     this.farmInputLocked = true;
     this.clearAllCrops({ silent: true });
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });

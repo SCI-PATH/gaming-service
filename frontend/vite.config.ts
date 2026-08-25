@@ -5,9 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(frontendRoot, '..');
 
 export default defineConfig({
   root: frontendRoot,
+  envDir: repoRoot,
   publicDir: 'public',
   plugins: [react(), tailwindcss()],
   server: {
