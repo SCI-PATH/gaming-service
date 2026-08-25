@@ -2,6 +2,8 @@
  * Grade 6–9 farming levels:
  * plant quiz → grow → harvest (carry on back) → load quiz at dock → sell.
  */
+import { SCIENCE_QUESTIONS } from './scienceQuestions.js';
+
 export const FARM_LEVELS = [
   {
     id: 1,
@@ -208,17 +210,40 @@ export function getFarmLevel(levelId = 1) {
 /**
  * @param {object} level
  * @param {string} [avoidId]
- * @param {'plant'|'load'} [mode='plant']
+ * @param {string} [_mode]
  */
-export function pickScienceQuestion(level, avoidId, mode = 'plant') {
-  const loadLike = mode === 'load' || mode === 'unload' || mode === 'sell';
-  const source =
-    loadLike && level.loadQuestions?.length
-      ? level.loadQuestions
-      : level.questions;
-  const pool = source.filter((q) => q.id !== avoidId);
-  const list = pool.length ? pool : source;
-  return list[Math.floor(Math.random() * list.length)];
+export function pickScienceQuestion(level, avoidId, _mode = 'plant') {
+  const seen = new Set();
+  const unique = [];
+  const push = (list) => {
+    if (!Array.isArray(list)) return;
+    for (const q of list) {
+      if (!q?.id || seen.has(q.id)) continue;
+      seen.add(q.id);
+      unique.push(q);
+    }
+  };
+  push(level?.questions);
+  push(level?.loadQuestions);
+  push(SCIENCE_QUESTIONS);
+  for (const other of FARM_LEVELS) {
+    push(other.questions);
+    push(other.loadQuestions);
+  }
+  const pool = unique.filter((q) => q.id !== avoidId);
+  const source = pool.length ? pool : unique;
+  if (!source.length) {
+    return {
+      id: 'fallback-science',
+      topic: 'Life Science',
+      prompt: 'Plants use sunlight to make food. What is that process called?',
+      options: ['Photosynthesis', 'Erosion', 'Freezing', 'Orbit'],
+      correctIndex: 0,
+      hint: 'Think of “photo” meaning light.',
+      rp: 20,
+    };
+  }
+  return source[Math.floor(Math.random() * source.length)];
 }
 
 /** @deprecated Use pickScienceQuestion */

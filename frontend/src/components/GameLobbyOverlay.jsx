@@ -106,7 +106,11 @@ export default function GameLobbyOverlay({
             disabled={!gameReady}
           >
             <IconPlay size={18} />
-            {isGuide ? 'Enter the Farm' : 'Start Adventure'}
+            {isGuide
+              ? 'Enter the Farm'
+              : progress.phase === 'returning'
+                ? `Continue Level ${progress.levelId ?? farm.levelId ?? 1}`
+                : 'Start Adventure'}
           </button>
           <p className="game-lobby-enter-hint">Press Enter to continue</p>
         </section>

@@ -22,6 +22,7 @@ import {
 } from './dda';
 import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { syncLevelPerformance } from './engagementSync.js';
+import { markLevelCompleted } from './farmProgress.js';
 
 const BASE_STORAGE_KEY = 'scipath_student_mastery';
 
@@ -209,6 +210,9 @@ export function saveLevelPerformance(levelId, payload) {
   };
   writeStore(store);
   const saved = store.levels[String(levelId)];
+  markLevelCompleted(levelId, {
+    cash: payload.cash ?? payload.currentMoney,
+  });
   // Research mirror → Neon (non-blocking)
   syncLevelPerformance(levelId, saved, getCurrentStudent());
   return saved;

@@ -13,6 +13,7 @@ import {
   trendFromDelta,
 } from './avatarConstants.js';
 import { calculateFrustrationScore, shouldOpenFrustrationAgent } from '../data/frustrationModel.js';
+import { appendFrustrationSample } from '../data/frustrationHistoryStore.js';
 import { evaluateStudentState } from './evaluateStudentState.js';
 import { resolveTopicKey } from './conceptMaps.js';
 import {
@@ -334,6 +335,24 @@ export function useBehavioralTelemetry({
     }));
     return next;
   }, [externalRetries, levelElapsedSec, thresholds, enemyHits, enemyDeaths, levelRestarts, shopCustomersLeft, previousAvgAnswerTimeSec]);
+
+  const recordFrustrationPoint = useCallback(
+    (snapshot, isCorrect) => {
+      const fr = snapshot?.frustration || {};
+      const answered =
+        (Number(snapshot?.correct_answers) || 0) +
+        (Number(snapshot?.incorrect_answers) || 0);
+      appendFrustrationSample({
+        levelId,
+        questionIndex: answered,
+        score: fr.score,
+        level: fr.level,
+        correct: isCorrect,
+        signals: fr.signals || [],
+      });
+    },
+    [levelId],
+  );
 
   const raiseFromEval = useCallback(
     (evaluation, snapshot, reasonExtra = null) => {
@@ -857,13 +876,15 @@ export function useBehavioralTelemetry({
         }));
 
         // Non-wrong patterns (slow streak, slow+hint compound, etc.)
+        const snap = syncMetrics();
+        recordFrustrationPoint(snap, true);
+
         if (post.outcome !== INTERVENTION_OUTCOMES.SUPPRESS) {
           tryRaiseNonWrong();
         }
 
         if (!milestoneFlagRef.current) return;
         if (post.outcome === INTERVENTION_OUTCOMES.SUPPRESS) return;
-        const snap = syncMetrics();
         const evaluation = evaluateStudentState(snap, {
           forceEval: true,
           thresholds,
@@ -896,6 +917,7 @@ export function useBehavioralTelemetry({
       }
 
       const snap = syncMetrics();
+      recordFrustrationPoint(snap, false);
       const totalWrong = incorrectRef.current;
       const conceptMisses = Math.max(
         conceptEntry?.missCount || 0,
@@ -978,6 +1000,7 @@ export function useBehavioralTelemetry({
       recordMisconception,
       listMisconceptions,
       syncMetrics,
+      recordFrustrationPoint,
       thresholds,
       tryRaiseNonWrong,
     ],

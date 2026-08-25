@@ -51,6 +51,8 @@ export default function ForestRPGCanvas({
   onInteraction,
   onChallengesState,
   storyline = null,
+  resumeLevelId = 1,
+  startingMoney = 0,
 }) {
   const hostRef = useRef(null);
   const gameRef = useRef(null);
@@ -78,6 +80,11 @@ export default function ForestRPGCanvas({
     const game = createForestGame(parent);
     gameRef.current = game;
     game.registry.set('storyline', storylineRef.current || null);
+    game.registry.set('farmLevelId', Math.max(1, Number(resumeLevelId) || 1));
+    game.registry.set(
+      'farmStartingMoney',
+      Math.max(0, Number(startingMoney) || 0),
+    );
 
     const handleReady = () => {
       setReady(true);
@@ -100,6 +107,10 @@ export default function ForestRPGCanvas({
       const levelId = Math.max(1, Number(payload.levelId) || 1);
       const nextStoryline = payload.storyline ?? storylineRef.current ?? null;
       game.registry.set('farmLevelId', levelId);
+      game.registry.set(
+        'farmStartingMoney',
+        Math.max(0, Number(payload.startingMoney) || 0),
+      );
       game.registry.set('storyline', nextStoryline);
       const startData = {
         levelId,
@@ -228,6 +239,17 @@ export default function ForestRPGCanvas({
     window.addEventListener('keyup', onFarmKeyUp, true);
     game.events.on(Phaser.Core.Events.POST_STEP, applyFarmMove);
 
+    const handleSetFarmResume = (payload = {}) => {
+      const levelId = Math.max(1, Number(payload.levelId) || 1);
+      game.registry.set('farmLevelId', levelId);
+      if (payload.startingMoney != null) {
+        game.registry.set(
+          'farmStartingMoney',
+          Math.max(0, Number(payload.startingMoney) || 0),
+        );
+      }
+    };
+
     const handleReturnToMenu = () => {
       if (!gameRef.current) return;
       const game = gameRef.current;
@@ -250,6 +272,7 @@ export default function ForestRPGCanvas({
     ForestGameBridge.on(FARM_EVENTS.INTERACTION, handleInteraction);
     ForestGameBridge.on(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
     ForestGameBridge.on(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
+    ForestGameBridge.on(FARM_EVENTS.SET_FARM_RESUME, handleSetFarmResume);
     ForestGameBridge.on(FARM_EVENTS.RETURN_TO_MENU, handleReturnToMenu);
 
     // Focus canvas on click so Phaser keys work after React UI usage
@@ -283,6 +306,7 @@ export default function ForestRPGCanvas({
       ForestGameBridge.off(FARM_EVENTS.INTERACTION, handleInteraction);
       ForestGameBridge.off(FARM_EVENTS.CHALLENGES_STATE, handleChallenges);
       ForestGameBridge.off(FARM_EVENTS.START_FARM_LEVEL, handleStartFarmLevel);
+      ForestGameBridge.off(FARM_EVENTS.SET_FARM_RESUME, handleSetFarmResume);
       ForestGameBridge.off(FARM_EVENTS.RETURN_TO_MENU, handleReturnToMenu);
       game.destroy(true);
       gameRef.current = null;
@@ -296,6 +320,16 @@ export default function ForestRPGCanvas({
     if (!game) return;
     game.registry.set('storyline', storyline || null);
   }, [storyline]);
+
+  useEffect(() => {
+    const game = gameRef.current;
+    if (!game) return;
+    game.registry.set('farmLevelId', Math.max(1, Number(resumeLevelId) || 1));
+    game.registry.set(
+      'farmStartingMoney',
+      Math.max(0, Number(startingMoney) || 0),
+    );
+  }, [resumeLevelId, startingMoney, ready]);
 
   return (
     <div className="forest-stage">
@@ -349,6 +383,11 @@ export function emitUiInputLock(locked, options = {}) {
     locked: Boolean(locked),
     freezeCombat: Boolean(options?.freezeCombat),
   });
+}
+
+/** Remember next playable level on the Phaser registry (lobby → farm). */
+export function emitSetFarmResume(payload) {
+  ForestGameBridge.emit(FARM_EVENTS.SET_FARM_RESUME, payload);
 }
 
 /** Advance / restart the farm at a given level id. */

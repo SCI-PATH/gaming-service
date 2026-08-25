@@ -18,6 +18,8 @@ const STUDENT_DATA_BASE_KEYS = [
   'scipath_unlocks',
   'scipath_student_mastery',
   'scipath_gameplay_perf',
+  'scipath_farm_progress',
+  'scipath_frustration_history',
   'scipath_world_challenges',
   'scipath_crop_challenges',
   'scipath_animal_challenges',

@@ -109,7 +109,11 @@ export default function ResearchDashboard({
         <Kpi
           label="Frustration"
           value={`${frustration.score}`}
-          hint={frustrationLabel(frustration.level)}
+          hint={
+            frustration.history?.length
+              ? `${frustrationLabel(frustration.level)} · ${frustration.history.length} Q tracked`
+              : frustrationLabel(frustration.level)
+          }
           tone={frustrationTone(frustration.level)}
         />
         <Kpi
@@ -186,9 +190,25 @@ export default function ResearchDashboard({
 
           <article className="research-panel">
             <header className="research-panel-head">
-              <h3>Affective state</h3>
-              <p>Live frustration model (0–100)</p>
+              <h3>How play felt</h3>
+              <p>Frustration after each question — early struggle can ease later</p>
             </header>
+            {frustration.history?.length ? (
+              <>
+                {frustration.journey?.headline ? (
+                  <p className="research-journey-headline">
+                    {frustration.journey.headline}
+                  </p>
+                ) : null}
+                <FrustrationJourneyChart samples={frustration.history} compact />
+                <FrustrationPhases segments={frustration.journey?.segments} />
+              </>
+            ) : (
+              <p className="research-empty">
+                Answer a few farm questions to see how the score moves through
+                play.
+              </p>
+            )}
             <FrustrationMeter frustration={frustration} />
             <dl className="research-dl">
               <div>
@@ -370,6 +390,32 @@ export default function ResearchDashboard({
 
       {tab === 'affect' && (
         <div className="research-panels">
+          <article className="research-panel research-panel-wide">
+            <header className="research-panel-head">
+              <h3>Frustration through play</h3>
+              <p>
+                Score after every question (0–100). First questions can look
+                high even if later play settles.
+              </p>
+            </header>
+            {frustration.history?.length ? (
+              <>
+                {frustration.journey?.headline ? (
+                  <p className="research-journey-headline">
+                    {frustration.journey.headline}
+                  </p>
+                ) : null}
+                <FrustrationWindowStats journey={frustration.journey} />
+                <FrustrationJourneyChart samples={frustration.history} />
+                <FrustrationPhases segments={frustration.journey?.segments} />
+              </>
+            ) : (
+              <p className="research-empty">
+                No question-by-question history yet. Play a level, then reopen
+                this tab.
+              </p>
+            )}
+          </article>
           <article className="research-panel">
             <header className="research-panel-head">
               <h3>Frustration score</h3>
@@ -436,6 +482,46 @@ export default function ResearchDashboard({
               </div>
             </dl>
           </article>
+          {frustration.history?.length ? (
+            <article className="research-panel research-panel-wide">
+              <header className="research-panel-head">
+                <h3>Question log</h3>
+                <p>Each farm quiz updates the live frustration estimate</p>
+              </header>
+              <div className="research-table-wrap">
+                <table className="research-table">
+                  <thead>
+                    <tr>
+                      <th>Q</th>
+                      <th>Level</th>
+                      <th>Result</th>
+                      <th>Score</th>
+                      <th>Band</th>
+                      <th>Signals</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {frustration.history.map((row) => (
+                      <tr key={row.seq}>
+                        <td>{row.globalIndex}</td>
+                        <td>
+                          L{row.levelId}.{row.questionIndex}
+                        </td>
+                        <td>{row.correct ? 'Correct' : 'Miss'}</td>
+                        <td>{row.score}</td>
+                        <td>{frustrationLabel(row.band)}</td>
+                        <td>
+                          {(row.signals || []).length
+                            ? row.signals.join(', ')
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          ) : null}
         </div>
       )}
 
@@ -462,7 +548,7 @@ function FrustrationMeter({ frustration, large = false }) {
     <div className={`research-frust-meter${large ? ' is-large' : ''}`}>
       <div className="research-frust-score">
         <strong>{score}</strong>
-        <span>/ 100 · {frustrationLabel(frustration.level)}</span>
+        <span>/ 100 · {frustrationLabel(frustration.level)} now</span>
       </div>
       <div className="research-frust-track" aria-hidden>
         <div
@@ -470,6 +556,107 @@ function FrustrationMeter({ frustration, large = false }) {
           style={{ width: `${score}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function FrustrationWindowStats({ journey }) {
+  if (!journey?.firstWindow) return null;
+  return (
+    <dl className="research-journey-windows">
+      <div>
+        <dt>First {journey.firstWindow.count} questions</dt>
+        <dd>{journey.firstWindow.avg}/100</dd>
+      </div>
+      {journey.laterWindow ? (
+        <div>
+          <dt>After that ({journey.laterWindow.count} questions)</dt>
+          <dd>{journey.laterWindow.avg}/100</dd>
+        </div>
+      ) : null}
+      {journey.overallAvg != null ? (
+        <div>
+          <dt>Whole play</dt>
+          <dd>{journey.overallAvg}/100</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function FrustrationPhases({ segments }) {
+  if (!segments?.length) return null;
+  return (
+    <ul className="research-journey-phases" aria-label="Frustration phases">
+      {segments.map((seg) => (
+        <li key={`${seg.start}-${seg.band}`} className={`tone-${frustrationTone(seg.band)}`}>
+          <strong>{seg.questionRange}</strong>
+          <span>
+            {frustrationLabel(seg.band)} · avg {seg.avgScore}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FrustrationJourneyChart({ samples = [], compact = false }) {
+  if (!samples.length) return null;
+  const maxScore = 100;
+  const barW = compact ? 10 : 14;
+  const gap = 3;
+  const height = compact ? 72 : 120;
+  const width = samples.length * (barW + gap) + 8;
+  return (
+    <div className="research-journey-scroll" role="img" aria-label="Frustration score by question">
+      <svg
+        className="research-journey-chart"
+        viewBox={`0 0 ${width} ${height + 22}`}
+        width={width}
+        height={height + 22}
+      >
+        {[25, 50, 75].map((mark) => {
+          const y = height - (mark / maxScore) * height;
+          return (
+            <line
+              key={mark}
+              x1="0"
+              x2={width}
+              y1={y}
+              y2={y}
+              className="research-journey-grid"
+            />
+          );
+        })}
+        {samples.map((sample, i) => {
+          const h = Math.max(2, (sample.score / maxScore) * height);
+          const x = 4 + i * (barW + gap);
+          const y = height - h;
+          return (
+            <g key={sample.seq}>
+              <title>
+                {`Q${sample.globalIndex} · L${sample.levelId} · ${sample.score}/100 · ${sample.correct ? 'correct' : 'miss'}`}
+              </title>
+              <rect
+                x={x}
+                y={y}
+                width={barW}
+                height={h}
+                className={`research-journey-bar tone-${frustrationTone(sample.band)}`}
+              />
+              <circle
+                cx={x + barW / 2}
+                cy={height + 10}
+                r="2.4"
+                className={sample.correct ? 'is-correct' : 'is-miss'}
+              />
+            </g>
+          );
+        })}
+      </svg>
+      <p className="research-journey-axis">
+        Each bar is one question · dots: green correct, red miss
+      </p>
     </div>
   );
 }

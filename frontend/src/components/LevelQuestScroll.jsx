@@ -45,6 +45,8 @@ export default function LevelQuestScroll({
   cleanSoldThisChallenge = 0,
   cleanStarted = false,
   levelCleanComplete = false,
+  questionsAnswered = 0,
+  maxQuestions = 15,
   onClose,
 }) {
   const titleId = useId();
@@ -53,6 +55,23 @@ export default function LevelQuestScroll({
 
   const tasks = useMemo(() => {
     const list = [];
+    const answered = Math.max(0, Number(questionsAnswered) || 0);
+    const quota = Math.max(1, Number(maxQuestions) || 15);
+    list.push({
+      id: 'science-quota',
+      title: `Answer ${quota} science questions`,
+      detail:
+        answered >= quota
+          ? `${answered}/${quota} done — unlock shop is ready.`
+          : `${answered}/${quota} answered. Shop opens after all ${quota}.`,
+      done: answered >= quota,
+      hint:
+        answered >= quota
+          ? null
+          : 'Plant, harvest, tend, clean — or press E on a gold bed for more questions.',
+      kind: 'goal',
+      status: answered >= quota ? 'COMPLETED' : 'AVAILABLE',
+    });
 
     if (goalText && harvestTarget <= 0 && !(cropChallengeList?.length > 0)) {
       list.push({
@@ -288,7 +307,9 @@ export default function LevelQuestScroll({
     levelCleanComplete,
     levelCropComplete,
     levelId,
+    maxQuestions,
     plantedCount,
+    questionsAnswered,
   ]);
 
   useEffect(() => {

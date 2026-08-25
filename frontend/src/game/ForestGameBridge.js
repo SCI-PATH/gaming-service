@@ -64,6 +64,8 @@ export const FARM_EVENTS = {
   FARM_SHOP_TELEMETRY: 'FARM_SHOP_TELEMETRY',
   /** Start / restart GameScene at a farm level id */
   START_FARM_LEVEL: 'START_FARM_LEVEL',
+  /** React → Phaser: remember next playable level before the lobby starts */
+  SET_FARM_RESUME: 'SET_FARM_RESUME',
   /** Active unlock-item challenges for this level */
   CHALLENGES_STATE: 'CHALLENGES_STATE',
   /** Begin an unlock-item challenge step (React → Phaser or reverse) */
