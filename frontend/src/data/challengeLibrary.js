@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unified challenge library: all vegetable, animal, and cleaning jobs.
  * Each farm level is assigned a slice of this library so the 200 jobs
  * play as a multi-level game. Science questions stay in DDA (15 / level).
@@ -12,13 +12,18 @@ import {
   CLEANING_CHALLENGES,
   CLEANING_CHALLENGE_COUNT,
 } from './cleaningChallenges.js';
+import { PLANT_PLOTS } from './plantPlots.js';
 
-export const LIBRARY_CROPS_PER_LEVEL = 2;
+/**
+ * One unique vegetable per gold plant bed (no repeated crops across beds).
+ */
+export const LIBRARY_CROPS_PER_LEVEL = Math.max(4, PLANT_PLOTS.length);
 export const LIBRARY_ANIMALS_PER_LEVEL = 1;
 export const LIBRARY_CLEANS_PER_LEVEL = 1;
 
-export const LIBRARY_LEVEL_COUNT = Math.floor(
-  CROP_CHALLENGE_COUNT / LIBRARY_CROPS_PER_LEVEL,
+export const LIBRARY_LEVEL_COUNT = Math.max(
+  1,
+  Math.floor(CROP_CHALLENGE_COUNT / LIBRARY_CROPS_PER_LEVEL),
 );
 
 export const CHALLENGE_LIBRARY = [
@@ -53,22 +58,42 @@ export function librarySlotForLevel(levelId = 1) {
   return (level - 1) % LIBRARY_LEVEL_COUNT;
 }
 
+function pickDistinctCrops(startIndex, count) {
+  const picked = [];
+  const seen = new Set();
+  let i = Math.max(0, Number(startIndex) || 0);
+  let guard = 0;
+  while (picked.length < count && guard < CROP_CHALLENGE_COUNT * 2) {
+    const crop = CROP_CHALLENGES[i % CROP_CHALLENGE_COUNT];
+    i += 1;
+    guard += 1;
+    if (!crop) continue;
+    if (seen.has(crop.cropId)) {
+      const hasUnused = CROP_CHALLENGES.some((c) => !seen.has(c.cropId));
+      if (hasUnused) continue;
+      break;
+    }
+    seen.add(crop.cropId);
+    picked.push(crop);
+  }
+  return picked;
+}
+
 /**
  * Jobs assigned to one farm level.
- * Level N (1-based, wrapping after 50): 2 vegetables + 1 animal + 1 cleaning job.
+ * One distinct vegetable per plant bed + 1 animal + 1 cleaning job.
  */
 export function getLevelChallengePlan(levelId = 1) {
   const level = Math.max(1, Number(levelId) || 1);
   const slot = librarySlotForLevel(level);
-  const cropIndexes = [
-    slot * LIBRARY_CROPS_PER_LEVEL,
-    slot * LIBRARY_CROPS_PER_LEVEL + 1,
-  ].filter((i) => i < CROP_CHALLENGE_COUNT);
+  const start = slot * LIBRARY_CROPS_PER_LEVEL;
+
+  const crops = pickDistinctCrops(start, LIBRARY_CROPS_PER_LEVEL);
+  const cropIndexes = crops.map((c) => c.index);
 
   const animalIndex = Math.min(slot, ANIMAL_CHALLENGE_COUNT - 1);
   const cleanIndex = Math.min(slot, CLEANING_CHALLENGE_COUNT - 1);
 
-  const crops = cropIndexes.map((i) => CROP_CHALLENGES[i]).filter(Boolean);
   const animal = ANIMAL_CHALLENGES[animalIndex] || ANIMAL_CHALLENGES[0];
   const clean = CLEANING_CHALLENGES[cleanIndex] || CLEANING_CHALLENGES[0];
 
@@ -98,7 +123,9 @@ export function getLevelChallengePlan(levelId = 1) {
 }
 
 export function libraryLevelForCropIndex(index = 0) {
-  return Math.floor(Math.max(0, Number(index) || 0) / LIBRARY_CROPS_PER_LEVEL) + 1;
+  return (
+    Math.floor(Math.max(0, Number(index) || 0) / LIBRARY_CROPS_PER_LEVEL) + 1
+  );
 }
 
 export function libraryLevelForTrackIndex(index = 0) {

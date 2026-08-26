@@ -36,6 +36,7 @@ import {
   describeFocusCode,
 } from './interventionFocus.js';
 import {
+  asQuestionText,
   friendlyStudentName,
   friendlyWhyOpened,
   sanitizeKidSpeech,
@@ -134,6 +135,11 @@ export default function AvatarAssistantModal({
       mindMap: mindMapProp || telemetry.mindMap,
       lastWrongAnswer:
         telemetry.lastWrongAnswer || fromTrigger?.last_wrong_answer || null,
+      correctAnswer:
+        telemetry.lastCorrectAnswer ||
+        fromTrigger?.correct_answer ||
+        quiz?.correctAnswer ||
+        null,
       metrics: {
         ...m,
         evaluated_tier: null,
@@ -663,12 +669,27 @@ export default function AvatarAssistantModal({
         interventionFocus?.current_question ||
         quiz?.prompt ||
         quiz?.question ||
+        quiz?.questionData?.prompt ||
+        quiz?.questionData?.question ||
         null,
       lastWrong:
         interventionFocus?.last_wrong_answer ||
         telemetry.lastWrongAnswer ||
         null,
+      correctAnswer:
+        interventionFocus?.correct_answer ||
+        telemetry.lastCorrectAnswer ||
+        quiz?.correctAnswer ||
+        quiz?.questionData?.correctAnswer ||
+        null,
     });
+    if (frozen && !frozen.correct_answer) {
+      frozen.correct_answer =
+        interventionFocus?.correct_answer ||
+        telemetry.lastCorrectAnswer ||
+        quiz?.correctAnswer ||
+        null;
+    }
     performanceSessionRef.current = frozen;
 
     // Mind map for wrong-answer / concept struggle — show it with the mentor
@@ -1026,10 +1047,19 @@ export default function AvatarAssistantModal({
           farmQuestion:
             interventionFocus?.current_question ||
             quiz?.prompt ||
+            quiz?.question ||
+            quiz?.questionData?.prompt ||
+            quiz?.questionData?.question ||
             null,
           lastWrong:
             interventionFocus?.last_wrong_answer ||
             telemetry.lastWrongAnswer ||
+            null,
+          correctAnswer:
+            interventionFocus?.correct_answer ||
+            telemetry.lastCorrectAnswer ||
+            quiz?.correctAnswer ||
+            quiz?.questionData?.correctAnswer ||
             null,
         },
       );
@@ -1277,6 +1307,18 @@ export default function AvatarAssistantModal({
         : 'Listening…'
       : '';
 
+  const focusQuestion = asQuestionText(
+    interventionFocus?.current_question ||
+      quiz?.prompt ||
+      quiz?.question ||
+      quiz?.question_text ||
+      mindMap?.branches?.[0]?.prompt ||
+      mindMap?.branches?.[0]?.question ||
+      misconceptions?.[0]?.attempts?.[0]?.prompt ||
+      null,
+    280,
+  );
+
   return (
     <div
       className="avatar-assistant-overlay"
@@ -1397,6 +1439,16 @@ export default function AvatarAssistantModal({
               ? `Listening: ${liveCaption}`
               : 'Listening… tap Mic again to send.'}
           </p>
+        ) : null}
+
+        {focusQuestion ? (
+          <section
+            className="avatar-focus-question"
+            aria-label="Farm science question"
+          >
+            <p className="avatar-focus-question-kicker">Farm question</p>
+            <p className="avatar-focus-question-text">{focusQuestion}</p>
+          </section>
         ) : null}
 
         {/* Compact letter picks during behavior probe (no full option dump) */}
@@ -1553,11 +1605,12 @@ function bootstrapMessage(
     'a detected learning difficulty';
 
   return (
-    `Private coach note (never read ranks to the student). ` +
+    `Private coach note. ` +
     `Why opened: ${problem}. ` +
-    `${focus?.mentor_brief || 'Ask a behavior probe first; support the reason.'} ` +
+    `${focus?.mentor_brief || 'Help the student recover the science idea.'} ` +
     `Greet with the student's first name. Explain why you came. ` +
-    `Do NOT open with a science quiz. Ask the problem-focused diagnostic. Never rank. Never give quiz answers.`
+    `If you know the correct quiz answer, tell it clearly right away (letter and full option text). ` +
+    `Do NOT open with another science quiz. Never rank the student.`
   );
 }
 
@@ -1585,6 +1638,14 @@ function greetingFor(
   }
   if (focus?.assistance_level === 'escalated') {
     return `I'm still with you on ${concept}. We'll take tiny steps. What part feels stickiest right now?`;
+  }
+  const correct =
+    focus?.correct_answer ||
+    mindMap?.correctAnswer ||
+    mindMap?.keyConcept ||
+    null;
+  if (correct) {
+    return `I came over because ${why}. The correct answer is: ${correct}. Let's lock that idea for ${concept}.`;
   }
   return `I came over because ${why}. Let's talk about ${concept}. What part still feels fuzzy?`;
 }

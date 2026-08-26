@@ -86,6 +86,7 @@ export function useBehavioralTelemetry({
   const milestoneFlagRef = useRef(false);
   const lastTriggerModeRef = useRef(null);
   const lastWrongRef = useRef(null);
+  const lastCorrectRef = useRef(null);
   const misconceptionsRef = useRef(new Map()); // topic -> entry
   const mindMapTopicsRaisedRef = useRef(new Set());
   const raiseSeqRef = useRef(0);
@@ -321,6 +322,18 @@ export function useBehavioralTelemetry({
     next.frustration_score = next.frustration.score;
     next.frustration_level = next.frustration.level;
     next.frustration_signals = next.frustration.signals;
+    next.answer_history = behaviorEventsRef.current
+      .filter((e) => e && e.type === 'answer')
+      .slice(-8)
+      .map((e) => ({
+        question: e.prompt || null,
+        student_answer: e.selectedText || null,
+        is_correct: Boolean(e.isCorrect),
+        correct_answer: e.correctAnswer || null,
+        topic: e.topic || null,
+        time_sec: e.timeSec ?? null,
+        at: e.at || null,
+      }));
     metricsSnapRef.current = next;
 
     setMetrics(next);
@@ -328,9 +341,12 @@ export function useBehavioralTelemetry({
       ...prev,
       consecutiveFails: consecutiveFailsRef.current,
       lastWrongAnswer: prev.lastWrongAnswer,
+      lastCorrectAnswer: lastCorrectRef.current || prev.lastCorrectAnswer || null,
       frustrationScore: next.frustration.score,
       frustrationLevel: next.frustration.level,
+      frustrationSignals: next.frustration.signals,
       timeOnQuestionMs: Math.round(currentTimeSec * 1000),
+      answerHistory: next.answer_history,
       metrics: next,
     }));
     return next;
@@ -505,6 +521,7 @@ export function useBehavioralTelemetry({
           (snapshot.time_per_question_current_sec || 0) * 1000,
         ),
         lastWrongAnswer: lastWrongRef.current,
+        lastCorrectAnswer: lastCorrectRef.current,
         metrics: {
           ...snapshot,
           non_wrong_scenario_code: scenarioCode || focus.code,
@@ -775,6 +792,8 @@ export function useBehavioralTelemetry({
       selectedText = null,
       questionData = null,
       responseTimeMs = null,
+      correctAnswer = null,
+      gradeFeedback = null,
     } = {}) => {
       if (!enabled) return;
       const opened = questionOpenedAtRef.current;
@@ -810,6 +829,10 @@ export function useBehavioralTelemetry({
         topic,
         prompt: questionData?.prompt || questionData?.question || null,
         selectedText: selectedText || null,
+        correctAnswer:
+          correctAnswer ||
+          questionData?.correctAnswer ||
+          null,
       });
 
       // Post-help: allow hard wrong clusters even during soft grace
@@ -869,15 +892,20 @@ export function useBehavioralTelemetry({
         questionAttemptsRef.current = 0;
         questionOpenedAtRef.current = Date.now();
         lastWrongRef.current = null;
+        // Always refresh frustration after every answer (correct included)
+        const snapCorrect = syncMetrics();
         setSession((prev) => ({
           ...prev,
           consecutiveFails: 0,
           lastWrongAnswer: null,
+          frustrationScore: snapCorrect.frustration_score,
+          frustrationLevel: snapCorrect.frustration_level,
+          answerHistory: snapCorrect.answer_history,
+          metrics: snapCorrect,
         }));
 
         // Non-wrong patterns (slow streak, slow+hint compound, etc.)
-        const snap = syncMetrics();
-        recordFrustrationPoint(snap, true);
+        recordFrustrationPoint(snapCorrect, true);
 
         if (post.outcome !== INTERVENTION_OUTCOMES.SUPPRESS) {
           tryRaiseNonWrong();
@@ -885,11 +913,11 @@ export function useBehavioralTelemetry({
 
         if (!milestoneFlagRef.current) return;
         if (post.outcome === INTERVENTION_OUTCOMES.SUPPRESS) return;
-        const evaluation = evaluateStudentState(snap, {
+        const evaluation = evaluateStudentState(snapCorrect, {
           forceEval: true,
           thresholds,
         });
-        if (evaluation) raiseFromEval(evaluation, snap);
+        if (evaluation) raiseFromEval(evaluation, snapCorrect);
         return;
       }
 
@@ -898,17 +926,36 @@ export function useBehavioralTelemetry({
       levelRetriesRef.current += 1;
       firstAttemptCorrectStreakRef.current = 0;
       if (selectedText) lastWrongRef.current = selectedText;
+      const resolvedCorrect =
+        correctAnswer ||
+        questionData?.correctAnswer ||
+        (typeof questionData?.correctIndex === 'number' &&
+        Array.isArray(questionData?.options)
+          ? questionData.options[questionData.correctIndex]
+          : null) ||
+        null;
+      if (resolvedCorrect) lastCorrectRef.current = resolvedCorrect;
+      const enrichedQuestion = questionData
+        ? {
+            ...questionData,
+            correctAnswer: resolvedCorrect || questionData.correctAnswer || null,
+            gradeFeedback: gradeFeedback || questionData.gradeFeedback || null,
+          }
+        : questionData;
+      if (questionData) lastQuizDataRef.current = enrichedQuestion;
       setSession((prev) => ({
         ...prev,
         consecutiveFails: consecutiveFailsRef.current,
         lastWrongAnswer: lastWrongRef.current,
+        lastCorrectAnswer: lastCorrectRef.current || prev.lastCorrectAnswer || null,
+        lastGradeFeedback: gradeFeedback || prev.lastGradeFeedback || null,
       }));
 
       let mindMap = null;
       let conceptEntry = null;
       try {
-        if (questionData || selectedText) {
-          const recorded = recordMisconception(questionData, selectedText);
+        if (enrichedQuestion || selectedText) {
+          const recorded = recordMisconception(enrichedQuestion, selectedText);
           mindMap = recorded.mindMap;
           conceptEntry = recorded.entry;
         }
@@ -1253,12 +1300,18 @@ function emptySession() {
   return {
     consecutiveFails: 0,
     frustrationScore: 0,
+    frustrationLevel: 'low',
+    frustrationSignals: [],
     lastWrongAnswer: null,
+    lastCorrectAnswer: null,
+    lastGradeFeedback: null,
     lastTriggerReason: null,
     lastInterventionMode: null,
     lastNonWrongScenario: null,
+    lastInterventionFocus: null,
     timeOnQuestionMs: 0,
     triggerCount: 0,
+    answerHistory: [],
     metrics: emptyMetrics(),
   };
 }

@@ -1,6 +1,9 @@
 /**
  * Grade 6–9 farming levels:
  * plant quiz → grow → harvest (carry on back) → load quiz at dock → sell.
+ *
+ * Prefer Assessment Engine /next for E-key challenges.
+ * Local banks are unused by the live quiz path.
  */
 import { SCIENCE_QUESTIONS } from './scienceQuestions.js';
 
@@ -208,31 +211,38 @@ export function getFarmLevel(levelId = 1) {
 }
 
 /**
- * @param {object} level
- * @param {string} [avoidId]
- * @param {string} [_mode]
+ * Local farm question for this level / practice quizzes.
+ * Prefer mode-matched banks; fall back to a wider pool so offline practice never crashes.
  */
-export function pickScienceQuestion(level, avoidId, _mode = 'plant') {
-  const seen = new Set();
-  const unique = [];
-  const push = (list) => {
-    if (!Array.isArray(list)) return;
-    for (const q of list) {
-      if (!q?.id || seen.has(q.id)) continue;
-      seen.add(q.id);
-      unique.push(q);
+export function pickScienceQuestion(level, avoidId, mode = 'plant') {
+  const loadLike = mode === 'load' || mode === 'unload' || mode === 'sell';
+  let source =
+    loadLike && level?.loadQuestions?.length
+      ? level.loadQuestions
+      : level?.questions;
+
+  if (!Array.isArray(source) || source.length < 1) {
+    const seen = new Set();
+    const unique = [];
+    const push = (list) => {
+      if (!Array.isArray(list)) return;
+      for (const q of list) {
+        if (!q?.id || seen.has(q.id)) continue;
+        seen.add(q.id);
+        unique.push(q);
+      }
+    };
+    push(level?.questions);
+    push(level?.loadQuestions);
+    push(SCIENCE_QUESTIONS);
+    for (const other of FARM_LEVELS) {
+      push(other.questions);
+      push(other.loadQuestions);
     }
-  };
-  push(level?.questions);
-  push(level?.loadQuestions);
-  push(SCIENCE_QUESTIONS);
-  for (const other of FARM_LEVELS) {
-    push(other.questions);
-    push(other.loadQuestions);
+    source = unique;
   }
-  const pool = unique.filter((q) => q.id !== avoidId);
-  const source = pool.length ? pool : unique;
-  if (!source.length) {
+
+  if (!Array.isArray(source) || source.length < 1) {
     return {
       id: 'fallback-science',
       topic: 'Life Science',
@@ -243,7 +253,10 @@ export function pickScienceQuestion(level, avoidId, _mode = 'plant') {
       rp: 20,
     };
   }
-  return source[Math.floor(Math.random() * source.length)];
+
+  const pool = source.filter((q) => q.id !== avoidId);
+  const list = pool.length ? pool : source;
+  return list[Math.floor(Math.random() * list.length)] || null;
 }
 
 /** @deprecated Use pickScienceQuestion */

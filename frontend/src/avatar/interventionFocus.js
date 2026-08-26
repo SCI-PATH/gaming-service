@@ -444,6 +444,7 @@ export function buildInterventionFocus(input = {}) {
     quiz = null,
     mindMap = null,
     lastWrongAnswer = null,
+    correctAnswer = null,
     metrics = null,
     priorFocus = null,
     isEscalation = false,
@@ -487,6 +488,10 @@ export function buildInterventionFocus(input = {}) {
         metrics,
         quiz,
         lastWrongAnswer,
+        correctAnswer:
+          correctAnswer ||
+          priorFocus?.correct_answer ||
+          null,
         assistance_level: 'escalated',
         studentName,
       });
@@ -511,6 +516,11 @@ export function buildInterventionFocus(input = {}) {
     metrics,
     quiz,
     lastWrongAnswer,
+    correctAnswer:
+      correctAnswer ||
+      priorFocus?.correct_answer ||
+      quiz?.correctAnswer ||
+      null,
     assistance_level: isEscalation ? 'escalated' : 'standard',
     requireMindMap:
       code === INTERVENTION_FOCUS_CODES.SAME_CONCEPT_STRUGGLE ||
@@ -529,6 +539,7 @@ function finalizeFocus({
   metrics,
   quiz,
   lastWrongAnswer,
+  correctAnswer = null,
   assistance_level,
   requireMindMap = false,
   studentName = null,
@@ -616,6 +627,7 @@ function finalizeFocus({
       .map((w) => friendlyWrongAnswer(w) || asQuestionText(w))
       .filter(Boolean),
     last_wrong_answer: lastWrong,
+    correct_answer: correctAnswer || quiz?.correctAnswer || null,
     current_question: questionText,
     diagnostic_question,
     diagnostic_prompt: structured.prompt,

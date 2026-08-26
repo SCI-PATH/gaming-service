@@ -19,10 +19,21 @@ export function getLlamaConfig() {
   const provider = normalizeProvider(
     env('LLAMA_PROVIDER', hasGroqKey ? 'groq' : 'offline'),
   );
-  const model = env(
+  // Groq retired llama-3.3-70b-versatile / llama-3.1-8b-instant (Aug 2026).
+  let model = env(
     'LLAMA_MODEL',
-    provider === 'groq' ? 'llama-3.3-70b-versatile' : 'llama3.2:3b',
+    provider === 'groq' ? 'openai/gpt-oss-120b' : 'llama3.2:3b',
   );
+  if (provider === 'groq') {
+    const retired = {
+      'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+      'llama-3.1-70b-versatile': 'openai/gpt-oss-120b',
+      'mixtral-8x7b-32768': 'openai/gpt-oss-120b',
+    };
+    const key = String(model || '').trim().toLowerCase();
+    if (retired[key]) model = retired[key];
+  }
   const timeoutMs = Math.max(
     3000,
     Number(env('AVATAR_TIMEOUT_MS', provider === 'groq' ? '30000' : '12000')) ||

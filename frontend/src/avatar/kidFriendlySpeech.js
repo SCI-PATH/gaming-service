@@ -67,15 +67,90 @@ export function asQuestionText(raw, maxLen = 120) {
 }
 
 /**
- * Kid-safe wording for a wrong choice / timeout.
+ * Kid-safe wording for a wrong choice / timeout / fill-in blanks.
  */
-export function friendlyWrongAnswer(raw, maxLen = 40) {
+export function friendlyWrongAnswer(raw, maxLen = 72) {
   const t = asQuestionText(raw, maxLen);
   if (!t) return null;
-  if (/timed\s*out|no\s*selection|no\s*answer|\(no selection\)/i.test(t)) {
-    return 'ran out of time before picking';
+  if (/^(id|guid|uuid|null|undefined)$/i.test(t)) return null;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{10,}$/i.test(t)) return null;
+  if (
+    /timed\s*out|no\s*selection|no\s*answer|\(no selection\)|\(timed out/i.test(
+      t,
+    )
+  ) {
+    return 'ran out of time (no pick yet)';
+  }
+  if (/^\s*N(\s*\|\s*N)+\s*$/i.test(t)) {
+    return 'filled every blank with “N”';
+  }
+  // MultiBlank pipe joins → readable blanks
+  if (/\s\|\s/.test(t)) {
+    const parts = t
+      .split(/\s*\|\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 1) {
+      const pretty = parts
+        .map((p, i) => `blank ${i + 1}: ${p || '—'}`)
+        .join(' · ');
+      return pretty.length > maxLen
+        ? `${pretty.slice(0, maxLen - 1).trim()}…`
+        : pretty;
+    }
   }
   return t;
+}
+
+/**
+ * True when text looks like a provider / grading API dump (never show to kids).
+ */
+export function isProviderDumpText(raw) {
+  const s = String(raw || '');
+  if (!s) return false;
+  return (
+    /grading failed|model_not_found|does not exist|invalid_request_error|error code:\s*\d+|groq error/i.test(
+      s,
+    ) ||
+    s.includes("{'error'") ||
+    s.includes('{"error"') ||
+    /llama-3\.[13]-|gpt-oss/i.test(s)
+  );
+}
+
+/** Grader status lines that are not real science answers. */
+export function isGradeStatusText(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return true;
+  if (isProviderDumpText(s)) return true;
+  return (
+    /^\d+\s+of\s+\d+\s+blanks?\s+correct\.?$/i.test(s) ||
+    /^correct\.?$/i.test(s) ||
+    /^no answer provided\.?$/i.test(s) ||
+    /^no answer was (typed|provided)/i.test(s) ||
+    /^matches the ideal answer/i.test(s) ||
+    /^we could not fully score/i.test(s)
+  );
+}
+
+/**
+ * Student-safe science line — drops provider dumps + grader status.
+ */
+export function safeScienceLine(raw, fallback = null) {
+  if (raw == null || raw === '') return fallback;
+  let s = String(raw).replace(/\s+/g, ' ').trim();
+  if (!s || isGradeStatusText(s)) return fallback;
+  // Pretty MultiBlank ideal answers
+  if (/\s\|\s/.test(s) && !/^incorrect\./i.test(s)) {
+    s = s.replace(/\s*\|\s*/g, ' · ');
+  }
+  if (/^incorrect\.\s*/i.test(s)) {
+    s = s.replace(/^incorrect\.\s*/i, '').trim();
+    s = s.replace(/^the blanks? are:\s*/i, '').trim();
+    s = s.replace(/\s*\|\s*/g, ' · ');
+  }
+  if (!s || isGradeStatusText(s)) return fallback;
+  return s;
 }
 
 /**
@@ -84,6 +159,16 @@ export function friendlyWrongAnswer(raw, maxLen = 40) {
 export function softProviderNote(errorOrNote) {
   const s = String(errorOrNote || '').trim();
   if (!s) return null;
+  if (isProviderDumpText(s)) {
+    return 'Cloud AI model needs an update — using local science help for now';
+  }
+  if (
+    /model_not_found|does not exist|invalid_request_error|llama-3\.[13]|gpt-oss/i.test(
+      s,
+    ) && /404|groq|model/i.test(s)
+  ) {
+    return 'Cloud AI model needs an update — using local science help for now';
+  }
   if (/rate.?limit|tokens per day|429|TPD|too many requests/i.test(s)) {
     return 'Cloud mentor is resting — Sage still answers with local science help';
   }
@@ -93,8 +178,16 @@ export function softProviderNote(errorOrNote) {
   if (/GROQ_API_KEY|missing|OFFLINE/i.test(s)) {
     return 'Offline mentor mode';
   }
-  // Strip huge JSON blobs
-  if (s.length > 90 || s.includes('{"error"') || s.includes('org_')) {
+  if (/groq\s*error|openai\s*error|provider\s*error/i.test(s)) {
+    return 'Using local mentor help';
+  }
+  // Strip huge JSON blobs / raw API dumps
+  if (
+    s.length > 90 ||
+    s.includes('{"error"') ||
+    s.includes('"type":') ||
+    s.includes('org_')
+  ) {
     return 'Using local mentor help';
   }
   return s;

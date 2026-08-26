@@ -332,6 +332,12 @@ function buildAdaptiveFollowUpCore({
       focus.last_wrong_answer ||
       context?.current_question?.student_last_wrong_answer ||
       null,
+    correctAnswer:
+      focus.correct_answer ||
+      context?.current_question?.correct_answer ||
+      context?.mind_map?.correctAnswer ||
+      context?.session?.lastCorrectAnswer ||
+      null,
   });
 
   const snippet =
@@ -344,8 +350,13 @@ function buildAdaptiveFollowUpCore({
     context?.current_question?.question_text ||
     '';
   const farmBit = farmQRaw
-    ? ` Remember the farm question was about: "${String(farmQRaw).slice(0, 64)}".`
+    ? ` Remember the farm question was about: "${String(farmQRaw).slice(0, 96)}".`
     : '';
+  const knownCorrect =
+    evaluation.correctAnswer ||
+    focus.correct_answer ||
+    context?.current_question?.correct_answer ||
+    null;
 
   const priorUserTurns = (chatHistory || []).filter(
     (m) => m?.role === 'user',
@@ -368,13 +379,17 @@ function buildAdaptiveFollowUpCore({
       reply = `${name}, I hear you: "${snippet}". Good start on ${concept}! Let me fill a small gap: ${tip}${farmBit} Now: ${check}`;
       break;
     case 'misconception':
-      reply = `${name}, I hear you: "${snippet}". That is a common mix-up for ${concept}. ${evaluation.misconceptionTip || tip}${farmBit} Try this gentler step: ${check}`;
+      reply = knownCorrect
+        ? `${name}, you chose "${snippet}". For that farm question, the correct answer is: ${knownCorrect}. ${evaluation.misconceptionTip || tip}${farmBit}`
+        : `${name}, I hear you: "${snippet}". That is a common mix-up for ${concept}. ${evaluation.misconceptionTip || tip}${farmBit} Try this gentler step: ${check}`;
       break;
     case 'unsure':
       reply = `${name}, thank you for being honest. I came over because ${why}. Here is a gentle clue about ${concept}: ${tip}${farmBit} ${check}`;
       break;
     case 'ask_hint':
-      reply = `${name}, I can nudge without giving the quiz answer letter. For ${concept}: ${tip} Using that, ${check}`;
+      reply = knownCorrect
+        ? `${name}, for that farm question, here is the correct answer: ${knownCorrect}. ${tip}${farmBit}`
+        : `${name}, for ${concept}: ${tip} Using that, ${check}`;
       break;
     case 'reading':
       reply = `${name}, great self-check — wording can slow us down. Slow down on the science words for ${concept}.${farmBit} Restate the question in five words, then ${check}`;

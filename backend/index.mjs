@@ -273,7 +273,7 @@ server.listen(PORT, HOST, () => {
     .catch(() => {});
   // eslint-disable-next-line no-console
   console.log(
-    `[backend] LLAMA_PROVIDER=${process.env.LLAMA_PROVIDER || 'offline'} MODEL=${process.env.LLAMA_MODEL || 'llama-3.1-8b-instant'} groqKey=${process.env.GROQ_API_KEY ? 'set' : 'missing'}`,
+    `[backend] LLAMA_PROVIDER=${process.env.LLAMA_PROVIDER || 'offline'} MODEL=${process.env.LLAMA_MODEL || 'openai/gpt-oss-120b'} groqKey=${process.env.GROQ_API_KEY ? 'set' : 'missing'}`,
   );
   // eslint-disable-next-line no-console
   console.log(

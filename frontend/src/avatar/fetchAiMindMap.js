@@ -1,6 +1,8 @@
 /**
  * Client: AI mind map covering incorrect answers, personalized by frustration.
  */
+import { softProviderNote } from './kidFriendlySpeech.js';
+
 export async function fetchAiMindMap({
   attempts = [],
   misconceptions = [],
@@ -37,7 +39,7 @@ export async function fetchAiMindMap({
     return {
       mindMap: data.mindMap || null,
       provider: data.provider || 'unknown',
-      note: data.note || '',
+      note: softProviderNote(data.note) || data.note || '',
       aiError: Boolean(data.aiError),
       frustrationLevel: data.frustrationLevel || frustrationLevel || null,
     };

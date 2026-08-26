@@ -153,45 +153,60 @@ export function buildMessages(body = {}) {
     context?.non_wrong_scenario_label ||
     'the detected learning problem';
 
+  const frLevel = String(
+    context?.frustration_level ||
+      context?.sage_adaptation?.level ||
+      'moderate',
+  ).toLowerCase();
+  const farmQ = String(
+    focus.current_question ||
+      context?.current_question?.question_text ||
+      '',
+  ).slice(0, 180);
+  const knownCorrect = String(
+    context?.current_question?.correct_answer || focus.correct_answer || '',
+  ).slice(0, 140);
+  const mayReveal = Array.isArray(context?.mentor_goals)
+    ? context.mentor_goals.includes('reveal_correct_answer_when_known')
+    : false;
+  const histLen = Array.isArray(context?.answer_history)
+    ? context.answer_history.length
+    : 0;
+
   let instruct;
   if (studentMessage && !auto) {
-    const frLevel = String(
-      context?.frustration_level ||
-        context?.sage_adaptation?.level ||
-        'moderate',
-    ).toLowerCase();
     instruct =
       `TURN TYPE: FOLLOW-UP — PERSONALIZED SCIENCE MENTOR for low performance. ` +
       `FROZEN cause: ${problem}. FROZEN concept: ${concept}. ` +
-      `Private affect band: ${frLevel} (never say this word to the student; match tone/pace from sage_adaptation). ` +
+      `Private LIVE affect band: ${frLevel} (never say this word; match tone/pace from sage_adaptation; score updates each answer). ` +
       `Guidance level: ${focus.guidance_level ?? focus.conversation_session?.guidance_level ?? 0} ` +
       `(0=diagnostic, 1=scaffold, 2=repair, 3=microstep). ` +
       `The student JUST answered: "${studentMessage.slice(0, 320)}". ` +
-      `REQUIRED: (1) quote/paraphrase their answer, (2) evaluate understanding for ${concept}, ` +
-      `(3) give guidance at the current guidance level tied ONLY to ${problem}/${concept}, ` +
-      `(4) one new check question that fits their answer depth. ` +
-      `Evidence: wrong="${focus.last_wrong_answer || ''}", farmQ="${String(focus.current_question || '').slice(0, 80)}". ` +
-      `FORBIDDEN: re-greeting, replaying opener, general chatbot topics, ability ranks, MCQ letter, saying frustrated/struggling.`;
+      `REQUIRED: (1) quote/paraphrase their answer, (2) evaluate understanding for the Active farm question / ${concept}, ` +
+      `(3) give guidance at the current guidance level tied ONLY to ${problem}/${concept} AND the farm question, ` +
+      `(4) one new check that stays on that same question idea. ` +
+      `Evidence: wrong="${focus.last_wrong_answer || context?.current_question?.student_last_wrong_answer || ''}", ` +
+      `farmQ="${farmQ}", knownCorrect="${knownCorrect}", answer_history_items=${histLen}. ` +
+      (mayReveal && knownCorrect
+        ? `If they need the idea: reveal knownCorrect for THIS farmQ, then one short why. `
+        : '') +
+      `FORBIDDEN: re-greeting, replaying opener, general chatbot topics, ability ranks, inventing an unrelated answer, saying frustrated/struggling.`;
   } else if (auto || nonWrong || focus.code) {
-    const frLevel = String(
-      context?.frustration_level ||
-        context?.sage_adaptation?.level ||
-        'moderate',
-    ).toLowerCase();
     instruct =
       `TURN TYPE: OPENER only. Detected problem: ${problem}. Concept: ${concept}. ` +
-      `Private affect band: ${frLevel} — match sage_adaptation voice (never mention the band). ` +
+      `Private LIVE affect band: ${frLevel} — match sage_adaptation voice (never mention the band). ` +
+      `Farm question lock: "${farmQ || 'see context'}". ` +
       `Diagnostic to ask: ${focus.diagnostic_question || 'one soft concept check'}. ` +
       `${focus.mentor_brief || ''} ` +
       'Under 3 sentences: (1) kind name why you came, (2) ask the trigger-matched diagnostic, (3) optional tiny tip. ' +
-      'Not a general chatbot. Never give the MCQ answer.' +
+      'Not a general chatbot. Do not invent a different science question.' +
       (allowMap ? ' Mention mind-map idea gently if provided.' : '');
   } else if (allowMap) {
     instruct =
-      'Adaptive reply under 3 sentences. Use incorrect-answer mind map for Socratic repair only. Never give the MCQ answer. Match private affect band tone.';
+      'Adaptive reply under 3 sentences. Use incorrect-answer mind map for repair of the Active farm question. Match LIVE private affect band tone. Reveal known correct idea when present.';
   } else {
     instruct =
-      'Adaptive personalized reply under 3 sentences. Stay on farm science. Never give the MCQ answer. Match private affect band tone.';
+      'Adaptive personalized reply under 3 sentences. Stay on the Active farm question. Match LIVE private affect band tone.';
   }
 
   const spokenLabel = auto

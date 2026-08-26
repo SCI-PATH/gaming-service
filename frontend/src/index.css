@@ -155,7 +155,7 @@ body {
 .science-quiz-overlay {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 5000;
   display: grid;
   place-content: center;
   padding: 16px;
@@ -182,7 +182,7 @@ body {
 .escape-quiz-head h3 {
   margin: 0;
   font-size: 1.05rem;
-  color: #c5efd0;
+  color: #14301c;
 }
 
 .escape-quiz-topic {
@@ -2272,7 +2272,16 @@ body {
   margin: 10px 0 12px;
   line-height: 1.4;
   font-size: 0.95rem;
-  color: var(--ink);
+  color: #1a2418;
+  white-space: pre-wrap;
+}
+
+.science-quiz-type {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3d5c40;
 }
 
 .science-quiz-options {
@@ -2283,12 +2292,28 @@ body {
 .science-quiz-option {
   cursor: pointer;
   text-align: left;
-  border: 1px solid var(--forest-leaf);
-  background: linear-gradient(180deg, #1a3a28, #0f2418);
-  color: var(--ink);
+  border: 1px solid #7aa887;
+  background: #ffffff;
+  color: #142016;
   font: inherit;
   padding: 10px 12px;
   border-radius: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.science-quiz-option-key {
+  flex: 0 0 auto;
+  min-width: 1.6em;
+  height: 1.6em;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 4px;
+  background: #e7f3ea;
+  color: #142016;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .science-quiz-option:hover:not(:disabled) {
@@ -2309,6 +2334,20 @@ body {
   border-color: #ff8f8f;
   background: rgba(90, 30, 30, 0.45);
   color: #ffc9c9;
+}
+
+.science-quiz-checking,
+.science-quiz-grade-error {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+
+.science-quiz-checking {
+  color: #6b4e00;
+}
+
+.science-quiz-grade-error {
+  color: #8b1e1e;
 }
 
 .science-quiz-feedback {
@@ -3872,7 +3911,7 @@ body {
   margin: 0;
   font-size: 0.85rem;
   font-weight: 700;
-  color: #9fd4ff;
+  color: #0b5cab;
 }
 
 .science-quiz-timer.is-urgent {
@@ -3899,6 +3938,65 @@ body {
   color: #ffe9a8;
   font-size: 0.75rem;
   cursor: pointer;
+}
+
+.science-quiz-typed {
+  display: grid;
+  gap: 10px;
+}
+
+.science-quiz-blank {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.science-quiz-blank span {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #3d5c40;
+}
+
+.science-quiz-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #7aa887;
+  background: #ffffff;
+  color: #142016;
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.science-quiz-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.science-quiz-input:disabled {
+  opacity: 0.7;
+}
+
+.science-quiz-submit {
+  justify-self: start;
+  cursor: pointer;
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, #3a5a28, #1f3418);
+  color: #f4efd4;
+  font: inherit;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 6px;
+}
+
+.science-quiz-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.science-quiz-submit:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 
@@ -4461,6 +4559,34 @@ body {
   padding: 0 2px;
 }
 
+.avatar-focus-question {
+  flex-shrink: 0;
+  margin: 0 4px 8px;
+  padding: 12px 16px 14px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, #f7fbff 0%, #e8f3fb 55%, #dff0f6 100%);
+  border: 1.5px solid rgba(40, 110, 150, 0.28);
+  box-shadow: 0 6px 18px rgba(20, 50, 70, 0.08);
+}
+
+.avatar-focus-question-kicker {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3a6f8c;
+}
+
+.avatar-focus-question-text {
+  margin: 0;
+  font-size: clamp(0.95rem, 1.6vw, 1.12rem);
+  font-weight: 700;
+  line-height: 1.45;
+  color: #1a2a36;
+  text-wrap: pretty;
+}
+
 .avatar-letter-chip {
   width: auto;
   height: auto;
@@ -4986,14 +5112,19 @@ body {
 
 .mm-card-q {
   margin: 0;
-  font-size: 0.74rem;
-  line-height: 1.35;
-  font-weight: 600;
-  color: #2a2418;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(40, 50, 60, 0.12);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  font-weight: 650;
+  color: #1f2a33;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-wrap: pretty;
 }
 
 .mm-card-row {
@@ -5451,24 +5582,26 @@ body {
   position: relative;
   z-index: 4;
   margin: 8px 0 0;
-  max-width: min(96%, 420px);
-  min-height: 2.6em;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: rgba(4, 12, 20, 0.82);
-  border: 1px solid rgba(80, 180, 220, 0.35);
-  color: #dff6ff;
-  font-size: 0.88rem;
+  max-width: min(96%, 440px);
+  min-height: 2.8em;
+  max-height: 5.6em;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(6, 18, 28, 0.88);
+  border: 1px solid rgba(120, 200, 230, 0.4);
+  color: #e8f8ff;
+  font-size: 0.92rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  line-height: 1.4;
+  line-height: 1.45;
   text-align: center;
   white-space: normal;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  text-wrap: pretty;
 }
 
 .sage-subtitle {
