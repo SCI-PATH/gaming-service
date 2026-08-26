@@ -18,8 +18,10 @@ import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
 import { getFarmLevel } from '../../data/farmLevels';
 import {
   clearAssessmentSession,
+  isRenderableQuizQuestion,
   resolveScienceQuestion,
   terminateAssessmentSession,
+  warmupAssessmentSession,
 } from '../../assessmentEngine/assessmentQuizSession.js';
 import {
   DDA_CONFIG,
@@ -347,6 +349,7 @@ export default class GameScene extends Phaser.Scene {
     this.farmInputLocked = false;
     this.uiInputLocked = false;
     this._uiOverlayPaused = false;
+    void warmupAssessmentSession();
     try {
       this.physics?.world?.resume?.();
     } catch {
@@ -1068,10 +1071,10 @@ export default class GameScene extends Phaser.Scene {
         }
       } else if (!locked && this._uiOverlayPaused) {
         this._uiOverlayPaused = false;
-        if (this._uiOwnedWorldPause) {
+        if (this._uiOwnedWorldPause && !this.isFarmCombatFrozen()) {
           this.thawFarmCombat();
         }
-        this._uiOwnedWorldPause = false;
+        this._uiOwnedWorldPause = this.isFarmCombatFrozen();
         try {
           this.sound?.resumeAll?.();
         } catch {
@@ -1550,19 +1553,32 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Open ScienceQuizModal with Assessment Engine /next (local fallback).
+   * Open ScienceQuizModal with Assessment Engine /next.
    * Caller must freeze farm + set pendingQuizMode first so actions stay blocked.
    */
   async emitScienceQuizFromEngine(mode, pickMode, extraFromQuestion) {
     const quizGen = (this._scienceQuizGen = (this._scienceQuizGen || 0) + 1);
     try {
+      ForestGameBridge.emit(
+        FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+        this.withGameplayQuizMeta({
+          mode,
+          challenge: mode,
+          loading: true,
+          question: null,
+          questionData: null,
+          levelId: this.farmLevel.id,
+          openedAt: this.quizOpenedAt,
+        }),
+      );
+
       const question = await resolveScienceQuestion(
         this.farmLevel,
         this.lastQuestionId,
         pickMode,
       );
       if (!this.sys?.isActive() || quizGen !== this._scienceQuizGen) return false;
-      if (!question?.options?.length) {
+      if (!isRenderableQuizQuestion(question)) {
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'quiz_blocked',
           reason: 'assessment_unavailable',
@@ -1581,6 +1597,7 @@ export default class GameScene extends Phaser.Scene {
         this.withGameplayQuizMeta({
           mode,
           challenge: extra.challenge || mode,
+          loading: false,
           question,
           questionData: question,
           rp: question.rp,
@@ -1593,6 +1610,11 @@ export default class GameScene extends Phaser.Scene {
       return true;
     } catch {
       if (this.sys?.isActive() && quizGen === this._scienceQuizGen) {
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'quiz_blocked',
+          reason: 'assessment_unavailable',
+          hint: 'Science quiz is unavailable right now. Check Assessment Engine and try again.',
+        });
         this.resumeAfterQuiz();
       }
       return false;
@@ -1649,7 +1671,7 @@ export default class GameScene extends Phaser.Scene {
     setCleaningChallengeIndex(this.levelPlan.cleanIndex || 0);
   }
 
-  /** Vegetable challenge for the gold plant beds — one crop at a time. */
+  /** Vegetable challenges for the gold plant beds — several crops per level. */
   applyCurrentCropChallenge({ resetProgress = false } = {}) {
     if (!this.libraryOverride && this.levelPlan?.cropIndexes?.length) {
       const slot = Math.min(
@@ -2174,6 +2196,12 @@ export default class GameScene extends Phaser.Scene {
     this.plantPlotMarkers.setDepth(1.5);
 
     PLANT_PLOTS.forEach((plot, plotIndex) => {
+      const def = cropDefForPlot(plot.id, this.cropChallenge, this.levelPlan, plotIndex);
+      if (def.inactive || !def.cropId) {
+        // No unique crop for this bed — skip marker (1 bed = 1 plant only).
+        return;
+      }
+
       const px = plot.x * TILE_SIZE;
       const py = plot.y * TILE_SIZE;
       const pw = plot.w * TILE_SIZE;
@@ -2201,7 +2229,6 @@ export default class GameScene extends Phaser.Scene {
       g.lineStyle(1.5, 0x8fd45a, 0.7);
       g.strokeRoundedRect(px + 4, py + 4, pw - 8, ph - 8, 2);
 
-      const def = cropDefForPlot(plot.id, this.cropChallenge, this.levelPlan, plotIndex);
       const cropId = def.cropId;
       const soldMap = this.cropSoldMap || {};
       const harvestTarget = this.harvestTarget || 4;
@@ -3296,7 +3323,7 @@ export default class GameScene extends Phaser.Scene {
     return true;
   }
 
-  /** E: Farm Shop unload, nearby world task, plant bed, or unlock-item challenge. */
+  /** E: Farm Shop unload, harvest/collect quizzes, plant bed, or nearby challenge. */
   handleInteractKey() {
     if (!this.player) return;
     if (this.farmInputLocked) return;
@@ -3321,13 +3348,51 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Ready crops: first E opens harvest quiz; later E picks after unlock.
+    if (this.hasReadyCropsUnderfoot()) {
+      if (!this.harvestUnlocked) {
+        this.openHarvestQuestion();
+        return;
+      }
+      this.harvestCropsUnderfoot();
+      return;
+    }
+
     if (this.animalLayer?.isNear(this.player.x, this.player.y)) {
-      this.beginAnimalTend();
+      if (!this.animalTended && !this.animalLayer?.tended) {
+        this.beginAnimalTend();
+        return;
+      }
+      if (
+        this.animalLayer?.tended &&
+        (this.animalLayer.remainingProduce?.() || 0) > 0 &&
+        !this.animalCollectUnlocked
+      ) {
+        this.openAnimalCollectQuestion();
+        return;
+      }
+      if (this.animalCollectUnlocked) {
+        this.collectAnimalProduceUnderfoot();
+      }
       return;
     }
 
     if (this.cleaningLayer?.isNear(this.player.x, this.player.y)) {
-      this.beginCleaningStart();
+      if (!this.cleanStarted && !this.cleaningLayer?.started) {
+        this.beginCleaningStart();
+        return;
+      }
+      if (
+        this.cleaningLayer?.started &&
+        (this.cleaningLayer.remainingMess?.() || 0) > 0 &&
+        !this.cleanSweepUnlocked
+      ) {
+        this.openCleanSweepQuestion();
+        return;
+      }
+      if (this.cleanSweepUnlocked) {
+        this.sweepCleaningUnderfoot();
+      }
       return;
     }
 
@@ -3345,6 +3410,22 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
       type: 'plant_blocked',
       reason: 'not_plot',
+    });
+  }
+
+  hasReadyCropsUnderfoot() {
+    if (!this.player) return false;
+    const reach = TILE_SIZE * 1.15;
+    return (this.plantedCrops || []).some((crop) => {
+      if (!crop?.active || !crop.isReady?.()) return false;
+      return (
+        Phaser.Math.Distance.Between(
+          crop.x,
+          crop.y,
+          this.player.x,
+          this.player.y,
+        ) <= reach
+      );
     });
   }
 
@@ -3390,27 +3471,9 @@ export default class GameScene extends Phaser.Scene {
     if (this.farmInputLocked || !this.player) return;
     if (!this.animalLayer?.tended) return;
     if ((this.animalLayer.remainingProduce?.() || 0) < 1) return;
+    if (!this.animalCollectUnlocked) return;
 
     const reach = TILE_SIZE * 1.25;
-    const near = this.animalLayer.produce?.some(
-      (p) =>
-        p.collectable &&
-        p.visual?.active &&
-        Phaser.Math.Distance.Between(
-          p.visual.x,
-          p.visual.y,
-          this.player.x,
-          this.player.y,
-        ) <= reach,
-    );
-    if (!near) return;
-
-    // One collect quiz per animal challenge, then free collecting
-    if (!this.animalCollectUnlocked) {
-      this.openAnimalCollectQuestion();
-      return;
-    }
-
     const n = this.animalLayer.collectNear(
       this.player.x,
       this.player.y,
@@ -3474,27 +3537,9 @@ export default class GameScene extends Phaser.Scene {
     if (this.farmInputLocked || !this.player) return;
     if (!this.cleaningLayer?.started) return;
     if ((this.cleaningLayer.remainingMess?.() || 0) < 1) return;
+    if (!this.cleanSweepUnlocked) return;
 
     const reach = TILE_SIZE * 1.25;
-    const near = this.cleaningLayer.mess?.some(
-      (item) =>
-        item.collectable &&
-        item.visual?.active &&
-        Phaser.Math.Distance.Between(
-          item.visual.x,
-          item.visual.y,
-          this.player.x,
-          this.player.y,
-        ) <= reach,
-    );
-    if (!near) return;
-
-    // One sweep quiz per cleaning challenge, then free sweeping
-    if (!this.cleanSweepUnlocked) {
-      this.openCleanSweepQuestion();
-      return;
-    }
-
     const n = this.cleaningLayer.sweepNear(
       this.player.x,
       this.player.y,
@@ -3616,7 +3661,16 @@ export default class GameScene extends Phaser.Scene {
     );
     const bedCropId = bedDef.cropId;
 
-    // One plant type per level — cannot replant the same crop on another bed
+    if (!bedCropId || bedDef.inactive) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'plant_blocked',
+        reason: 'no_crop_for_bed',
+        plotId: plot?.id,
+      });
+      return;
+    }
+
+    // One plant type per bed — cannot replant the same crop on another bed
     if (this.cropPlantedSet?.has(bedCropId)) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'plant_blocked',
@@ -3800,13 +3854,18 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Harvest requires one science question per vegetable challenge.
-   * After a correct answer, picking that crop is free for the rest of the challenge.
+   * Harvest ready crops underfoot only after the harvest quiz was unlocked with E.
+   * Walking alone never opens a science quiz.
    */
   harvestCropsUnderfoot() {
     if (this.farmInputLocked || !this.player) return;
 
     if (!this.plantDoneForChallenge && (!this.cropPlantedSet || this.cropPlantedSet.size === 0)) {
+      this.hideHarvestingBanner();
+      return;
+    }
+
+    if (!this.harvestUnlocked) {
       this.hideHarvestingBanner();
       return;
     }
@@ -3827,12 +3886,6 @@ export default class GameScene extends Phaser.Scene {
 
     if (hit.length < 1) {
       this.hideHarvestingBanner();
-      return;
-    }
-
-    // One harvest quiz per vegetable challenge, then free picking
-    if (!this.harvestUnlocked) {
-      this.openHarvestQuestion();
       return;
     }
 

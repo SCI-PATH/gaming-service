@@ -80,42 +80,109 @@ function normalizeAttempts(body = {}) {
   }).slice(0, 8);
 }
 
+function clip(text, n = 120) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  return s.length > n ? `${s.slice(0, n - 1).trim()}…` : s;
+}
+
+function looksLikeMetaAnswer(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return true;
+  if (/^(id|guid|uuid|null|undefined|nan)$/i.test(s)) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{10,}$/i.test(s)) return true;
+  if (/^\[object object\]$/i.test(s)) return true;
+  return false;
+}
+
+function topicFromAttempt(a) {
+  const topic = String(a.topic || '').trim();
+  if (topic && !/^science$/i.test(topic)) return topic;
+  const prompt = String(a.prompt || a.question || '');
+  if (/photosynth|chlorophyll|light.*plant/i.test(prompt)) return 'Photosynthesis';
+  if (/pollinat|pollen|bee/i.test(prompt)) return 'Pollination';
+  if (/physical change|chemical change/i.test(prompt)) return 'Physical & Chemical Changes';
+  if (/soil|nutrient|fertiliz/i.test(prompt)) return 'Soil Science';
+  if (/water cycle|evaporat|condens/i.test(prompt)) return 'Water Cycle';
+  if (/food chain|ecosystem|habitat/i.test(prompt)) return 'Ecology';
+  return topic || 'Science';
+}
+
+function cleanStudentAnswer(raw) {
+  const s = String(raw || '').trim();
+  if (!s || looksLikeMetaAnswer(s)) return '';
+  return s;
+}
+
+function cleanCorrectAnswer(raw) {
+  const s = String(raw || '').trim();
+  if (!s || looksLikeMetaAnswer(s)) return '';
+  if (/^\d+\s+of\s+\d+\s+blanks/i.test(s)) return '';
+  if (/^no answer provided/i.test(s)) return '';
+  if (/^correct\.?$/i.test(s)) return '';
+  return s;
+}
+
 function fallbackWhyWrong(a) {
-  const w = String(a.studentAnswer || '').trim();
-  const r = String(a.correctAnswer || '').trim();
+  const w = cleanStudentAnswer(a.studentAnswer);
+  const r = cleanCorrectAnswer(a.correctAnswer);
+  const q = clip(a.prompt || a.question, 110);
   if (!w || w.startsWith('(')) {
-    return `The key idea is: ${r || 'review the farm science lesson'}.`;
+    if (r && q) return `For “${q}”, the better idea is “${r}”.`;
+    if (r) return `The key idea is: ${r}.`;
+    if (q) return `Re-read the farm question: “${q}”.`;
+    return 'Review the farm science lesson for this question.';
   }
   if (r) {
-    return `You picked "${w}", but the better science idea is "${r}".`;
+    return q
+      ? `On “${q}”, you picked “${w}”, but the better idea is “${r}”.`
+      : `You picked “${w}”, but the better science idea is “${r}”.`;
   }
-  return `Think again about why "${w}" does not fit this plant/farm process.`;
+  return q
+    ? `“${w}” does not answer “${q}”. Look for the idea that fits the farm question.`
+    : `“${w}” does not fit this farm science question. Try the idea that matches the question stem.`;
 }
 
 /**
  * Deterministic map guaranteed to include every miss (local fallback).
  */
 export function buildLocalMindMap(attempts) {
-  const list = attempts || [];
+  const list = (attempts || []).map((a) => ({
+    ...a,
+    topic: topicFromAttempt(a),
+    studentAnswer: cleanStudentAnswer(a.studentAnswer),
+    correctAnswer: cleanCorrectAnswer(a.correctAnswer),
+  }));
   const topics = [...new Set(list.map((a) => a.topic).filter(Boolean))];
   const title =
     topics.length === 1 ? topics[0] : 'Your Science Gaps';
 
-  const branches = list.map((a, i) => ({
-    miss_index: i + 1,
-    topic: a.topic || 'Science',
-    icon: iconFor(a.topic),
-    question: a.prompt || '',
-    student_answer: a.studentAnswer || '',
-    correct_answer: a.correctAnswer || '',
-    why_wrong: fallbackWhyWrong(a),
-    key_concept: a.correctAnswer || a.topic || 'Key idea',
-    key_concept_explain:
-      a.hint ||
-      `Remember: ${a.correctAnswer || a.topic} matters for plants on the farm.`,
-    farm_link: `Use the ${a.topic || 'science'} idea on your farm crop story.`,
-    color_index: i % 6,
-  }));
+  const branches = list.map((a, i) => {
+    const topic = a.topic || 'Science';
+    const right = a.correctAnswer;
+    const q = clip(a.prompt || a.question, 140);
+    return {
+      miss_index: i + 1,
+      topic,
+      icon: iconFor(topic),
+      question: a.prompt || a.question || '',
+      student_answer: a.studentAnswer || 'no pick yet',
+      correct_answer: right || '',
+      why_wrong: fallbackWhyWrong(a),
+      key_concept: clip(right || topic, 40) || 'Key idea',
+      key_concept_explain: right
+        ? q
+          ? `Correct for “${clip(q, 80)}”: ${right}.`
+          : `Correct idea: ${right}. Use it on your farm crop story.`
+        : q
+          ? `Study the question “${clip(q, 90)}” and name the science idea it asks for.`
+          : `Remember the ${topic} idea that fits this farm question.`,
+      farm_link: q
+        ? `On the farm, apply the answer to: “${clip(q, 70)}”.`
+        : `Use the ${topic} idea on your farm crop story.`,
+      color_index: i % 6,
+    };
+  });
 
   return {
     title,
@@ -288,10 +355,12 @@ Rules:
 3. Do NOT invent extra mistakes. Do NOT drop any miss.
 4. Keep language encouraging and age-appropriate. Never say frustrated/struggling/weak.
 5. Use farm / plants analogies when natural.
-6. Never invent a different correct answer than the one given.
-7. summary and big_picture must match the personalization band (${tone}).
+6. Never invent a different correct answer than the one given — copy correct_answer from input when present.
+7. Every why_wrong / key_concept_explain / farm_link MUST answer THAT branch's question text — not a vague neighboring topic.
+8. summary and big_picture must match the LIVE personalization band (${tone}, frustration_level=${level}).
+9. If a correct_answer looks like an API/grading error, ignore it and explain from the question stem only.
 
-Incorrect answers (ground truth):
+Incorrect answers (ground truth — each branch is one student miss):
 ${JSON.stringify(payload, null, 2)}
 
 JSON schema:
@@ -397,11 +466,18 @@ export async function generateMindMapFromMistakes(body = {}) {
         : null,
     };
   } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err || '');
+    const soft =
+      /model_not_found|does not exist|404|rate.?limit|429|GROQ|timeout/i.test(
+        raw,
+      )
+        ? 'AI map unavailable — showing a clear local map of every miss.'
+        : 'AI unavailable — using local map of every miss.';
     return {
       ok: true,
       mindMap: toClientShape(local),
       provider: 'local-fallback',
-      note: err instanceof Error ? err.message : 'AI unavailable; used local map.',
+      note: soft,
       aiError: true,
       frustrationLevel: adaptation.level,
     };

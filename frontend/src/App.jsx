@@ -358,28 +358,30 @@ export default function App() {
     telemetrySession.frustrationLevel,
   ]);
 
-  // While avatar / quizzes / shop / quest scroll need focus, disable Phaser key capture
+  // While avatar / quizzes / shop / quest scroll need focus, disable Phaser key capture.
+  // Depend on open/closed booleans only — swapping the loading quiz payload must not
+  // unlock combat (a cleanup emitUiInputLock(false) was thawing enemies mid-quiz).
+  const quizOpen = Boolean(quizPayload);
   useEffect(() => {
     const locked = Boolean(
       avatarOpen ||
-        quizPayload ||
+        quizOpen ||
         shopOpen ||
         questScrollOpen ||
         motivationOpen ||
         gameOverPayload,
     );
     const freezeCombat = Boolean(
-      quizPayload ||
+      quizOpen ||
         questScrollOpen ||
         shopOpen ||
         motivationOpen ||
         gameOverPayload,
     );
     emitUiInputLock(locked, { freezeCombat });
-    return () => emitUiInputLock(false);
   }, [
     avatarOpen,
-    quizPayload,
+    quizOpen,
     shopOpen,
     questScrollOpen,
     motivationOpen,
@@ -440,6 +442,8 @@ export default function App() {
         selectedText: attempt.selectedText || null,
         questionData: attempt.questionData || null,
         responseTimeMs: attempt.responseTimeMs ?? null,
+        correctAnswer: attempt.correctAnswer || null,
+        gradeFeedback: attempt.gradeFeedback || null,
       });
     },
     [recordAvatarAnswer],
@@ -1011,6 +1015,7 @@ export default function App() {
       window.setTimeout(() => setHint(null), 2600);
     }
     if (detail?.type === 'quiz_blocked') {
+      setQuizPayload(null);
       setHint(
         detail.hint ||
           'Science quiz is unavailable right now. Try again in a moment.',
@@ -1123,8 +1128,6 @@ export default function App() {
 
   const handleQuizClose = useCallback(() => {
     setQuizPayload(null);
-    emitUiInputLock(false);
-    emitUnlockShopClose();
   }, []);
 
   const handleShopClose = useCallback(() => {
@@ -1281,6 +1284,7 @@ export default function App() {
               cropName={quizPayload.cropName || farm.cropName}
               mode={quizPayload.mode || quizPayload.challenge || 'plant'}
               carriedCount={quizPayload.carriedCount ?? carriedCount}
+              loading={Boolean(quizPayload.loading)}
               gameplayAssist={
                 quizPayload.gameplayAssist || {
                   answerTimerMs: quizPayload.answerTimerMs,
@@ -1427,7 +1431,12 @@ export default function App() {
         }
         telemetry={{
           ...telemetrySession,
-          metrics: avatarTrigger?.metrics || behavioralMetrics,
+          // Prefer LIVE metrics / frustration over the open-time trigger snapshot
+          metrics: {
+            ...(avatarTrigger?.metrics || {}),
+            ...(behavioralMetrics || {}),
+            ...(telemetrySession.metrics || {}),
+          },
           mindMap:
             avatarTrigger?.mindMap || activeMindMap || null,
           learningPrefs,
@@ -1459,13 +1468,29 @@ export default function App() {
             avatarTrigger?.intervention_focus?.code ||
             null,
           consecutiveFails:
-            avatarTrigger?.consecutiveFails ?? telemetrySession.consecutiveFails,
+            telemetrySession.consecutiveFails ?? avatarTrigger?.consecutiveFails,
           frustrationScore:
-            avatarTrigger?.frustrationScore ?? telemetrySession.frustrationScore,
+            telemetrySession.frustrationScore ?? avatarTrigger?.frustrationScore,
+          frustrationLevel:
+            telemetrySession.frustrationLevel ||
+            behavioralMetrics?.frustration_level ||
+            null,
+          frustrationSignals:
+            telemetrySession.frustrationSignals ||
+            behavioralMetrics?.frustration_signals ||
+            [],
+          answerHistory:
+            telemetrySession.answerHistory ||
+            behavioralMetrics?.answer_history ||
+            [],
           timeOnQuestionMs:
-            avatarTrigger?.timeOnQuestionMs ?? telemetrySession.timeOnQuestionMs,
+            telemetrySession.timeOnQuestionMs ?? avatarTrigger?.timeOnQuestionMs,
           lastWrongAnswer:
-            avatarTrigger?.lastWrongAnswer ?? telemetrySession.lastWrongAnswer,
+            telemetrySession.lastWrongAnswer ?? avatarTrigger?.lastWrongAnswer,
+          lastCorrectAnswer:
+            telemetrySession.lastCorrectAnswer ??
+            avatarTrigger?.lastCorrectAnswer ??
+            null,
           lastTriggerReason:
             avatarTrigger?.reason ?? telemetrySession.lastTriggerReason,
           lastInterventionMode:

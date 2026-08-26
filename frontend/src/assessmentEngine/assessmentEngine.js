@@ -6,6 +6,8 @@
  *   VITE_ASSESSMENT_DEPLOYED_BASE
  *   VITE_ASSESSMENT_LOCAL_BASE
  *   VITE_ASSESSMENT_API_BASE (optional override tried first)
+ *
+ * Browser default: same-origin `/assessment-api` (Vite proxy → IAE :8004).
  */
 
 function trimBase(value) {
@@ -18,6 +20,7 @@ function envBase(key) {
 }
 
 export const ASSESSMENT_ENGINE = Object.freeze({
+  SAME_ORIGIN_BASE: '/assessment-api',
   DEPLOYED_BASE_URL:
     envBase('VITE_ASSESSMENT_DEPLOYED_BASE') || 'http://43.204.6.115:8004',
   LOCAL_BASE_URL:
@@ -27,14 +30,20 @@ export const ASSESSMENT_ENGINE = Object.freeze({
 
 export function getAssessmentBaseCandidates() {
   const override = envBase('VITE_ASSESSMENT_API_BASE');
+  const sameOrigin = ASSESSMENT_ENGINE.SAME_ORIGIN_BASE;
   const deployed = ASSESSMENT_ENGINE.DEPLOYED_BASE_URL;
   const local = ASSESSMENT_ENGINE.LOCAL_BASE_URL;
 
-  if (override) {
-    return override === local ? [override] : [override, local];
-  }
-  if (deployed === local) return [deployed];
-  return [deployed, local];
+  /** @type {string[]} */
+  const bases = [];
+  if (override) bases.push(override);
+  else bases.push(sameOrigin, deployed);
+
+  const host =
+    typeof window !== 'undefined' ? String(window.location.hostname || '') : '';
+  const onLocalHost = host === 'localhost' || host === '127.0.0.1';
+  if (local && onLocalHost && !bases.includes(local)) bases.push(local);
+  return [...new Set(bases.filter(Boolean))];
 }
 
 export const ASSESSMENT_PATHS = Object.freeze({

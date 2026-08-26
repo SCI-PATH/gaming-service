@@ -2,8 +2,8 @@
  * Grade 6–9 farming levels:
  * plant quiz → grow → harvest (carry on back) → load quiz at dock → sell.
  *
- * Science question text now comes from the Assessment Engine
- * (post-lesson → next). Local mock banks below are kept commented for reference.
+ * Prefer Assessment Engine /next for E-key challenges.
+ * Local banks are unused by the live quiz path.
  */
 export const FARM_LEVELS = [
   {
@@ -19,10 +19,6 @@ export const FARM_LEVELS = [
     goalText:
       'Plant quiz on beds · harvest onto your back · load quiz at the dock',
     tint: 0xff66aa,
-    // Mock bank disabled — Assessment Engine /next supplies questions.
-    questions: [],
-    loadQuestions: [],
-    /*
     questions: [
       {
         id: 'l1-q1',
@@ -101,7 +97,6 @@ export const FARM_LEVELS = [
         hint: 'Roots pull water and minerals from the soil.',
       },
     ],
-    */
   },
   {
     id: 2,
@@ -116,10 +111,6 @@ export const FARM_LEVELS = [
     goalText:
       'Plant quiz on beds · harvest onto your back · load quiz at the dock',
     tint: 0xffcc33,
-    // Mock bank disabled — Assessment Engine /next supplies questions.
-    questions: [],
-    loadQuestions: [],
-    /*
     questions: [
       {
         id: 'l2-q1',
@@ -200,7 +191,6 @@ export const FARM_LEVELS = [
         hint: 'Leaves hold chlorophyll for photosynthesis.',
       },
     ],
-    */
   },
 ];
 
@@ -219,11 +209,7 @@ export function getFarmLevel(levelId = 1) {
 }
 
 /**
- * Legacy local picker — mock banks are empty; Assessment Engine is the source.
- * @param {object} level
- * @param {string} [avoidId]
- * @param {'plant'|'load'} [mode='plant']
- * @returns {object | null}
+ * Local farm question for this level. Used when Assessment Engine is unavailable.
  */
 export function pickScienceQuestion(level, avoidId, mode = 'plant') {
   const loadLike = mode === 'load' || mode === 'unload' || mode === 'sell';

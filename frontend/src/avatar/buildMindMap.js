@@ -12,6 +12,7 @@ import {
   CONCEPT_CATALOG,
   resolveTopicKey,
 } from './conceptMaps.js';
+import { safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
 
 const BRANCH_COLORS = [
   { key: 'rose', stroke: '#c45c5c', fill: '#fde8e8', accent: '#9a3030' },
@@ -54,7 +55,10 @@ export function extractQuestionFacts(questionData) {
     grade: questionData.grade || null,
     options: options.map((o) => o.text),
     correctIndex,
-    correctAnswer: correct?.text || null,
+    correctAnswer:
+      questionData.correctAnswer ||
+      correct?.text ||
+      null,
   };
 }
 
@@ -78,7 +82,7 @@ export function buildMissAttempt(questionData, selectedText = null) {
     prompt: facts.prompt,
     options: facts.options,
     correctIndex: facts.correctIndex,
-    correctAnswer: facts.correctAnswer,
+    correctAnswer: safeScienceLine(facts.correctAnswer, null),
     studentAnswer: selectedText || '(timed out / no selection)',
     hint: facts.hint,
     grade: facts.grade,
@@ -87,11 +91,22 @@ export function buildMissAttempt(questionData, selectedText = null) {
 }
 
 export function explainWhyWrong(attempt) {
-  const wrong = String(attempt.studentAnswer || '').trim();
-  const right = String(attempt.correctAnswer || '').trim();
+  const wrong =
+    friendlyWrongAnswer(attempt.studentAnswer, 80) ||
+    String(attempt.studentAnswer || '').trim();
+  const right = safeScienceLine(attempt.correctAnswer, '');
+  const q = String(attempt.prompt || attempt.question || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const qBit = q ? ` For “${q.length > 90 ? `${q.slice(0, 89)}…` : q}”` : '';
 
-  if (!wrong || wrong.startsWith('(')) {
-    return `You need the correct science idea: ${right || 'see the lesson key idea'}.`;
+  if (
+    !wrong ||
+    wrong.startsWith('(') ||
+    /ran out of time/i.test(wrong) ||
+    /^(id|guid|uuid)$/i.test(wrong)
+  ) {
+    return `You need the correct science idea${qBit}: ${right || 'see the lesson key idea'}.`;
   }
   if (right && wrong.toLowerCase() === right.toLowerCase()) {
     return `That matches the correct idea (${right}).`;
@@ -110,13 +125,22 @@ export function explainWhyWrong(attempt) {
   if (/making metal|rocks|soil disappear|thunder/.test(w)) {
     return `"${wrong}" is not a real job for this farm science idea.`;
   }
-  return `You chose "${wrong}". The correct idea is "${right || '…'}".`;
+  if (right) {
+    return `You chose "${wrong}".${qBit} The correct idea is "${right}".`;
+  }
+  return `You chose "${wrong}".${qBit} Look for the science idea that answers the farm question.`;
 }
 
 export function explainCorrectIdea(attempt) {
-  const right = attempt.correctAnswer;
-  const hint = attempt.hint;
+  const right = safeScienceLine(attempt.correctAnswer, null);
+  const hint = safeScienceLine(attempt.hint, null);
   const topic = attempt.topic || 'Science';
+  const q = String(attempt.prompt || attempt.question || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (right && q) {
+    return `Correct for “${q.length > 70 ? `${q.slice(0, 69)}…` : q}”: ${right}.${hint ? ` ${hint}` : ''}`;
+  }
   if (right && hint) {
     return `Correct: ${right}. ${hint}`;
   }
@@ -124,6 +148,7 @@ export function explainCorrectIdea(attempt) {
     return `Correct: ${right}. Link it to ${topic} on the farm.`;
   }
   if (hint) return hint;
+  if (q) return `Re-read the farm question and name its key science idea: “${q.length > 90 ? `${q.slice(0, 89)}…` : q}”.`;
   return `Re-read the key idea under ${topic}.`;
 }
 
@@ -337,30 +362,42 @@ export function buildPersonalizedMindMap({
     const color = BRANCH_COLORS[i % BRANCH_COLORS.length];
     const t = resolveTopicKey(a.topic) || a.topic || 'Science';
     topicsSeen.add(t);
-    const related = catalogRelated(t, a.correctAnswer, usedRelated);
-    const why = explainWhyWrong(a);
-    const rightExplain = explainCorrectIdea(a);
+    const cleanWrong =
+      friendlyWrongAnswer(a.studentAnswer, 80) || a.studentAnswer || 'no pick yet';
+    const cleanRight =
+      safeScienceLine(a.correctAnswer, null) || 'see the lesson key idea';
+    const related = catalogRelated(t, cleanRight, usedRelated);
+    const why = explainWhyWrong({
+      ...a,
+      studentAnswer: cleanWrong,
+      correctAnswer: cleanRight,
+    });
+    const rightExplain = explainCorrectIdea({
+      ...a,
+      studentAnswer: cleanWrong,
+      correctAnswer: cleanRight,
+    });
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
     const nodes = [
       {
         id: `m${i}-wrong`,
         kind: 'wrong',
-        label: shortLabel(a.studentAnswer, 22) || 'Your pick',
+        label: shortLabel(cleanWrong, 22) || 'Your pick',
         title: 'Your pick',
         icon: '✗',
         body: why,
-        meta: { studentAnswer: a.studentAnswer },
+        meta: { studentAnswer: cleanWrong },
       },
       {
         id: `m${i}-right`,
         kind: 'right',
-        label: shortLabel(a.correctAnswer, 22) || 'Correct idea',
+        label: shortLabel(cleanRight, 22) || 'Correct idea',
         title: 'Correct idea',
         icon: '✓',
         body: rightExplain,
         meta: {
-          correctAnswer: a.correctAnswer,
+          correctAnswer: cleanRight,
           hint: a.hint,
         },
       },
@@ -384,7 +421,7 @@ export function buildPersonalizedMindMap({
       },
     ];
     if (profile.extraLinks) {
-      const extra = catalogRelated(t, a.correctAnswer, usedRelated);
+      const extra = catalogRelated(t, cleanRight, usedRelated);
       nodes.push({
         id: `m${i}-link2`,
         kind: 'link',
@@ -407,14 +444,14 @@ export function buildPersonalizedMindMap({
       colorIndex: i,
       prompt: a.prompt,
       question: a.prompt,
-      studentAnswer: a.studentAnswer,
-      correctAnswer: a.correctAnswer,
+      studentAnswer: cleanWrong,
+      correctAnswer: cleanRight,
       hint: a.hint,
       why,
       why_wrong: why,
       rightExplain,
-      keyConcept: shortLabel(a.correctAnswer, 32) || t,
-      key_concept: shortLabel(a.correctAnswer, 32) || t,
+      keyConcept: shortLabel(cleanRight, 32) || t,
+      key_concept: shortLabel(cleanRight, 32) || t,
       keyExplain: rightExplain,
       key_concept_explain: rightExplain,
       farmLink: related.explanation,

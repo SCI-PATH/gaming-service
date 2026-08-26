@@ -108,12 +108,54 @@ export function buildContextPayload({
       quiz?.question ||
       quiz?.questionData?.prompt ||
       quiz?.questionData?.question ||
+      quiz?.question_text ||
+      focusIn?.current_question ||
+      telemetry.lastQuestionText ||
       null,
+    280,
   );
 
   const lastWrong = friendlyWrongAnswer(
-    telemetry.lastWrongAnswer || quiz?.studentLastWrongAnswer || null,
+    telemetry.lastWrongAnswer ||
+      quiz?.studentLastWrongAnswer ||
+      quiz?.selectedText ||
+      null,
   );
+
+  const safeCorrect = (raw) => {
+    const s = asQuestionText(raw, 200);
+    if (!s) return null;
+    if (/grading failed|model_not_found|error code|does not exist/i.test(s)) {
+      return null;
+    }
+    return s;
+  };
+
+  const knownCorrect = safeCorrect(
+    quiz?.correctAnswer ||
+      quiz?.questionData?.correctAnswer ||
+      focusIn?.correct_answer ||
+      telemetry.lastCorrectAnswer ||
+      null,
+  );
+
+  const answerHistory = (
+    Array.isArray(telemetry.answerHistory)
+      ? telemetry.answerHistory
+      : Array.isArray(m.answer_history)
+        ? m.answer_history
+        : []
+  )
+    .slice(-8)
+    .map((h) => ({
+      question: asQuestionText(h.question || h.prompt, 160),
+      student_answer: friendlyWrongAnswer(h.student_answer || h.selectedText, 60),
+      is_correct: Boolean(h.is_correct ?? h.isCorrect),
+      correct_answer: safeCorrect(h.correct_answer || h.correctAnswer),
+      topic: h.topic || null,
+      time_sec: h.time_sec ?? h.timeSec ?? null,
+    }))
+    .filter((h) => h.question || h.student_answer);
 
   const timePerQ =
     m.time_per_question_avg_sec != null
@@ -201,11 +243,8 @@ export function buildContextPayload({
     focus?.code ||
     (isNonWrongTrigger ? String(triggerReason || '').toUpperCase() : null);
 
-  const frComputed =
-    m.frustration ||
-    (m.frustration_score != null || telemetry.frustrationScore != null
-      ? null
-      : calculateFrustrationScore(m));
+  const frComputed = calculateFrustrationScore(m);
+  // Prefer LIVE telemetry/session score; always recompute adaptation from that score.
   const frustrationScore = Number(
     telemetry.frustrationScore ??
       m.frustration_score ??
@@ -223,9 +262,10 @@ export function buildContextPayload({
     m.frustration_signals ||
     frComputed?.signals ||
     [];
-  const frustrationAdaptation =
-    frComputed?.adaptation ||
-    buildFrustrationAdaptation(frustrationScore, frustrationSignals);
+  const frustrationAdaptation = buildFrustrationAdaptation(
+    frustrationScore,
+    frustrationSignals,
+  );
 
   return {
     student_profile: {
@@ -308,7 +348,11 @@ export function buildContextPayload({
       ? {
           question_text: questionText,
           student_last_wrong_answer: lastWrong,
-          mode: quiz?.mode || null,
+          correct_answer:
+            knownCorrect ||
+            safeCorrect(mindMapSummary?.correctAnswer) ||
+            null,
+          mode: quiz?.mode || quiz?.questionData?.mode || null,
           topic:
             focus?.concept_topic ||
             quiz?.topic ||
@@ -317,16 +361,35 @@ export function buildContextPayload({
             null,
         }
       : {
-          question_text: focus?.current_question || null,
+          question_text: asQuestionText(focus?.current_question, 280),
           student_last_wrong_answer: lastWrong,
+          correct_answer:
+            knownCorrect ||
+            safeCorrect(focus?.correct_answer) ||
+            safeCorrect(mindMapSummary?.correctAnswer) ||
+            null,
           mode: null,
           topic: focus?.concept_topic || mindMapSummary?.topic || null,
         },
+    answer_history: answerHistory,
+    performance_snapshot: {
+      correct_answers: correct,
+      incorrect_answers: incorrect,
+      accuracy_percentage: accuracyPct,
+      consecutive_fails:
+        m.consecutive_fails ?? telemetry.consecutiveFails ?? 0,
+      recent_correct_streak: m.recent_correct_streak ?? 0,
+      time_per_question_avg_sec: timePerQ,
+      frustration_score: frustrationScore,
+      frustration_level: frustrationLevel,
+    },
     intervention_mode: mode,
     mentor_goals: [
       'focused_intervention_only',
       'trigger_reason_to_concept_lock',
-      'socratic_hints_not_answers',
+      'ground_reply_in_active_farm_question',
+      'reveal_correct_answer_when_known',
+      'use_live_frustration_each_turn',
       'no_general_chatbot',
       'frustration_aware_tone_private',
       allowMindMap

@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAiMindMap } from './fetchAiMindMap.js';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
+import { softProviderNote, safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
 import {
   alignSpeechToText,
   buildReadingTimeline,
@@ -69,11 +70,32 @@ function toDisplayBranches(map) {
       topic: b.topic || b.label || 'Science',
       icon: b.icon || '🔬',
       question: b.prompt || b.question || '',
-      studentAnswer: b.studentAnswer || b.student_answer || '',
-      correctAnswer: b.correctAnswer || b.correct_answer || '',
-      why: b.why || b.why_wrong || '',
-      keyConcept: b.keyConcept || b.key_concept || b.correctAnswer || b.topic,
-      keyExplain: b.keyExplain || b.key_concept_explain || b.summary || '',
+      studentAnswer:
+        friendlyWrongAnswer(
+          b.studentAnswer || b.student_answer || '',
+          96,
+        ) ||
+        (/^(id|guid|uuid)$/i.test(
+          String(b.studentAnswer || b.student_answer || '').trim(),
+        )
+          ? 'unclear pick'
+          : 'no pick yet'),
+      correctAnswer:
+        safeScienceLine(b.correctAnswer || b.correct_answer, null) ||
+        (String(b.prompt || b.question || '').trim()
+          ? 'see the idea in this farm question'
+          : 'see the lesson key idea'),
+      why: safeScienceLine(b.why || b.why_wrong, '') || '',
+      keyConcept:
+        safeScienceLine(
+          b.keyConcept || b.key_concept || b.correctAnswer || b.topic,
+          b.topic || 'Science',
+        ),
+      keyExplain:
+        safeScienceLine(
+          b.keyExplain || b.key_concept_explain || b.summary,
+          '',
+        ) || '',
       farmLink: b.farmLink || b.farm_link || '',
       colorIndex: b.colorIndex ?? b.color_index ?? i % 6,
     }));
@@ -230,16 +252,15 @@ export default function ConceptMindMap({
           onMapChange?.(result.mindMap);
         }
         setNote(
-          result.note ||
+          softProviderNote(result.note) ||
             `AI map with all ${seedAttempts.length} incorrect answers.`,
         );
         setStatus('ready');
       } catch (err) {
         if (cancelled) return;
         setNote(
-          err instanceof Error
-            ? `Using local map (AI: ${err.message})`
-            : 'Using local map of all misses.',
+          softProviderNote(err?.message) ||
+            'Using local map of all misses.',
         );
         setStatus('ready');
       }
@@ -432,8 +453,8 @@ export default function ConceptMindMap({
             Building AI mind map for every miss…
           </div>
         ) : null}
-        {note && status !== 'loading' ? (
-          <p className="mm-note">{note}</p>
+        {note && status !== 'loading' && softProviderNote(note) ? (
+          <p className="mm-note">{softProviderNote(note)}</p>
         ) : null}
       </header>
 

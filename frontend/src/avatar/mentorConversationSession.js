@@ -140,6 +140,14 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
     ),
 
+    correct_answer: asQuestionText(
+
+      focus.correct_answer || extras.correctAnswer || null,
+
+      200,
+
+    ),
+
     miss_count: focus.concept_miss_count || 0,
 
     avg_sec:
@@ -970,6 +978,8 @@ export function sessionToFocusPatch(session) {
     spoken_opener: session.spoken_opener,
 
     last_wrong_answer: session.evidence?.last_wrong || null,
+
+    correct_answer: session.evidence?.correct_answer || null,
 
     current_question: session.evidence?.farm_question || null,
 

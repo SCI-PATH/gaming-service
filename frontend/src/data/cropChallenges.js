@@ -122,8 +122,8 @@ export const BED_VARIETY = [
 
 /**
  * Resolve a crop id for a specific plot bed.
- * When a levelPlan with multiple crops is available each bed is
- * assigned a different challenge crop (round-robin by plot index).
+ * When a levelPlan with multiple crops is available each bed gets
+ * exactly one unique challenge crop (no round-robin repeats).
  * Passing just a single `challenge` object falls back to that crop.
  *
  * @param {string|number} plotId  – plot id or index
@@ -133,14 +133,28 @@ export const BED_VARIETY = [
  */
 export function cropIdForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
   const crops = levelPlan?.crops;
-  if (crops?.length) {
-    return crops[plotIndex % crops.length]?.cropId || 'tomato';
+  if (Array.isArray(crops) && crops.length) {
+    const idx = Math.max(0, Number(plotIndex) || 0);
+    // Strict 1:1 bed → crop. Never reuse another bed's vegetable.
+    return crops[idx]?.cropId || null;
   }
   return challenge?.cropId || 'tomato';
 }
 
 export function cropDefForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
-  const veg = vegById(cropIdForPlot(plotId, challenge, levelPlan, plotIndex));
+  const cropId = cropIdForPlot(plotId, challenge, levelPlan, plotIndex);
+  if (!cropId) {
+    return {
+      cropId: null,
+      cropName: null,
+      sprout: null,
+      ready: null,
+      produce: null,
+      tint: null,
+      inactive: true,
+    };
+  }
+  const veg = vegById(cropId);
   return {
     cropId: veg.id,
     cropName: veg.name,
@@ -148,6 +162,7 @@ export function cropDefForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
     ready: veg.ready,
     produce: veg.produce,
     tint: veg.tint || null,
+    inactive: false,
   };
 }
 
@@ -163,5 +178,21 @@ export function pickCountForChallenge(challenge, mastery) {
 export function vegetableGoalText(challenge, harvestTarget) {
   const name = challenge?.cropName || 'crops';
   const n = Math.max(1, Number(harvestTarget) || challenge?.harvestCount || 4);
-  return `Plant ${name} at any gold bed · pick ${n} · sell at the farm shop`;
+  return `Plant ${name} at its gold bed · pick ${n} · sell at the farm shop`;
+}
+
+/** Quest blurb when a level has several vegetables. */
+export function multiCropGoalText(crops = [], harvestTarget = null) {
+  const names = (crops || [])
+    .map((c) => c.cropName || c.cropId)
+    .filter(Boolean);
+  if (!names.length) return 'Plant crops at the gold beds · pick · sell';
+  const list =
+    names.length <= 4
+      ? names.join(', ')
+      : `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+  const n = harvestTarget != null ? Math.max(1, Number(harvestTarget) || 1) : null;
+  return n
+    ? `Grow ${list} · pick ${n} each · sell at the farm shop`
+    : `Grow ${list} on different gold beds · pick · sell`;
 }
