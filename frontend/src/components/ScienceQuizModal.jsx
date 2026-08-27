@@ -194,15 +194,13 @@ export default function ScienceQuizModal({
 
   useEffect(() => {
     if (!questionData) return;
+    if (!remoteGrade) return;
     console.log('[AssessmentEngine] quiz modal showing', {
-      source: questionData.source || (remoteGrade ? 'assessment_engine' : 'local'),
       id: questionData.id,
       prompt: questionData.prompt || questionData.question,
-      options: questionData.options,
-      optionLetters: questionData.optionLetters,
       questionType,
     });
-  }, [questionData, remoteGrade, questionType]);
+  }, [questionData?.id, remoteGrade, questionType]);
 
   useEffect(() => {
     openedAtRef.current = Date.now();
