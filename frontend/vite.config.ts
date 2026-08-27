@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
   const gamingTarget = (
     env.GAMING_API_PROXY_TARGET ||
     env.VITE_GAMING_API_BASE ||
-    'http://127.0.0.1:8002'
+    'http://3.6.20.31:8002'
   ).replace(/\/+$/, '');
 
   const proxy = {
@@ -41,7 +41,8 @@ export default defineConfig(({ mode }) => {
           if (now - lastLog > 8000) {
             lastLog = now;
             console.warn(
-              `[vite] gaming API (${gamingTarget}) is not running. Start it with: npm run backend`,
+              `[vite] gaming API (${gamingTarget}) is not reachable. ` +
+                'For local: npm run backend. For EC2: check GAMING_API_PROXY_TARGET.',
             );
             if (err?.message) console.warn(`[vite] ${err.message}`);
           }

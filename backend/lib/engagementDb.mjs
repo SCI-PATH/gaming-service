@@ -395,6 +395,96 @@ export async function insertFrustrationSnapshot(body = {}) {
   return { snapshotId, frustrationScore: score, frustrationLevel: level };
 }
 
+/**
+ * Latest frustration for a student (and optional recent history).
+ * Other services poll this after the farm POSTs snapshots.
+ * @param {{ studentId: string, sessionId?: string, limit?: number }} opts
+ */
+export async function getFrustration(opts = {}) {
+  const studentId = String(opts.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
+
+  const sessionId = String(opts.sessionId || '').trim() || null;
+  const limit = Math.min(50, Math.max(1, Number(opts.limit) || 1));
+
+  const historyResult = await query(
+    `SELECT
+       snapshot_id,
+       session_id,
+       level_number,
+       frustration_score,
+       frustration_level,
+       signals,
+       dominant_indicators,
+       source,
+       recorded_at
+     FROM engagement_gaming.frustration_snapshots
+     WHERE student_id = $1
+       AND ($2::text IS NULL OR session_id = $2)
+     ORDER BY recorded_at DESC
+     LIMIT $3`,
+    [studentId, sessionId, limit],
+  );
+
+  const history = (historyResult.rows || []).map((row) => ({
+    snapshotId: row.snapshot_id,
+    sessionId: row.session_id || null,
+    levelNumber: row.level_number != null ? Number(row.level_number) : null,
+    frustrationScore:
+      row.frustration_score != null ? Number(row.frustration_score) : null,
+    frustrationLevel: row.frustration_level || null,
+    signals: row.signals && typeof row.signals === 'object' ? row.signals : {},
+    dominantIndicators: Array.isArray(row.dominant_indicators)
+      ? row.dominant_indicators
+      : [],
+    source: row.source || null,
+    recordedAt: row.recorded_at
+      ? new Date(row.recorded_at).toISOString()
+      : null,
+  }));
+
+  const latest = history[0] || null;
+
+  // Prefer denormalized student columns when not filtering by session
+  let frustrationScore = latest?.frustrationScore ?? null;
+  let frustrationLevel = latest?.frustrationLevel ?? null;
+  let recordedAt = latest?.recordedAt ?? null;
+
+  if (!sessionId) {
+    const studentResult = await query(
+      `SELECT latest_frustration_score, latest_frustration_level, last_seen_at
+       FROM engagement_gaming.students
+       WHERE student_id = $1`,
+      [studentId],
+    );
+    const student = studentResult.rows?.[0];
+    if (student) {
+      if (student.latest_frustration_score != null) {
+        frustrationScore = Number(student.latest_frustration_score);
+      }
+      if (student.latest_frustration_level) {
+        frustrationLevel = student.latest_frustration_level;
+      }
+      if (!recordedAt && student.last_seen_at) {
+        recordedAt = new Date(student.last_seen_at).toISOString();
+      }
+    }
+  }
+
+  return {
+    studentId,
+    frustrationScore,
+    frustrationLevel,
+    recordedAt,
+    sessionId: latest?.sessionId ?? null,
+    levelNumber: latest?.levelNumber ?? null,
+    source: latest?.source ?? null,
+    signals: latest?.signals ?? {},
+    dominantIndicators: latest?.dominantIndicators ?? [],
+    history,
+  };
+}
+
 export async function insertMentorIntervention(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');

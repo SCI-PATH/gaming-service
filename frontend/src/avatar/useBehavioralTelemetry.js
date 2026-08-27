@@ -13,8 +13,9 @@ import {
   trendFromDelta,
 } from './avatarConstants.js';
 import { calculateFrustrationScore, shouldOpenFrustrationAgent } from '../data/frustrationModel.js';
+import { recordFrustrationSample } from '../data/frustrationHistoryStore.js';
 import { evaluateStudentState } from './evaluateStudentState.js';
-import { resolveTopicKey } from './conceptMaps.js';
+import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import {
   emptyPreferences,
   extractLearningPreferences,
@@ -141,7 +142,11 @@ export function useBehavioralTelemetry({
     (questionData, selectedText) => {
       const attempt = buildMissAttempt(questionData, selectedText);
       const topic =
-        resolveTopicKey(attempt.topic) || attempt.topic || 'General Science';
+        inferConceptFromText(attempt.prompt || questionData?.prompt) ||
+        inferConceptFromText(questionData?.skill || questionData?.chapter_name) ||
+        resolveTopicKey(attempt.topic) ||
+        attempt.topic ||
+        'General Science';
 
       const prev = misconceptionsRef.current.get(topic) || {
         topic,
@@ -794,6 +799,12 @@ export function useBehavioralTelemetry({
       const selectionSwitches = selectionSwitchesThisQRef.current;
       const longPause = longPauseThisQRef.current;
       const topic =
+        inferConceptFromText(questionData?.prompt || questionData?.question) ||
+        inferConceptFromText(
+          questionData?.skill ||
+            questionData?.sub_concept ||
+            questionData?.chapter_name,
+        ) ||
         resolveTopicKey(questionData?.topic) ||
         questionData?.topic ||
         null;
@@ -875,6 +886,17 @@ export function useBehavioralTelemetry({
         lastWrongRef.current = null;
         // Always refresh frustration after every answer (correct included)
         const snapCorrect = syncMetrics();
+        recordFrustrationSample({
+          score: snapCorrect.frustration_score,
+          level: snapCorrect.frustration_level,
+          topic,
+          isCorrect: true,
+          timeSec: elapsedSec,
+          hints: usedHint ? 1 : 0,
+          retries: Math.max(0, attemptsOnThisQ - 1),
+          correctTotal: snapCorrect.correct_answers,
+          incorrectTotal: snapCorrect.incorrect_answers,
+        });
         setSession((prev) => ({
           ...prev,
           consecutiveFails: 0,
@@ -943,6 +965,17 @@ export function useBehavioralTelemetry({
       }
 
       const snap = syncMetrics();
+      recordFrustrationSample({
+        score: snap.frustration_score,
+        level: snap.frustration_level,
+        topic,
+        isCorrect: false,
+        timeSec: elapsedSec,
+        hints: usedHint ? 1 : 0,
+        retries: Math.max(1, attemptsOnThisQ),
+        correctTotal: snap.correct_answers,
+        incorrectTotal: snap.incorrect_answers,
+      });
       const totalWrong = incorrectRef.current;
       const conceptMisses = Math.max(
         conceptEntry?.missCount || 0,

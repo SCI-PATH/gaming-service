@@ -3,7 +3,7 @@
  * Avatar question → student answer → evaluate understanding → guidance / next question.
  */
 
-import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
+import { CONCEPT_CATALOG, inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import {
   friendlyStudentName,
   friendlyWhyOpened,
@@ -310,7 +310,13 @@ function buildAdaptiveFollowUpCore({
       context?.student_profile?.display_name ||
         context?.student_profile?.username,
     ) || 'friend';
+  const farmQRaw =
+    focus.current_question ||
+    context?.current_question?.question_text ||
+    context?.current_question?.prompt ||
+    null;
   const concept =
+    inferConceptFromText(farmQRaw) ||
     focus.concept_topic ||
     context?.current_question?.topic ||
     context?.mind_map?.topic ||
@@ -345,10 +351,6 @@ function buildAdaptiveFollowUpCore({
       ? `${String(studentMessage).slice(0, 77).trim()}…`
       : String(studentMessage).trim();
 
-  const farmQRaw =
-    focus.current_question ||
-    context?.current_question?.question_text ||
-    '';
   const farmBit = farmQRaw
     ? ` Remember the farm question was about: "${String(farmQRaw).slice(0, 96)}".`
     : '';

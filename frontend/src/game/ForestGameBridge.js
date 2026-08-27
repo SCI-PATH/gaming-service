@@ -72,6 +72,8 @@ export const FARM_EVENTS = {
   /** Lock farm keyboard while React overlays (avatar, typed inputs) are focused.
    * GameScene also pauses physics + music while locked. */
   UI_INPUT_LOCK: 'UI_INPUT_LOCK',
+  /** React → Phaser: write the in-progress farm run to localStorage */
+  SAVE_FARM_RUN: 'SAVE_FARM_RUN',
   SYNC_STUDENT_STATE: 'SYNC_STUDENT_STATE',
 };
 

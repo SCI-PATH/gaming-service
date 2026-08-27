@@ -10,6 +10,7 @@ import {
 } from '../data/frustrationModel.js';
 import {
   CONCEPT_CATALOG,
+  inferConceptFromText,
   resolveTopicKey,
 } from './conceptMaps.js';
 import { safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
@@ -49,7 +50,12 @@ export function extractQuestionFacts(questionData) {
 
   return {
     id: questionData.id || null,
-    topic: resolveTopicKey(questionData.topic) || questionData.topic || 'Science',
+    topic:
+      inferConceptFromText(questionData.prompt || questionData.question) ||
+      inferConceptFromText(questionData.skill || questionData.chapter_name) ||
+      resolveTopicKey(questionData.topic) ||
+      questionData.topic ||
+      'Science',
     prompt: questionData.prompt || questionData.question || '',
     hint: questionData.hint || null,
     grade: questionData.grade || null,

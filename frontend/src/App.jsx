@@ -6,12 +6,15 @@ import ForestRPGCanvas, {
   emitStartFarmLevel,
   emitSyncStudentState,
   emitReturnToMenu,
+  emitSaveFarmRun,
 } from './components/ForestRPGCanvas.jsx';
 import { ForestGameBridge, FARM_EVENTS } from './components/ForestGameBridge.js';
 import ScienceQuizModal from './components/ScienceQuizModal.jsx';
 import UnlockShopModal from './components/UnlockShopModal.jsx';
 import MotivationalVideoModal from './components/MotivationalVideoModal.jsx';
 import LevelQuestScroll from './components/LevelQuestScroll.jsx';
+import PlayWizard from './components/PlayWizard.jsx';
+import FarmPauseOverlay from './components/FarmPauseOverlay.jsx';
 import StudentLogin from './components/StudentLogin.jsx';
 import GameLobbyOverlay from './components/GameLobbyOverlay.jsx';
 import GameOverOverlay from './components/GameOverOverlay.jsx';
@@ -54,6 +57,13 @@ import {
   resolveLobbyProgress,
   syncBootstrapStudentProgress,
 } from './data/aptitudeProgress.js';
+import { resolvePlayWizard } from './data/playWizard.js';
+import {
+  clearFarmRun,
+  farmRunSummary,
+  hasFarmRun,
+  loadFarmRun,
+} from './data/farmRunStore.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
@@ -160,6 +170,8 @@ export default function App() {
   });
   const [challenges, setChallenges] = useState([]);
   const [questScrollOpen, setQuestScrollOpen] = useState(false);
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [savedRun, setSavedRun] = useState(() => farmRunSummary());
   /** 'farm' | 'dashboard' — research console vs play view */
   const [appView, setAppView] = useState('farm');
   const correctStreakRef = useRef(0);
@@ -180,6 +192,7 @@ export default function App() {
   /** Level id for which the quest scroll already auto-opened */
   const questScrollLevelRef = useRef(null);
   const storylineChallengesRef = useRef([]);
+  const pendingResumeRef = useRef(false);
 
   useEffect(() => {
     if (!student?.id) {
@@ -369,13 +382,16 @@ export default function App() {
         shopOpen ||
         questScrollOpen ||
         motivationOpen ||
+        pauseOpen ||
         gameOverPayload,
     );
     const freezeCombat = Boolean(
-      quizOpen ||
+      avatarOpen ||
+        quizOpen ||
         questScrollOpen ||
         shopOpen ||
         motivationOpen ||
+        pauseOpen ||
         gameOverPayload,
     );
     emitUiInputLock(locked, { freezeCombat });
@@ -385,6 +401,7 @@ export default function App() {
     shopOpen,
     questScrollOpen,
     motivationOpen,
+    pauseOpen,
     gameOverPayload,
   ]);
 
@@ -404,6 +421,7 @@ export default function App() {
     setInFarm(false);
     setChallenges([]);
     setQuestScrollOpen(false);
+    setPauseOpen(false);
     setAvatarOpen(false);
     setAvatarTrigger(null);
     setAppView('farm');
@@ -429,6 +447,12 @@ export default function App() {
     setAvatarTrigger(null);
     clearAvatarTrigger();
   }, [clearAvatarTrigger]);
+
+  useEffect(() => {
+    if (!avatarOpen || !inFarm) return;
+    emitSaveFarmRun();
+    setSavedRun(farmRunSummary());
+  }, [avatarOpen, inFarm]);
 
   const handleQuizAnswerAttempt = useCallback(
     (attempt = {}) => {
@@ -463,6 +487,7 @@ export default function App() {
         setFarm({ ...createInitialFarm(), ...boot.farmPatch });
       }
       syncStudentLogin(nextStudent);
+      setSavedRun(farmRunSummary());
     },
     [resetSessionUi],
   );
@@ -484,6 +509,7 @@ export default function App() {
         walletBalance: farm.earnings,
       });
     }
+    if (inFarm) emitSaveFarmRun();
     syncStudentLogout({
       endLevel: farm.levelId,
       quizCorrect: farm.questionsAnswered || 0,
@@ -505,6 +531,17 @@ export default function App() {
 
   const bagCount = farm.harvestedCount ?? farm.inventory ?? 0;
   const carriedCount = farm.carriedCount ?? 0;
+  const wizardStep = useMemo(
+    () =>
+      resolvePlayWizard({
+        farm,
+        quiz: quizPayload,
+        shopOpen,
+        challenges,
+        carriedCount,
+      }),
+    [farm, quizPayload, shopOpen, challenges, carriedCount],
+  );
 
   const handleReady = useCallback(() => setGameReady(true), []);
 
@@ -585,6 +622,23 @@ export default function App() {
   ]);
 
   const handleLobbyStart = useCallback(() => {
+    const run = loadFarmRun();
+    if (run) {
+      setPauseOpen(false);
+      emitStartFarmLevel({
+        levelId: run.levelId,
+        startingMoney: run.currentMoney,
+        resume: true,
+      });
+      return;
+    }
+    ForestGameBridge.emit(FARM_EVENTS.MENU_START);
+  }, []);
+
+  const handleLobbyStartOver = useCallback(() => {
+    clearFarmRun();
+    setSavedRun(null);
+    pendingResumeRef.current = false;
     ForestGameBridge.emit(FARM_EVENTS.MENU_START);
   }, []);
 
@@ -596,6 +650,83 @@ export default function App() {
     ForestGameBridge.emit(FARM_EVENTS.MENU_TOGGLE_MUSIC);
   }, []);
 
+  const handlePause = useCallback(() => {
+    if (
+      !inFarm ||
+      quizPayload ||
+      shopOpen ||
+      motivationOpen ||
+      avatarOpen ||
+      gameOverPayload
+    ) {
+      return;
+    }
+    emitSaveFarmRun();
+    setSavedRun(farmRunSummary());
+    setPauseOpen(true);
+  }, [inFarm, quizPayload, shopOpen, motivationOpen, avatarOpen, gameOverPayload]);
+
+  const handleResume = useCallback(() => {
+    setPauseOpen(false);
+  }, []);
+
+  const handlePauseLeave = useCallback(() => {
+    emitSaveFarmRun();
+    setSavedRun(farmRunSummary());
+    setPauseOpen(false);
+    pendingResumeRef.current = true;
+    emitUiInputLock(false);
+    emitReturnToMenu();
+  }, []);
+
+  const handleBackToFarm = useCallback(() => {
+    pendingResumeRef.current = hasFarmRun();
+    setAppView('farm');
+  }, []);
+
+  useEffect(() => {
+    if (appView !== 'farm' || !gameReady || inFarm) return;
+    if (!pendingResumeRef.current) return;
+    pendingResumeRef.current = false;
+    const run = loadFarmRun();
+    if (!run) return;
+    emitStartFarmLevel({
+      levelId: run.levelId,
+      startingMoney: run.currentMoney,
+      resume: true,
+    });
+  }, [appView, gameReady, inFarm]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.code !== 'Escape') return;
+      if (quizPayload || shopOpen || motivationOpen || avatarOpen || gameOverPayload) {
+        return;
+      }
+      if (pauseOpen) {
+        event.preventDefault();
+        handleResume();
+        return;
+      }
+      if (inFarm) {
+        event.preventDefault();
+        handlePause();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    inFarm,
+    pauseOpen,
+    quizPayload,
+    shopOpen,
+    motivationOpen,
+    avatarOpen,
+    gameOverPayload,
+    handlePause,
+    handleResume,
+  ]);
+
   const handleGameOverContinue = useCallback(() => {
     setGameOverPayload(null);
     emitUiInputLock(false);
@@ -603,8 +734,14 @@ export default function App() {
   }, []);
 
   const handleOpenResearchDashboard = useCallback(() => {
+    if (inFarm) {
+      emitSaveFarmRun();
+      pendingResumeRef.current = true;
+      setSavedRun(farmRunSummary());
+    }
+    setPauseOpen(false);
     setAppView('dashboard');
-  }, []);
+  }, [inFarm]);
 
   const handleChallengesState = useCallback((payload = {}) => {
     const list = Array.isArray(payload.challenges) ? payload.challenges : [];
@@ -1183,19 +1320,21 @@ export default function App() {
         farm={farm}
         gameReady={gameReady}
         onOpenDashboard={handleOpenResearchDashboard}
-        onBackToFarm={() => setAppView('farm')}
+        onBackToFarm={handleBackToFarm}
         onLogout={handleLogout}
       />
 
       {appView === 'dashboard' ? (
         <ResearchDashboard
+          key={student?.id}
           student={student}
           farm={farm}
           telemetrySession={telemetrySession}
           behavioralMetrics={behavioralMetrics}
+          misconceptions={misconceptions}
           rpEarned={rpEarned}
           ddaMisses={ddaMisses}
-          onBackToFarm={() => setAppView('farm')}
+          onBackToFarm={handleBackToFarm}
         />
       ) : (
       <div className="forest-play-layout">
@@ -1223,11 +1362,20 @@ export default function App() {
               musicEnabled={musicEnabled}
               gameReady={gameReady}
               onStart={handleLobbyStart}
+              onStartOver={handleLobbyStartOver}
+              savedRun={savedRun}
               onLeaderboard={handleLobbyLeaderboard}
               onToggleMusic={handleLobbyToggleMusic}
               onOpenProgress={handleOpenResearchDashboard}
             />
           )}
+
+          <FarmPauseOverlay
+            open={pauseOpen && inFarm}
+            levelId={farm.levelId || 1}
+            onResume={handleResume}
+            onLeave={handlePauseLeave}
+          />
 
           <GameOverOverlay
             open={Boolean(gameOverPayload)}
@@ -1251,6 +1399,14 @@ export default function App() {
             <button
               type="button"
               className="quest-scroll-reopen"
+              onClick={handlePause}
+              disabled={!gameReady || Boolean(quizPayload) || shopOpen || avatarOpen}
+            >
+              Pause
+            </button>
+            <button
+              type="button"
+              className="quest-scroll-reopen"
               onClick={() => setQuestScrollOpen(true)}
               disabled={
                 !gameReady ||
@@ -1264,6 +1420,13 @@ export default function App() {
                 : ''}
             </button>
           </div>
+          )}
+
+          {inFarm && !gameOverPayload && !motivationOpen && !pauseOpen && !avatarOpen && (
+            <PlayWizard
+              step={wizardStep}
+              hidden={Boolean(questScrollOpen)}
+            />
           )}
 
           {inFarm && hint && <div className="farm-hint">{hint}</div>}
@@ -1380,6 +1543,7 @@ export default function App() {
               performanceBand={farm.performanceBand}
               cropName={farm.cropName || 'crops'}
               challenges={challenges}
+              questStep={wizardStep?.pin || null}
             />
           </div>
         )}

@@ -54,6 +54,37 @@ function isGradeStatusFeedback(text) {
   );
 }
 
+function matchCorrectOptionIndex(correctAnswer, options, letters) {
+  if (!correctAnswer || !Array.isArray(options) || options.length === 0) {
+    return -1;
+  }
+  const token = String(correctAnswer).trim();
+  const letterMatch = token.match(/^([A-Da-d]|True|False)\b/);
+  if (letterMatch && Array.isArray(letters)) {
+    const needle = letterMatch[1];
+    const idx = letters.findIndex(
+      (letter) => String(letter).toLowerCase() === String(needle).toLowerCase(),
+    );
+    if (idx >= 0) return idx;
+  }
+  const lower = token.replace(/^[A-D]\s*[.):\-]\s*/i, '').trim().toLowerCase();
+  if (!lower) return -1;
+  return options.findIndex((opt) => {
+    const text = String(opt?.text || '').trim().toLowerCase();
+    return Boolean(text) && (text === lower || lower.includes(text) || text.includes(lower));
+  });
+}
+
+function formatChoiceLabel(text, letter) {
+  const body = String(text || '').trim();
+  const key = String(letter || '').trim();
+  if (!body) return key;
+  if (key && /^[A-D]$/i.test(key) && !new RegExp(`^${key}\\b`, 'i').test(body)) {
+    return `${key}. ${body}`;
+  }
+  return body;
+}
+
 function blanksFromMissed(missed) {
   if (!missed || typeof missed !== 'object') return null;
   const entries = Object.entries(missed)
@@ -312,11 +343,13 @@ export default function ScienceQuizModal({
           selectedText,
           responseTimeMs,
           timedOut: Boolean(timedOut),
+          correctAnswer:
+            engineCorrect || (isCorrect ? selectedText : null),
         });
         if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = window.setTimeout(() => {
           finish(isCorrect, responseTimeMs);
-        }, isCorrect ? 1600 : 2200);
+        }, isCorrect ? 1800 : 2800);
         setBusy(false);
         return;
       } catch {
@@ -350,11 +383,12 @@ export default function ScienceQuizModal({
       selectedText,
       responseTimeMs,
       timedOut: Boolean(timedOut),
+      correctAnswer: null,
     });
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
     closeTimerRef.current = window.setTimeout(() => {
       finish(isCorrect, responseTimeMs);
-    }, isCorrect ? 1600 : 2200);
+    }, isCorrect ? 1800 : 2800);
   };
   gradeAndFinishRef.current = gradeAndFinish;
 
@@ -523,6 +557,47 @@ export default function ScienceQuizModal({
     null;
   const correctText = correctOption?.text ?? '—';
 
+  const revealedCorrectIndex = (() => {
+    if (!result || !isChoiceType) return -1;
+    if (!remoteGrade) {
+      return options.findIndex((o) => o.isCorrect);
+    }
+    if (result.isCorrect && result.selectedIndex >= 0) {
+      return result.selectedIndex;
+    }
+    return matchCorrectOptionIndex(
+      result.correctAnswer,
+      options,
+      choiceLetters,
+    );
+  })();
+
+  const revealedCorrectText = (() => {
+    if (revealedCorrectIndex >= 0) {
+      return formatChoiceLabel(
+        options[revealedCorrectIndex]?.text,
+        choiceLetters?.[revealedCorrectIndex],
+      );
+    }
+    if (result?.correctAnswer) return String(result.correctAnswer);
+    if (!remoteGrade && correctText && correctText !== '—') {
+      return formatChoiceLabel(
+        correctText,
+        choiceLetters?.[questionData.correctIndex],
+      );
+    }
+    if (result?.isCorrect && result.selectedText) return result.selectedText;
+    return '';
+  })();
+
+  const selectedDisplay =
+    result?.selectedIndex >= 0
+      ? formatChoiceLabel(
+          options[result.selectedIndex]?.text,
+          choiceLetters?.[result.selectedIndex],
+        )
+      : result?.selectedText || '';
+
   const handleChoice = (selectedIndex) => {
     if (result || finishedRef.current || busy) return;
     const selectedText = options[selectedIndex]?.text ?? null;
@@ -652,13 +727,7 @@ export default function ScienceQuizModal({
             {options.map((option, idx) => {
               let tone = '';
               if (result) {
-                if (remoteGrade) {
-                  if (result.isCorrect && idx === result.selectedIndex) {
-                    tone = 'is-correct';
-                  } else if (!result.isCorrect && idx === result.selectedIndex) {
-                    tone = 'is-wrong';
-                  }
-                } else if (option.isCorrect) tone = 'is-correct';
+                if (idx === revealedCorrectIndex) tone = 'is-correct';
                 else if (idx === result.selectedIndex) tone = 'is-wrong';
               }
               return (
@@ -736,27 +805,46 @@ export default function ScienceQuizModal({
             }`}
             aria-live="polite"
           >
-            {result.isCorrect ? (
-              <>
-                <strong>{isStory ? 'Nice!' : 'Correct!'}</strong>
-                <span>
-                  {isStory
-                    ? 'You can keep going.'
-                    : remoteGrade
-                      ? successBlurb
-                      : `Answer: ${correctText}. ${successBlurb}`}
-                </span>
-              </>
+            <strong>
+              {result.isCorrect
+                ? isStory
+                  ? 'Nice!'
+                  : 'Correct!'
+                : result.timedOut
+                  ? 'Time’s up.'
+                  : 'Not quite.'}
+            </strong>
+            {isStory ? (
+              <p className="science-quiz-feedback-next">
+                {result.isCorrect
+                  ? 'You can keep going.'
+                  : 'Try that again when you are ready.'}
+              </p>
+            ) : result.isCorrect ? (
+              successBlurb ? (
+                <p className="science-quiz-feedback-next">{successBlurb}</p>
+              ) : null
             ) : (
               <>
-                <strong>{result.timedOut ? 'Time’s up.' : 'Not quite.'}</strong>
-                <span>
-                  {isStory
-                    ? 'Try that again when you are ready.'
-                    : remoteGrade
-                      ? 'The farm problem is still there — try again.'
-                      : `Correct answer: ${correctText}. The farm problem is still there — try again.`}
-                </span>
+                {selectedDisplay ? (
+                  <p className="science-quiz-feedback-line">
+                    <span className="science-quiz-feedback-label">
+                      Your answer
+                    </span>
+                    {selectedDisplay}
+                  </p>
+                ) : null}
+                {revealedCorrectText ? (
+                  <p className="science-quiz-feedback-line is-key">
+                    <span className="science-quiz-feedback-label">
+                      Correct answer
+                    </span>
+                    {revealedCorrectText}
+                  </p>
+                ) : null}
+                <p className="science-quiz-feedback-next">
+                  The farm problem is still there — try again.
+                </p>
               </>
             )}
           </div>

@@ -51,6 +51,7 @@ import {
   formatDiagnosticText,
   getBehaviorProbe,
 } from './behaviorDiagnostics.js';
+import { inferConceptFromText } from './conceptMaps.js';
 
 export default function AvatarAssistantModal({
   open = false,
@@ -274,6 +275,7 @@ export default function AvatarAssistantModal({
   const [streamingText, setStreamingText] = useState('');
   /** A–D choices while we learn why the student is stuck */
   const [behaviorOptions, setBehaviorOptions] = useState([]);
+  const [probePrompt, setProbePrompt] = useState('');
   // Session map only — never preload history store into live view
   const [mapVisible, setMapVisible] = useState(false);
   const [localMap, setLocalMap] = useState(null);
@@ -612,6 +614,7 @@ export default function AvatarAssistantModal({
       setProviderNote(null);
       setStreamingText('');
       setBehaviorOptions([]);
+      setProbePrompt('');
       setMood(moodForMode(resolvedMode, evaluatedTier));
       setLocalMap(null);
       setMapVisible(false);
@@ -692,6 +695,18 @@ export default function AvatarAssistantModal({
     }
     performanceSessionRef.current = frozen;
 
+    const liveStem =
+      frozen.evidence?.farm_question ||
+      frozen.current_question ||
+      interventionFocus?.current_question ||
+      quiz?.prompt ||
+      quiz?.question ||
+      quiz?.questionData?.prompt ||
+      quiz?.questionData?.question ||
+      null;
+    const liveTopic = inferConceptFromText(liveStem);
+    if (liveTopic) frozen.concept_topic = liveTopic;
+
     // Mind map for wrong-answer / concept struggle — show it with the mentor
     const focusCode = String(
       frozen.code || frozen.underlying_code || interventionFocus?.code || '',
@@ -743,7 +758,19 @@ export default function AvatarAssistantModal({
         frozen.concept_miss_count ||
         interventionFocus?.concept_miss_count ||
         0,
-      farm_question: frozen.evidence?.farm_question || frozen.current_question,
+      farm_question: liveStem,
+      questionText: liveStem,
+      skill: quiz?.skill || quiz?.questionData?.skill || frozen.skill || null,
+      sub_concept:
+        quiz?.sub_concept ||
+        quiz?.questionData?.sub_concept ||
+        frozen.sub_concept ||
+        null,
+      chapter_name:
+        quiz?.chapter_name ||
+        quiz?.chapter ||
+        quiz?.questionData?.chapter_name ||
+        null,
     };
     const probeCode =
       frozen.code ||
@@ -797,6 +824,7 @@ export default function AvatarAssistantModal({
     setMessages([{ role: 'assistant', content: opener }]);
     messagesRef.current = [{ role: 'assistant', content: opener }];
     setBehaviorOptions(options);
+    setProbePrompt(probe.prompt || frozen.diagnostic_prompt || '');
     setProviderNote(null);
 
     // Speak opener + brief read of A–D so kids hear choices without chat dump
@@ -1184,6 +1212,12 @@ export default function AvatarAssistantModal({
             ? resolved.session.diagnostic_options || []
             : [],
         );
+        setProbePrompt(
+          resolved.session.phase === 'behavior_probe' &&
+            !resolved.session.student_reason_key
+            ? resolved.session.diagnostic_prompt || ''
+            : '',
+        );
       }
       let reply = sanitizeKidSpeech(
         resolved.reply ||
@@ -1259,6 +1293,12 @@ export default function AvatarAssistantModal({
             ? recovered.session.diagnostic_options || []
             : [],
         );
+        setProbePrompt(
+          recovered.session.phase === 'behavior_probe' &&
+            !recovered.session.student_reason_key
+            ? recovered.session.diagnostic_prompt || ''
+            : '',
+        );
       }
       const failLine =
         recovered.reply ||
@@ -1309,6 +1349,8 @@ export default function AvatarAssistantModal({
 
   const focusQuestion = asQuestionText(
     interventionFocus?.current_question ||
+      quiz?.questionData?.prompt ||
+      quiz?.questionData?.question ||
       quiz?.prompt ||
       quiz?.question ||
       quiz?.question_text ||
@@ -1446,18 +1488,36 @@ export default function AvatarAssistantModal({
             className="avatar-focus-question"
             aria-label="Farm science question"
           >
-            <p className="avatar-focus-question-kicker">Farm question</p>
+            <p className="avatar-focus-question-kicker">
+              {quiz?.questionData?.chapter_name ||
+                quiz?.chapter_name ||
+                quiz?.chapter ||
+                inferConceptFromText(focusQuestion) ||
+                (interventionFocus?.concept_topic &&
+                !/science idea|^science$/i.test(
+                  String(interventionFocus.concept_topic),
+                )
+                  ? interventionFocus.concept_topic
+                  : 'Farm question')}
+            </p>
             <p className="avatar-focus-question-text">{focusQuestion}</p>
           </section>
         ) : null}
 
-        {/* Compact letter picks during behavior probe (no full option dump) */}
+        {/* Compact letter picks during behavior probe (not science answers) */}
         {behaviorOptions?.length && !busy ? (
           <div
             className="avatar-letter-row"
             role="group"
-            aria-label="Answer choices"
+            aria-label="Tell Sage what you need"
           >
+            {probePrompt ? (
+              <p className="avatar-probe-prompt">{probePrompt}</p>
+            ) : null}
+            <p className="avatar-probe-hint">
+              These choices tell Sage how to help — they are not answers to the
+              farm question.
+            </p>
             {behaviorOptions.map((opt) => (
               <button
                 key={opt.id || opt.letter}

@@ -9,6 +9,7 @@ import {
   getAssessmentBaseCandidates,
 } from './assessmentEngine.js';
 import { getCurrentStudent } from '../data/mockStudents.js';
+import { inferConceptFromText, resolveTopicKey } from '../avatar/conceptMaps.js';
 
 const FETCH_TIMEOUT_MS = 15000;
 const ANSWER_TIMEOUT_MS = 20000;
@@ -215,17 +216,17 @@ function countBlanks(text, fallback = 2) {
   return matches?.length ? matches.length : fallback;
 }
 
-function inferTopicFromStem(stem) {
-  const prompt = String(stem || '');
-  if (/photosynth|chlorophyll|light.*plant/i.test(prompt)) return 'Photosynthesis';
-  if (/pollinat|pollen|bee/i.test(prompt)) return 'Pollination';
-  if (/physical change|chemical change/i.test(prompt)) {
-    return 'Physical & Chemical Changes';
-  }
-  if (/soil|nutrient|fertiliz/i.test(prompt)) return 'Soil Science';
-  if (/water cycle|evaporat|condens/i.test(prompt)) return 'Water Cycle';
-  if (/food chain|ecosystem|habitat/i.test(prompt)) return 'Ecology';
-  return null;
+function inferTopicFromStem(stem, extras = {}) {
+  return (
+    inferConceptFromText(stem) ||
+    inferConceptFromText(extras.skill) ||
+    inferConceptFromText(extras.sub_concept) ||
+    inferConceptFromText(extras.chapter_name) ||
+    resolveTopicKey(extras.chapter_name) ||
+    resolveTopicKey(extras.sub_concept) ||
+    resolveTopicKey(extras.skill) ||
+    null
+  );
 }
 
 /**
@@ -328,6 +329,15 @@ export function mapAssessmentQuestion(rawQuestion) {
     return null;
   }
 
+  const chapterName =
+    String(q.chapter_name || q.chapterName || payload.chapter_name || '').trim() ||
+    null;
+  const skill =
+    String(q.skill || payload.skill || '').trim() || null;
+  const subConcept =
+    String(q.sub_concept || q.subConcept || payload.sub_concept || '').trim() ||
+    null;
+
   const mapped = {
     id,
     prompt: String(stem),
@@ -337,7 +347,20 @@ export function mapAssessmentQuestion(rawQuestion) {
     optionLetters,
     questionType,
     blanks: questionType === 'MultiBlank' ? blanks : undefined,
-    topic: inferTopicFromStem(stem) || q.topic || payload.topic || null,
+    topic:
+      inferTopicFromStem(stem, {
+        chapter_name: chapterName,
+        skill,
+        sub_concept: subConcept,
+      }) ||
+      q.topic ||
+      payload.topic ||
+      chapterName ||
+      null,
+    chapter: chapterName,
+    chapter_name: chapterName,
+    skill,
+    sub_concept: subConcept,
     remoteGrade: true,
     source: 'assessment_engine',
   };

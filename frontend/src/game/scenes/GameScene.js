@@ -123,6 +123,7 @@ import {
   CROP_CHALLENGE_COUNT,
   cropDefForPlot,
   getCropChallenge,
+  getCropTextures,
   vegetableGoalText,
 } from '../../data/cropChallenges.js';
 import {
@@ -142,6 +143,11 @@ import {
   personalizeCleaningChallenge,
   personalizeCropChallenge,
 } from '../../data/personalizedChallenges.js';
+import {
+  clearFarmRun,
+  loadFarmRun,
+  saveFarmRun,
+} from '../../data/farmRunStore.js';
 
 const MOLE_GID = 6;
 const TREANT_GID = 5;
@@ -167,6 +173,14 @@ export default class GameScene extends Phaser.Scene {
     const cash = Number(data?.startingMoney);
     this.devStartingMoney = Number.isFinite(cash) && cash > 0 ? cash : 0;
     this.storyline = data?.storyline ?? this.registry?.get?.('storyline') ?? null;
+    this._resumeSnapshot = null;
+    this._runEnded = false;
+    if (data?.resume !== false) {
+      const saved = loadFarmRun();
+      if (saved && Number(saved.levelId) === Number(this.levelId)) {
+        this._resumeSnapshot = saved;
+      }
+    }
   }
 
   create() {
@@ -293,9 +307,21 @@ export default class GameScene extends Phaser.Scene {
 
     this.bindLevelLibrary();
     try {
-      this.applyCurrentCropChallenge({ resetProgress: true });
-      this.applyCurrentAnimalChallenge({ resetProgress: true });
-      this.applyCurrentCleaningChallenge({ resetProgress: true });
+      if (this._resumeSnapshot) {
+        const snap = this._resumeSnapshot;
+        if (Number.isFinite(Number(snap.cropLibraryIndex))) {
+          setCropChallengeIndex(snap.cropLibraryIndex);
+        }
+        if (Number.isFinite(Number(snap.animalLibraryIndex))) {
+          setAnimalChallengeIndex(snap.animalLibraryIndex);
+        }
+        if (Number.isFinite(Number(snap.cleanLibraryIndex))) {
+          setCleaningChallengeIndex(snap.cleanLibraryIndex);
+        }
+      }
+      this.applyCurrentCropChallenge({ resetProgress: !this._resumeSnapshot });
+      this.applyCurrentAnimalChallenge({ resetProgress: !this._resumeSnapshot });
+      this.applyCurrentCleaningChallenge({ resetProgress: !this._resumeSnapshot });
     } catch (err) {
       console.warn('Level challenge library failed to apply', err);
     }
@@ -364,22 +390,28 @@ export default class GameScene extends Phaser.Scene {
       this.focusGameCanvas();
     });
 
-    // Previous-level performance / improvement cash bonus (next-level grant)
-    const pendingBonus = consumePendingGameplayBonus();
-    if (pendingBonus?.totalBonus > 0) {
-      this.currentMoney += pendingBonus.totalBonus;
-      this.levelStartMoney = this.currentMoney;
-      this.gameplayAppliedBonus = pendingBonus;
-      this.syncMoneyAliases();
-      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'gameplay_bonus_applied',
-        ...pendingBonus,
-        currentMoney: this.currentMoney,
-      });
+    if (this._resumeSnapshot) {
+      this.applyRunSnapshot(this._resumeSnapshot);
+      this._resumeSnapshot = null;
+    } else {
+      // Previous-level performance / improvement cash bonus (next-level grant)
+      const pendingBonus = consumePendingGameplayBonus();
+      if (pendingBonus?.totalBonus > 0) {
+        this.currentMoney += pendingBonus.totalBonus;
+        this.levelStartMoney = this.currentMoney;
+        this.gameplayAppliedBonus = pendingBonus;
+        this.syncMoneyAliases();
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'gameplay_bonus_applied',
+          ...pendingBonus,
+          currentMoney: this.currentMoney,
+        });
+      }
     }
 
     this.emitFarmState();
     this.emitPlayerMapPos();
+    this.bindRunPersistence();
 
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
     ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'farm' });
@@ -415,11 +447,189 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  captureRunSnapshot() {
+    if (!this.player || this.forestUnlocked) return null;
+    const planted = (this.plantedCrops || [])
+      .filter((crop) => crop?.active && crop.cropState !== 'harvested')
+      .map((crop) => ({
+        gridX: crop.gridX,
+        gridY: crop.gridY,
+        gridKey: crop.gridKey,
+        cropType: crop.cropType,
+        cropState: crop.cropState,
+      }));
+    return {
+      levelId: this.levelId,
+      currentMoney: this.currentMoney,
+      playerTileX: this.player.x / TILE_SIZE,
+      playerTileY: this.player.y / TILE_SIZE,
+      carriedCount: this.carriedCount || 0,
+      carryStack: [...(this.carryStack || [])],
+      harvestedItemsCount: this.harvestedItemsCount || 0,
+      cropsHarvestedTotal: this.cropsHarvestedTotal || 0,
+      cropsSoldThisChallenge: this.cropsSoldThisChallenge || 0,
+      harvestTarget: this.harvestTarget,
+      cropSoldMap: { ...(this.cropSoldMap || {}) },
+      cropPlantedSet: [...(this.cropPlantedSet || [])],
+      cropHarvestMap: { ...(this.cropHarvestMap || {}) },
+      harvestUnlocked: Boolean(this.harvestUnlocked),
+      plantDoneForChallenge: Boolean(this.plantDoneForChallenge),
+      loadUnlocked: Boolean(this.loadUnlocked),
+      animalTended: Boolean(this.animalTended),
+      animalCollectedTotal: this.animalCollectedTotal || 0,
+      animalSoldThisChallenge: this.animalSoldThisChallenge || 0,
+      animalCollectUnlocked: Boolean(this.animalCollectUnlocked),
+      cleanStarted: Boolean(this.cleanStarted),
+      cleanSweptTotal: this.cleanSweptTotal || 0,
+      cleanSoldThisChallenge: this.cleanSoldThisChallenge || 0,
+      cleanSweepUnlocked: Boolean(this.cleanSweepUnlocked),
+      levelCropComplete: Boolean(this.levelCropComplete),
+      levelAnimalComplete: Boolean(this.levelAnimalComplete),
+      levelCleanComplete: Boolean(this.levelCleanComplete),
+      quizCorrect: this.quizCorrect || 0,
+      quizIncorrect: this.quizIncorrect || 0,
+      attemptScores: [...(this.attemptScores || [])],
+      responseTimesMs: [...(this.responseTimesMs || [])],
+      retryCount: this.retryCount || 0,
+      levelElapsedMs: Math.max(0, Date.now() - (this.levelStartedAtMs || Date.now())),
+      plantedCrops: planted,
+      shopStock: this.worldShop?.shopStock
+        ? { ...this.worldShop.shopStock }
+        : {},
+      cropLibraryIndex: this.cropChallenge?.index ?? getCropChallengeIndex(),
+      animalLibraryIndex: this.animalChallenge?.index ?? getAnimalChallengeIndex(),
+      cleanLibraryIndex:
+        this.cleaningChallenge?.index ?? getCleaningChallengeIndex(),
+    };
+  }
+
+  persistFarmRun() {
+    if (this.forestUnlocked || this._runEnded) {
+      clearFarmRun();
+      return null;
+    }
+    if (!this.sys?.isActive?.()) return null;
+    const snap = this.captureRunSnapshot();
+    if (!snap) return null;
+    return saveFarmRun(snap);
+  }
+
+  applyRunSnapshot(snap) {
+    if (!snap || Number(snap.levelId) !== Number(this.levelId)) return;
+    this.currentMoney = Math.max(0, Number(snap.currentMoney) || 0);
+    this.earnings = this.currentMoney;
+    this.levelStartMoney = this.currentMoney;
+    this.carriedCount = Math.max(0, Number(snap.carriedCount) || 0);
+    this.carryStack = Array.isArray(snap.carryStack) ? [...snap.carryStack] : [];
+    this.harvestedItemsCount = Number(snap.harvestedItemsCount) || 0;
+    this.inventory = this.harvestedItemsCount;
+    this.cropsHarvestedTotal = Number(snap.cropsHarvestedTotal) || 0;
+    this.cropsSoldThisChallenge = Number(snap.cropsSoldThisChallenge) || 0;
+    if (Number(snap.harvestTarget) > 0) this.harvestTarget = Number(snap.harvestTarget);
+    this.cropSoldMap = { ...(snap.cropSoldMap || {}) };
+    this.cropPlantedSet = new Set(snap.cropPlantedSet || []);
+    this.cropHarvestMap = { ...(snap.cropHarvestMap || {}) };
+    this.harvestUnlocked = Boolean(snap.harvestUnlocked);
+    this.plantDoneForChallenge = Boolean(snap.plantDoneForChallenge);
+    this.loadUnlocked = Boolean(snap.loadUnlocked);
+    this.animalTended = Boolean(snap.animalTended);
+    this.animalCollectedTotal = Number(snap.animalCollectedTotal) || 0;
+    this.animalSoldThisChallenge = Number(snap.animalSoldThisChallenge) || 0;
+    this.animalCollectUnlocked = Boolean(snap.animalCollectUnlocked);
+    this.cleanStarted = Boolean(snap.cleanStarted);
+    this.cleanSweptTotal = Number(snap.cleanSweptTotal) || 0;
+    this.cleanSoldThisChallenge = Number(snap.cleanSoldThisChallenge) || 0;
+    this.cleanSweepUnlocked = Boolean(snap.cleanSweepUnlocked);
+    this.levelCropComplete = Boolean(snap.levelCropComplete);
+    this.levelAnimalComplete = Boolean(snap.levelAnimalComplete);
+    this.levelCleanComplete = Boolean(snap.levelCleanComplete);
+    this.quizCorrect = Number(snap.quizCorrect) || 0;
+    this.quizIncorrect = Number(snap.quizIncorrect) || 0;
+    this.attemptScores = Array.isArray(snap.attemptScores) ? [...snap.attemptScores] : [];
+    this.responseTimesMs = Array.isArray(snap.responseTimesMs)
+      ? [...snap.responseTimesMs]
+      : [];
+    this.retryCount = Number(snap.retryCount) || 0;
+    const elapsed = Math.max(0, Number(snap.levelElapsedMs) || 0);
+    this.levelStartedAtMs = Date.now() - elapsed;
+    if (this.harvestUnlocked) this.harvestArmedUntil = Date.now() + 60_000;
+    if (this.animalCollectUnlocked) this.animalCollectArmedUntil = Date.now() + 60_000;
+    if (this.cleanSweepUnlocked) this.cleanSweepArmedUntil = Date.now() + 60_000;
+
+    const tileX = Number(snap.playerTileX);
+    const tileY = Number(snap.playerTileY);
+    if (this.player && Number.isFinite(tileX) && Number.isFinite(tileY)) {
+      this.player.setPosition(tileX * TILE_SIZE, tileY * TILE_SIZE);
+    }
+
+    if (Array.isArray(snap.plantedCrops)) {
+      for (const row of snap.plantedCrops) {
+        const cell = {
+          key: row.gridKey || `${row.gridX},${row.gridY}`,
+          gridX: row.gridX,
+          gridY: row.gridY,
+        };
+        const crop = this.spawnCropAtCell(cell, 0, { cropType: row.cropType });
+        if (crop && row.cropState === 'readyToHarvest') {
+          if (crop._growTimer) crop._growTimer.remove(false);
+          crop.markReady();
+        }
+      }
+    }
+
+    if (this.worldShop && snap.shopStock && typeof snap.shopStock === 'object') {
+      this.worldShop.shopStock = { ...snap.shopStock };
+      try {
+        this.farmShopLayer?.refreshStock?.(this.worldShop);
+      } catch {
+        /* optional */
+      }
+    }
+
+    if (this.animalTended && this.animalLayer && !this.animalLayer.tended) {
+      try {
+        this.animalLayer.tend();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (this.cleanStarted && this.cleaningLayer) {
+      this.cleaningLayer.started = true;
+    }
+
+    this.syncCarryTrail();
+    this.syncMoneyAliases();
+    this.pinFarmCamera();
+  }
+
+  bindRunPersistence() {
+    this._onSaveFarmRun = () => this.persistFarmRun();
+    ForestGameBridge.on(FARM_EVENTS.SAVE_FARM_RUN, this._onSaveFarmRun);
+    this._onRunHide = () => this.persistFarmRun();
+    window.addEventListener('visibilitychange', this._onRunHide);
+    window.addEventListener('pagehide', this._onRunHide);
+    this._runSaveTimer = this.time.addEvent({
+      delay: 12000,
+      loop: true,
+      callback: () => this.persistFarmRun(),
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.persistFarmRun();
+      ForestGameBridge.off(FARM_EVENTS.SAVE_FARM_RUN, this._onSaveFarmRun);
+      window.removeEventListener('visibilitychange', this._onRunHide);
+      window.removeEventListener('pagehide', this._onRunHide);
+      this._runSaveTimer?.remove?.(false);
+    });
+  }
+
   /**
    * Advance to the next farm without tearing down Phaser.
    * scene.restart() / start() on a live GameScene kills arrow keys.
    */
   beginNextLevel(data = {}) {
+    clearFarmRun();
+    this._resumeSnapshot = null;
+    this._runEnded = false;
     const registryLevel = Number(this.registry?.get?.('farmLevelId'));
     this.levelId = Math.max(
       1,
@@ -724,6 +934,7 @@ export default class GameScene extends Phaser.Scene {
             '.avatar-assistant-overlay',
             '.science-quiz-overlay',
             '.unlock-shop-overlay',
+            '.farm-pause-overlay',
             '.student-login',
           ].join(','),
         )
@@ -797,6 +1008,7 @@ export default class GameScene extends Phaser.Scene {
         code === 'KeyS' ||
         code === 'KeyD';
       if (isMove) {
+        if (this.isPauseOpen() || this.isAvatarOpen()) return;
         if (this.isTypingTarget(event.target || document.activeElement)) return;
         event.preventDefault();
         setMove(code, true);
@@ -861,14 +1073,24 @@ export default class GameScene extends Phaser.Scene {
     return Boolean(document.querySelector('.motivation-overlay'));
   }
 
-  /** True while a modal should freeze combat (quiz, quest scroll, shop, motivation). */
+  isPauseOpen() {
+    return Boolean(document.querySelector('.farm-pause-overlay'));
+  }
+
+  isAvatarOpen() {
+    return Boolean(document.querySelector('.avatar-assistant-overlay'));
+  }
+
+  /** True while a modal should freeze combat (quiz, Sage, quest scroll, shop, motivation). */
   isFarmCombatFrozen() {
     return Boolean(
       this.pendingQuizMode ||
         this.isScienceQuizOpen() ||
         this.isQuestScrollOpen() ||
         this.isUnlockShopOpen() ||
-        this.isMotivationOpen(),
+        this.isMotivationOpen() ||
+        this.isPauseOpen() ||
+        this.isAvatarOpen(),
     );
   }
 
@@ -897,6 +1119,14 @@ export default class GameScene extends Phaser.Scene {
     } catch {
       /* ignore */
     }
+    if (!this._worldHoldStartedAt) {
+      this._worldHoldStartedAt = Date.now();
+    }
+    try {
+      this.time.paused = true;
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Resume Arcade + enemy patrol after quiz / quest scroll. */
@@ -922,6 +1152,16 @@ export default class GameScene extends Phaser.Scene {
     }
     try {
       this.physics?.world?.resume?.();
+    } catch {
+      /* ignore */
+    }
+    if (this._worldHoldStartedAt) {
+      const held = Date.now() - this._worldHoldStartedAt;
+      this._worldHoldStartedAt = 0;
+      if (this.levelStartedAtMs) this.levelStartedAtMs += held;
+    }
+    try {
+      this.time.paused = false;
     } catch {
       /* ignore */
     }
@@ -1732,19 +1972,22 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
-  cropCarryTextureKey() {
-    const produce = this.cropChallenge?.produce;
-    const ready = this.cropChallenge?.ready;
-    if (produce && this.textures.exists(produce)) return produce;
-    if (ready && this.textures.exists(ready)) return ready;
-    if (
-      this.farmLevel?.cropId === 'corn' &&
-      this.textures.exists('crop_corn')
-    ) {
-      return 'crop_corn';
+  cropCarryTextureKey(cropType = null) {
+    const fromCrop = cropType ? getCropTextures(cropType) : null;
+    const candidates = [
+      fromCrop?.produce,
+      fromCrop?.ready,
+      this.cropChallenge?.produce,
+      this.cropChallenge?.ready,
+      this.farmLevel?.cropId === 'corn' ? 'crop_corn' : null,
+      'kf_tomato',
+      'hm_tomato',
+      'crop_flower',
+    ];
+    for (const key of candidates) {
+      if (key && this.textures.exists(key)) return key;
     }
-    if (this.textures.exists('crop_flower')) return 'crop_flower';
-    return produce || 'crop_flower';
+    return 'crop_flower';
   }
 
   cropSpriteScale(key, fallback) {
@@ -1965,6 +2208,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.forestUnlocked = true;
+    clearFarmRun();
     this.persistLevelMastery();
     const gameplaySaved = this.persistGameplayPerformance();
     // Unharvested plants do not carry into the next level
@@ -2128,16 +2372,26 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /** Long vertical stack of harvested crops carried behind the runner. */
-  syncCarryTrail() {
-    const cropKey = this.cropCarryTextureKey();
-    if (!this.textures.exists(cropKey) || !this.player) return;
+  syncCarryTrail(cropType = null) {
+    if (!this.player) return;
+    const stackTop =
+      cropType ||
+      this.carryStack?.[this.carryStack.length - 1] ||
+      this.farmLevel?.cropId ||
+      null;
+    let cropKey = this.cropCarryTextureKey(stackTop);
+    if (!this.textures.exists(cropKey)) {
+      cropKey = this.cropCarryTextureKey(null);
+    }
+    if (!this.textures.exists(cropKey)) return;
 
     const need = this.carriedCount || 0;
     const scale = this.cropSpriteScale(cropKey, 0.7);
+    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 2;
     while (this.carrySprites.length < need) {
       const img = this.add.image(this.player.x, this.player.y, cropKey);
       img.setScale(scale);
-      img.setDepth(6);
+      img.setDepth(baseDepth);
       this.carrySprites.push(img);
     }
     while (this.carrySprites.length > need) {
@@ -2168,13 +2422,14 @@ export default class GameScene extends Phaser.Scene {
       backY = -2;
     }
 
+    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 2;
     this.carrySprites.forEach((sprite, i) => {
       if (!sprite?.active) return;
       sprite.setPosition(
         this.player.x + backX,
         this.player.y + backY - (i + 1) * 7,
       );
-      sprite.setDepth(6 + i * 0.01);
+      sprite.setDepth(baseDepth + i * 0.01);
     });
   }
 
@@ -3751,7 +4006,7 @@ export default class GameScene extends Phaser.Scene {
         this.cropPlantedSet.add(plantedCropId);
       }
       // Keep library harvest target (pick N · sell N) — do not overwrite with patch size.
-      this.cropsHarvestedTotal = 0;
+      // Do not wipe cropsHarvestedTotal / carry — other beds may already be harvested.
       // Don't reset cropsSoldThisChallenge — it's now per-crop via cropSoldMap
       this.farmLevel = {
         ...this.farmLevel,
@@ -3783,7 +4038,7 @@ export default class GameScene extends Phaser.Scene {
   /**
    * Spawn one independent crop Image at a grid cell (does not clear others).
    */
-  spawnCropAtCell(cell, staggerMs = 0) {
+  spawnCropAtCell(cell, staggerMs = 0, extras = {}) {
     if (!cell || this.plantedGridKeys.has(cell.key)) return null;
     if (!isPlantableTile(cell.gridX, cell.gridY)) return null;
 
@@ -3792,7 +4047,9 @@ export default class GameScene extends Phaser.Scene {
 
     const plot = findPlotAt(cell.gridX, cell.gridY);
     const plotIndex = plot ? PLANT_PLOTS.indexOf(plot) : 0;
-    const def = cropDefForPlot(plot?.id, this.cropChallenge, this.levelPlan, Math.max(0, plotIndex));
+    const def = extras.cropType
+      ? { cropId: extras.cropType, tint: extras.tint }
+      : cropDefForPlot(plot?.id, this.cropChallenge, this.levelPlan, Math.max(0, plotIndex));
     const crop = new Crop(this, worldX, worldY, {
       cropType: def.cropId,
       value: this.farmLevel.cropValue,
@@ -3854,18 +4111,13 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Harvest ready crops underfoot only after the harvest quiz was unlocked with E.
-   * Walking alone never opens a science quiz.
+   * Harvest ready crops underfoot after the harvest quiz unlocks.
+   * Walking onto ready crops opens that quiz once (same as pressing E).
    */
   harvestCropsUnderfoot() {
     if (this.farmInputLocked || !this.player) return;
 
     if (!this.plantDoneForChallenge && (!this.cropPlantedSet || this.cropPlantedSet.size === 0)) {
-      this.hideHarvestingBanner();
-      return;
-    }
-
-    if (!this.harvestUnlocked) {
       this.hideHarvestingBanner();
       return;
     }
@@ -3886,6 +4138,12 @@ export default class GameScene extends Phaser.Scene {
 
     if (hit.length < 1) {
       this.hideHarvestingBanner();
+      return;
+    }
+
+    // One harvest quiz per vegetable challenge, then free picking onto the back
+    if (!this.harvestUnlocked) {
+      this.openHarvestQuestion();
       return;
     }
 
@@ -3951,10 +4209,13 @@ export default class GameScene extends Phaser.Scene {
 
     crop.playHarvestFx();
     // Harvested crops ride on the runner's back until unloaded at the Farm Shop
+    const cropId = crop.cropType || this.farmLevel?.cropId || 'tomato';
     this.carriedCount = (this.carriedCount || 0) + 1;
     this.cropsHarvestedTotal = (this.cropsHarvestedTotal || 0) + 1;
-    this.carryStack.push(crop.cropType || this.farmLevel?.cropId || 'tomato');
-    this.syncCarryTrail();
+    this.cropHarvestMap = this.cropHarvestMap || {};
+    this.cropHarvestMap[cropId] = (this.cropHarvestMap[cropId] || 0) + 1;
+    this.carryStack.push(cropId);
+    this.syncCarryTrail(cropId);
     this.updateCarryTrailPositions();
 
     if (crop.gridKey) this.plantedGridKeys.delete(crop.gridKey);
@@ -3995,16 +4256,28 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Science question that unlocks harvesting for a short window.
+   * Science question that unlocks harvesting for free picking onto the back.
+   * If Assessment Engine is down, unlock harvest so gameplay is not soft-locked.
    */
   openHarvestQuestion() {
     if (!this.player || this.farmInputLocked) return;
+    if (this.pendingQuizMode === 'harvest') return;
     this.pendingQuizMode = 'harvest';
     this.freezeFarmForQuiz();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('harvest', 'harvest', () => ({
       cropType: this.farmLevel.cropId,
-    }));
+    })).then((ok) => {
+      if (ok || !this.sys?.isActive()) return;
+      this.harvestUnlocked = true;
+      this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'farm_shop_hint',
+        message:
+          'Science quiz unavailable — walk over ready crops to pick them onto your back.',
+      });
+      this.harvestCropsUnderfoot();
+    });
   }
 
   /**
@@ -4628,8 +4901,12 @@ export default class GameScene extends Phaser.Scene {
 
   update(time) {
     this.releaseStaleFarmLocks();
-    // Keep the map pin tracking even while a quiz locks farm input
+    // Keep the map pin tracking even while a quiz or Sage locks farm input
     this.emitPlayerMapPos();
+    if (this.isFarmCombatFrozen() || this.farmShopUnloadOpen) {
+      this.freezeFarmForQuiz();
+      return;
+    }
     this.worldLayer?.update(
       this.farmInputLocked || !this.player ? -9999 : this.player.x,
       this.player?.y || 0,
@@ -4638,21 +4915,6 @@ export default class GameScene extends Phaser.Scene {
     this.animalLayer?.update(time);
     this.cleaningLayer?.update(time);
     this.tickPhysicalFarmShop?.(time);
-
-    if (
-      this.pendingQuizMode ||
-      this.isQuestScrollOpen() ||
-      this.isUnlockShopOpen() ||
-      this.isMotivationOpen() ||
-      this.farmShopUnloadOpen
-    ) {
-      this.freezeFarmForQuiz();
-      return;
-    }
-    if (this.isScienceQuizOpen()) {
-      this.player?.setVelocity(0);
-      return;
-    }
     this.handlePlayerInput();
     this.handleCollisions();
     this.harvestCropsUnderfoot();
@@ -4985,7 +5247,7 @@ export default class GameScene extends Phaser.Scene {
     const model = player.playerModel;
     player.walking = false;
 
-    if (this.isScienceQuizOpen()) {
+    if (this.isScienceQuizOpen() || this.isAvatarOpen() || this.isPauseOpen()) {
       player.setVelocity(0);
       return;
     }
@@ -5032,7 +5294,9 @@ export default class GameScene extends Phaser.Scene {
       this.isScienceQuizOpen() ||
       this.isQuestScrollOpen() ||
       this.isUnlockShopOpen() ||
-      this.isMotivationOpen()
+      this.isMotivationOpen() ||
+      this.isPauseOpen() ||
+      this.isAvatarOpen()
     ) {
       return;
     }
@@ -5127,6 +5391,8 @@ export default class GameScene extends Phaser.Scene {
       this.isQuestScrollOpen() ||
       this.isUnlockShopOpen() ||
       this.isMotivationOpen() ||
+      this.isPauseOpen() ||
+      this.isAvatarOpen() ||
       this.physics?.world?.isPaused
     ) {
       return;
@@ -5172,6 +5438,8 @@ export default class GameScene extends Phaser.Scene {
       clearAssessmentSession();
     }
     this.farmInputLocked = true;
+    this._runEnded = true;
+    clearFarmRun();
     this.clearAllCrops({ silent: true });
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'gameover' });
