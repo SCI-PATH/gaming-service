@@ -51,6 +51,7 @@ import {
   formatDiagnosticText,
   getBehaviorProbe,
 } from './behaviorDiagnostics.js';
+import { handoffToSocrates } from '../data/socratesHandoff.js';
 
 export default function AvatarAssistantModal({
   open = false,
@@ -263,6 +264,8 @@ export default function AvatarAssistantModal({
   ]);
 
   const [mood, setMood] = useState(AVATAR_MOODS.empathetic);
+  const [socratesBusy, setSocratesBusy] = useState(false);
+  const [socratesNote, setSocratesNote] = useState(null);
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [liveCaption, setLiveCaption] = useState('');
@@ -1296,6 +1299,37 @@ export default function AvatarAssistantModal({
   };
   sendMessageRef.current = sendMessage;
 
+  const handleAskSocrates = async () => {
+    if (socratesBusy) return;
+    setSocratesBusy(true);
+    setSocratesNote(null);
+    try {
+      const result = await handoffToSocrates({
+        student,
+        farm,
+        quiz,
+        telemetry,
+        metrics: m,
+      });
+      if (!result?.cuePosted && result?.error) {
+        setSocratesNote(
+          result.opened
+            ? `Socrates is opening. Frustration cue: ${result.error}`
+            : result.error,
+        );
+      } else if (!result?.opened) {
+        setSocratesNote(
+          result?.error ||
+            'Could not open Socrates. Make sure SCI-PATH is running on port 3000.',
+        );
+      }
+    } catch (err) {
+      setSocratesNote(err?.message || 'Could not open Socrates.');
+    } finally {
+      setSocratesBusy(false);
+    }
+  };
+
   if (!open) return null;
 
   // Live caption under face while speaking (or last short reply still landing)
@@ -1475,6 +1509,42 @@ export default function AvatarAssistantModal({
             ))}
           </div>
         ) : null}
+
+        <div className="avatar-socrates-row">
+          <button
+            type="button"
+            className="avatar-socrates-btn"
+            onClick={() => {
+              void handleAskSocrates();
+            }}
+            disabled={socratesBusy}
+            title="Ask Socrates about this science idea"
+          >
+            <span className="avatar-socrates-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <path
+                  d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5a3.5 3.5 0 0 1-3.5 3.5H12l-4 3.5V15H8.5A3.5 3.5 0 0 1 5 11.5v-5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+                <circle cx="9" cy="9" r="1" fill="currentColor" />
+                <circle cx="12" cy="9" r="1" fill="currentColor" />
+                <circle cx="15" cy="9" r="1" fill="currentColor" />
+              </svg>
+            </span>
+            {socratesBusy ? 'Opening Socrates…' : 'Ask Socrates'}
+          </button>
+          {socratesNote ? (
+            <p className="avatar-socrates-note" role="status">
+              {socratesNote}
+            </p>
+          ) : (
+            <p className="avatar-socrates-hint">
+              Chat with your science tutor about this lesson
+            </p>
+          )}
+        </div>
 
         <form
           className="avatar-compose is-voice-compose"

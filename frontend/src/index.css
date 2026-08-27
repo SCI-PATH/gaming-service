@@ -4652,6 +4652,60 @@ body {
   margin-top: 2px;
 }
 
+.avatar-socrates-row {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 2px 0;
+}
+
+.avatar-socrates-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid rgba(160, 90, 210, 0.55);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8b3ecf 0%, #7209b7 100%);
+  color: #f7f0ff;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 9px 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(114, 9, 183, 0.28);
+}
+
+.avatar-socrates-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.avatar-socrates-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.avatar-socrates-icon {
+  display: inline-flex;
+  color: #fff;
+}
+
+.avatar-socrates-hint,
+.avatar-socrates-note {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: rgba(210, 220, 190, 0.78);
+  text-align: center;
+}
+
+.avatar-socrates-note {
+  color: #f0c8a0;
+}
+
 .sage-avatar.is-voice-only .sage-caption.is-subtitle {
   min-height: 3.2em;
   max-height: 6.5em;

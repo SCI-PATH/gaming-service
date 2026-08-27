@@ -118,6 +118,47 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/engagement/frustration') {
+    try {
+      const studentId = url.searchParams.get('studentId') || '';
+      if (!String(studentId).trim()) {
+        sendJson(res, 400, { ok: false, error: 'studentId required' });
+        return;
+      }
+      const eng = await import('./lib/engagementDb.mjs');
+      if (!eng.engagementAvailable()) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'DATABASE_URL_not_configured',
+          studentId,
+          frustrationScore: null,
+          frustrationLevel: null,
+          history: [],
+        });
+        return;
+      }
+      const limit = Number(url.searchParams.get('limit') || 1);
+      const sessionId = url.searchParams.get('sessionId') || '';
+      const result = await eng.getFrustrationForStudent({
+        studentId,
+        sessionId,
+        limit,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, {
+        ok: false,
+        error: message,
+        frustrationScore: null,
+        frustrationLevel: null,
+        history: [],
+      });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname.startsWith('/api/engagement/')) {
     try {
       const body = await readJson(req);
