@@ -135,15 +135,24 @@ export default function App() {
 
   useEffect(() => {
     if (platformLaunchRef?.student?.id) {
+      const startLevel = Math.max(
+        1,
+        Number(platformLaunchRef.startLevel) || resolveCurrentLevelId(),
+      );
       syncStudentLogin(platformLaunchRef.student, {
         sessionId: platformLaunchRef.sessionId || undefined,
-        startLevel: resolveCurrentLevelId(),
+        startLevel,
+        ...(startLevel > 1 ? { currentLevel: startLevel } : {}),
       });
       return;
     }
     const existing = getCurrentStudent();
     if (existing?.id) {
-      syncStudentLogin(existing, { startLevel: resolveCurrentLevelId() });
+      const startLevel = resolveCurrentLevelId();
+      syncStudentLogin(existing, {
+        startLevel,
+        ...(startLevel > 1 ? { currentLevel: startLevel } : {}),
+      });
     }
   }, []);
 

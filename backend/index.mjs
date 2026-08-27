@@ -118,6 +118,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/engagement/student') {
+    try {
+      const eng = await import('./lib/engagementDb.mjs');
+      if (!eng.engagementAvailable()) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'DATABASE_URL_not_configured',
+          found: false,
+          currentLevel: 1,
+          highestCompletedLevel: 0,
+          cash: 0,
+          isReturning: false,
+        });
+        return;
+      }
+      const studentId = url.searchParams.get('studentId') || '';
+      if (!studentId.trim()) {
+        sendJson(res, 400, {
+          ok: false,
+          error: 'studentId required',
+          found: false,
+          currentLevel: 1,
+        });
+        return;
+      }
+      const result = await eng.getStudentProgress(studentId);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, {
+        ok: false,
+        error: message,
+        found: false,
+        currentLevel: 1,
+      });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/engagement/frustration') {
     try {
       const eng = await import('./lib/engagementDb.mjs');

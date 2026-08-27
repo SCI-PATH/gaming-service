@@ -5,8 +5,8 @@ import {
   downloadResearchJson,
 } from '../data/researchDashboardData.js';
 import {
+  buildFrustrationChartModel,
   frustrationByTopic,
-  frustrationDaySeries,
   frustrationPerformancePoints,
   learningStreak,
   seedHistoryFromLessons,
@@ -88,9 +88,9 @@ export default function ResearchDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonFingerprint, liveScore]);
 
-  const series = useMemo(
+  const chartModel = useMemo(
     () =>
-      frustrationDaySeries(14, {
+      buildFrustrationChartModel({
         score: liveScore,
         level: liveLevel,
         answered,
@@ -285,9 +285,12 @@ export default function ResearchDashboard({
         <article className="research-panel">
           <header className="research-panel-head">
             <h3>Frustration over time</h3>
-            <p>Day by day — green is calm, gold is stuck, coral is high</p>
+            <p>{chartModel.subtitle}</p>
           </header>
-          <FrustrationLineChart series={series} />
+          <FrustrationLineChart series={chartModel.series} />
+          {chartModel.note ? (
+            <p className="dash-chart-note">{chartModel.note}</p>
+          ) : null}
           <ul className="dash-chart-legend" aria-hidden>
             <li className="is-low">Low 0–30</li>
             <li className="is-moderate">Moderate 31–60</li>

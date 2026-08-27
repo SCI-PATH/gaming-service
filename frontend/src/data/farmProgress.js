@@ -77,3 +77,28 @@ export function hasSavedFarmProgress() {
   const progress = loadFarmProgress();
   return progress.highestCompletedLevel > 0 || progress.currentLevelId > 1;
 }
+
+/** Merge a launch/API cursor into local progress without going backwards. */
+export function applyRemoteFarmProgress(remote = {}) {
+  const local = loadFarmProgress();
+  const currentLevelId = Math.max(
+    local.currentLevelId,
+    Math.max(1, Number(remote.currentLevel ?? remote.currentLevelId) || 1),
+  );
+  const highestCompletedLevel = Math.max(
+    local.highestCompletedLevel,
+    Math.max(0, Number(remote.highestCompletedLevel) || 0),
+  );
+  const cash = Math.max(
+    local.cash,
+    Math.max(0, Number(remote.cash) || 0),
+  );
+  if (
+    currentLevelId === local.currentLevelId &&
+    highestCompletedLevel === local.highestCompletedLevel &&
+    cash === local.cash
+  ) {
+    return local;
+  }
+  return saveFarmProgress({ currentLevelId, highestCompletedLevel, cash });
+}

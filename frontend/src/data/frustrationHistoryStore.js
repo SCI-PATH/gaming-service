@@ -166,31 +166,39 @@ export function recordFrustrationSample(sample = {}) {
   return saveState(data);
 }
 
-/** Last `count` calendar days, including today (missing days are null). */
+function shouldApplyLive(live) {
+  if (!live || !Number.isFinite(Number(live.score))) return false;
+  return (Number(live.answered) || 0) > 0 || Number(live.score) > 0;
+}
+
+function applyLiveToDays(days, live) {
+  if (!shouldApplyLive(live)) return days;
+  const today = dayKey();
+  const existing = days.find((row) => row.date === today);
+  if (existing) {
+    existing.score = Math.round(Number(live.score));
+    existing.level = live.level || frustrationLevelFromScore(existing.score);
+    if (live.answered) existing.answered = Math.max(existing.answered || 0, live.answered);
+    if (live.accuracyPct != null) existing.accuracyPct = live.accuracyPct;
+    return days;
+  }
+  days.push({
+    date: today,
+    n: 1,
+    score: Math.round(Number(live.score)),
+    level: live.level || frustrationLevelFromScore(live.score),
+    answered: Number(live.answered) || 0,
+    correct: Number(live.correct) || 0,
+    incorrect: Number(live.incorrect) || 0,
+    accuracyPct: live.accuracyPct ?? null,
+  });
+  return days;
+}
+
+/** Last `count` calendar days ending today. Leading empty days are dropped. */
 export function frustrationDaySeries(count = 14, live = null) {
   const data = loadFrustrationHistory();
-  const days = [...data.days];
-  if (live && Number.isFinite(Number(live.score))) {
-    const today = dayKey();
-    const existing = days.find((row) => row.date === today);
-    if (existing) {
-      existing.score = Math.round(Number(live.score));
-      existing.level = live.level || frustrationLevelFromScore(existing.score);
-      if (live.answered) existing.answered = Math.max(existing.answered || 0, live.answered);
-      if (live.accuracyPct != null) existing.accuracyPct = live.accuracyPct;
-    } else {
-      days.push({
-        date: today,
-        n: 1,
-        score: Math.round(Number(live.score)),
-        level: live.level || frustrationLevelFromScore(live.score),
-        answered: Number(live.answered) || 0,
-        correct: Number(live.correct) || 0,
-        incorrect: Number(live.incorrect) || 0,
-        accuracyPct: live.accuracyPct ?? null,
-      });
-    }
-  }
+  const days = applyLiveToDays([...data.days], live);
 
   const out = [];
   for (let i = count - 1; i >= 0; i -= 1) {
@@ -207,7 +215,55 @@ export function frustrationDaySeries(count = 14, live = null) {
       answered: hit?.answered || 0,
     });
   }
+  const first = out.findIndex((row) => row.score != null);
+  return first < 0 ? [] : out.slice(first);
+}
+
+/** Question-by-question scores for first-day / sparse calendars. */
+export function frustrationQuestionSeries(limit = 24, live = null) {
+  const samples = loadFrustrationHistory().samples || [];
+  const slice = samples.slice(-Math.max(2, limit));
+  const out = slice.map((s, i) => ({
+    date: `q-${s.seq || s.globalIndex || i}`,
+    label: `Q${s.globalIndex || s.seq || i + 1}`,
+    score: clampScore(s.score),
+    level: s.band || frustrationLevelFromScore(s.score),
+  }));
+  if (shouldApplyLive(live) && out.length) {
+    const last = out[out.length - 1];
+    last.score = clampScore(live.score);
+    last.level = live.level || last.level;
+  }
   return out;
+}
+
+/**
+ * Pick a chart that actually has a line: daily history when it exists,
+ * otherwise the question journey from this session.
+ */
+export function buildFrustrationChartModel(live = null) {
+  const daySeries = frustrationDaySeries(14, live);
+  const scoredDays = daySeries.filter((row) => row.score != null);
+  const samples = loadFrustrationHistory().samples || [];
+
+  if (scoredDays.length < 2 && samples.length >= 2) {
+    return {
+      mode: 'question',
+      series: frustrationQuestionSeries(24, live),
+      subtitle: 'Question by question — green is calm, gold is stuck, coral is high',
+      note: null,
+    };
+  }
+
+  return {
+    mode: 'day',
+    series: daySeries,
+    subtitle: 'Day by day — green is calm, gold is stuck, coral is high',
+    note:
+      scoredDays.length === 1
+        ? 'Only one play day so far. This line fills in as you come back.'
+        : null,
+  };
 }
 
 export function frustrationByTopic(misconceptions = []) {

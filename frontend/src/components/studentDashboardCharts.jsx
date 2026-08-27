@@ -2,24 +2,49 @@
  * Lightweight SVG charts for the student dashboard (no chart library).
  */
 
+function pickTickIndices(n) {
+  if (n <= 0) return [];
+  if (n === 1) return [0];
+  if (n <= 6) return Array.from({ length: n }, (_, i) => i);
+  const step = Math.ceil((n - 1) / 5);
+  const ticks = [0];
+  for (let i = step; i < n - 1; i += step) ticks.push(i);
+  const last = n - 1;
+  if (last - ticks[ticks.length - 1] < 2) ticks[ticks.length - 1] = last;
+  else ticks.push(last);
+  return ticks;
+}
+
 export function FrustrationLineChart({ series = [], height = 220 }) {
   const width = 640;
-  const pad = { l: 36, r: 12, t: 16, b: 28 };
+  const pad = { l: 40, r: 64, t: 16, b: 36 };
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
-  const points = (series || []).map((row, i) => ({
+  const rows = series || [];
+  const points = rows.map((row, i) => ({
     ...row,
     i,
-    x: pad.l + (series.length <= 1 ? innerW / 2 : (i / (series.length - 1)) * innerW),
+    x: pad.l + (rows.length <= 1 ? innerW / 2 : (i / (rows.length - 1)) * innerW),
     y:
       row.score == null
         ? null
         : pad.t + innerH - (Math.max(0, Math.min(100, row.score)) / 100) * innerH,
   }));
   const known = points.filter((p) => p.y != null);
+
+  if (!known.length) {
+    return (
+      <p className="research-empty">
+        Play a farm quiz and your frustration line will appear here.
+      </p>
+    );
+  }
+
   const path = known
     .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
     .join(' ');
+  const ticks = new Set(pickTickIndices(points.length));
+  const lastTick = points.length - 1;
 
   const yFor = (score) => pad.t + innerH - (score / 100) * innerH;
 
@@ -42,7 +67,7 @@ export function FrustrationLineChart({ series = [], height = 220 }) {
       className="dash-line-chart"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label="Frustration score by day. Green band is low, gold is moderate, coral is high."
+      aria-label="Frustration score over time. Green band is low, gold is moderate, coral is high."
     >
       {band(0, 30, 'rgba(88, 176, 80, 0.16)')}
       {band(30, 60, 'rgba(232, 176, 48, 0.16)')}
@@ -65,19 +90,22 @@ export function FrustrationLineChart({ series = [], height = 220 }) {
       {known.map((p) => (
         <circle key={p.date || p.i} cx={p.x} cy={p.y} r="5" className="dash-line-dot" />
       ))}
-      {points.map((p, i) =>
-        i % 2 === 0 || i === points.length - 1 ? (
+      {points.map((p, i) => {
+        if (!ticks.has(i)) return null;
+        const anchor =
+          i === 0 && lastTick > 0 ? 'start' : i === lastTick && lastTick > 0 ? 'end' : 'middle';
+        return (
           <text
             key={`l-${p.date || i}`}
             x={p.x}
-            y={height - 6}
-            textAnchor="middle"
+            y={height - 8}
+            textAnchor={anchor}
             className="dash-chart-label"
           >
             {p.label}
           </text>
-        ) : null,
-      )}
+        );
+      })}
       <text x={4} y={pad.t + 10} className="dash-chart-axis">
         100
       </text>

@@ -528,6 +528,72 @@ export async function insertMentorIntervention(body = {}) {
   return { interventionId };
 }
 
+/**
+ * Live farm cursor for launch / resume (frontend-app Game Arena card).
+ */
+export async function getStudentProgress(studentId) {
+  const id = String(studentId || '').trim();
+  if (!id) throw new Error('studentId required');
+
+  const result = await query(
+    `SELECT
+       s.student_id,
+       COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+       COALESCE(s.current_level, 1) AS current_level,
+       COALESCE(s.wallet_balance, 0) AS wallet_balance,
+       COALESCE(s.lessons_completed, 0) AS lessons_completed,
+       s.latest_frustration_score,
+       s.latest_frustration_level,
+       s.last_seen_at,
+       COALESCE(lp.highest_completed, 0)::int AS highest_completed_level
+     FROM engagement_gaming.students s
+     LEFT JOIN (
+       SELECT student_id, MAX(level_number)::int AS highest_completed
+       FROM engagement_gaming.level_progress
+       WHERE status = 'completed'
+       GROUP BY student_id
+     ) lp ON lp.student_id = s.student_id
+     WHERE s.student_id = $1`,
+    [id],
+  );
+
+  const row = result.rows?.[0];
+  if (!row) {
+    return {
+      found: false,
+      studentId: id,
+      currentLevel: 1,
+      highestCompletedLevel: 0,
+      cash: 0,
+      isReturning: false,
+    };
+  }
+
+  const highestCompletedLevel = Math.max(
+    0,
+    Number(row.highest_completed_level) || 0,
+  );
+  const storedLevel = Math.max(1, Number(row.current_level) || 1);
+  const currentLevel = Math.max(storedLevel, highestCompletedLevel + 1);
+
+  return {
+    found: true,
+    studentId: row.student_id,
+    displayName: row.display_name || null,
+    currentLevel,
+    highestCompletedLevel,
+    cash: Math.max(0, Number(row.wallet_balance) || 0),
+    lessonsCompleted: Number(row.lessons_completed) || 0,
+    frustrationScore:
+      row.latest_frustration_score != null
+        ? Number(row.latest_frustration_score)
+        : null,
+    frustrationLevel: row.latest_frustration_level || null,
+    lastSeenAt: row.last_seen_at || null,
+    isReturning: currentLevel > 1 || highestCompletedLevel > 0,
+  };
+}
+
 export async function insertGameplayEvent(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');

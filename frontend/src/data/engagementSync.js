@@ -13,6 +13,10 @@ function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+async function readJson(res) {
+  return res.json().catch(() => ({}));
+}
+
 async function post(path, body) {
   try {
     const res = await fetch(path, {
@@ -20,7 +24,7 @@ async function post(path, body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}),
     });
-    const data = await res.json().catch(() => ({}));
+    const data = await readJson(res);
     if (!res.ok || data?.ok === false) {
       if (data?.error === 'DATABASE_URL_not_configured' || data?.skipped) {
         return { ok: false, skipped: true, ...data };
@@ -32,6 +36,45 @@ async function post(path, body) {
   } catch (err) {
     console.warn('[engagementSync] network', path, err?.message || err);
     return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+export async function fetchEngagementStudent(studentId) {
+  const id = String(studentId || '').trim();
+  if (!id) return null;
+  try {
+    const res = await fetch(
+      `/api/engagement/student?studentId=${encodeURIComponent(id)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    const data = await readJson(res);
+    if (res.ok && data?.ok !== false && data?.found !== false) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('[engagementSync] student', err?.message || err);
+  }
+
+  try {
+    const res = await fetch(
+      `/api/engagement/leaderboard?studentId=${encodeURIComponent(id)}&limit=1`,
+      { headers: { Accept: 'application/json' } },
+    );
+    const data = await readJson(res);
+    const you = data?.you;
+    const currentLevel = Math.max(1, Number(you?.currentLevel) || 0);
+    if (!res.ok || data?.ok === false || !you || currentLevel < 1) return null;
+    return {
+      found: true,
+      studentId: you.studentId || id,
+      currentLevel,
+      highestCompletedLevel: Math.max(0, currentLevel - 1),
+      cash: 0,
+      isReturning: currentLevel > 1,
+    };
+  } catch (err) {
+    console.warn('[engagementSync] student/leaderboard', err?.message || err);
+    return null;
   }
 }
 

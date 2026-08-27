@@ -8072,6 +8072,15 @@ body {
 .dash-scatter-chart {
   width: 100%;
   height: auto;
+  overflow: visible;
+  display: block;
+}
+
+.dash-chart-note {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: rgba(44, 33, 16, 0.72);
+  line-height: 1.4;
 }
 
 .dash-line-path {
