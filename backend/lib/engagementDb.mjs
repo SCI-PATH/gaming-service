@@ -399,6 +399,70 @@ export async function insertFrustrationSnapshot(body = {}) {
   return { snapshotId, frustrationScore: score, frustrationLevel: level };
 }
 
+function normalizeFrustrationRow(row) {
+  if (!row) return null;
+  const recorded = row.recorded_at;
+  return {
+    snapshotId: row.snapshot_id || null,
+    frustrationScore:
+      row.frustration_score != null ? Number(row.frustration_score) : null,
+    frustrationLevel: row.frustration_level || null,
+    sessionId: row.session_id || null,
+    levelNumber: row.level_number ?? null,
+    source: row.source || null,
+    recordedAt: recorded ? new Date(recorded).toISOString() : null,
+    signals: row.signals && typeof row.signals === 'object' ? row.signals : {},
+    dominantIndicators: Array.isArray(row.dominant_indicators)
+      ? row.dominant_indicators
+      : [],
+  };
+}
+
+/**
+ * Latest frustration snapshot(s) for another SCI-PATH component (Socrates).
+ * Score is 0–100; caller divides by 100 for Component 4's 0–1 cue.
+ */
+export async function getFrustrationForStudent({
+  studentId,
+  sessionId = null,
+  limit = 1,
+} = {}) {
+  const id = String(studentId || '').trim();
+  if (!id) throw new Error('studentId required');
+  const historyLimit = Math.max(1, Math.min(50, Number(limit) || 1));
+  const session = String(sessionId || '').trim() || null;
+
+  const result = await query(
+    `SELECT snapshot_id, student_id, session_id, level_number,
+            frustration_score, frustration_level, signals, dominant_indicators,
+            source, recorded_at
+     FROM engagement_gaming.frustration_snapshots
+     WHERE student_id = $1
+       AND ($2::text IS NULL OR session_id::text = $2)
+     ORDER BY recorded_at DESC
+     LIMIT $3`,
+    [id, session, historyLimit],
+  );
+
+  const history = (result.rows || [])
+    .map(normalizeFrustrationRow)
+    .filter(Boolean);
+  const latest = history[0] || null;
+
+  return {
+    studentId: id,
+    frustrationScore: latest?.frustrationScore ?? null,
+    frustrationLevel: latest?.frustrationLevel ?? null,
+    recordedAt: latest?.recordedAt ?? null,
+    sessionId: latest?.sessionId ?? session,
+    levelNumber: latest?.levelNumber ?? null,
+    source: latest?.source ?? null,
+    signals: latest?.signals ?? {},
+    dominantIndicators: latest?.dominantIndicators ?? [],
+    history,
+  };
+}
+
 export async function insertMentorIntervention(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');

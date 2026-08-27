@@ -193,6 +193,39 @@ export async function syncFrustration(payload = {}, student = null) {
   });
 }
 
+async function get(path) {
+  try {
+    const res = await fetch(path);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      if (data?.error === 'DATABASE_URL_not_configured' || data?.skipped) {
+        return { ok: false, skipped: true, ...data };
+      }
+      console.warn('[engagementSync]', path, data?.error || res.status);
+      return { ok: false, ...data };
+    }
+    return data;
+  } catch (err) {
+    console.warn('[engagementSync] network', path, err?.message || err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
+/** Latest Neon snapshot for this student (0–100). Used by Socrates handoff. */
+export async function fetchFrustration(student = null, opts = {}) {
+  const studentId = student?.id || getEngagementStudentId();
+  if (!studentId) return null;
+  const params = new URLSearchParams({ studentId });
+  const sessionId =
+    opts.sessionId === undefined
+      ? getEngagementSessionId()
+      : opts.sessionId;
+  if (sessionId) params.set('sessionId', sessionId);
+  const limit = Number(opts.limit);
+  if (Number.isFinite(limit) && limit > 0) params.set('limit', String(limit));
+  return get(`/api/engagement/frustration?${params.toString()}`);
+}
+
 export async function syncMentorIntervention(payload = {}, student = null) {
   const studentId =
     student?.id ||
