@@ -18,6 +18,7 @@ import {
 import { PERFORMANCE_LABELS } from './performanceCategories.js';
 import { getFarmLevel } from './farmLevels.js';
 import { getAptitudePerformance } from '../storyline/aptitude/AptitudePerformanceProvider.js';
+import { hasSavedFarmProgress, loadFarmProgress, saveFarmProgress } from './farmProgress.js';
 
 const APTITUDE_BASE_KEY = 'scipath_aptitude_result';
 
@@ -211,14 +212,36 @@ export function timeTargetFromAptitudePerformance(performance = {}, mastery = nu
 }
 
 export function hasFarmLevelHistory() {
-  return getAllMasteryLevelRecords().length > 0;
+  return getAllMasteryLevelRecords().length > 0 || hasSavedFarmProgress();
 }
 
 export function resolveCurrentLevelId() {
   const records = getAllMasteryLevelRecords();
-  if (!records.length) return 1;
+  const fromMastery = records.length
+    ? Math.max(...records.map((r) => Number(r.levelId) || 1)) + 1
+    : 1;
+  const saved = loadFarmProgress();
+  const fromSaved = Math.max(1, Number(saved?.currentLevelId) || 1);
+  return Math.max(1, fromMastery, fromSaved);
+}
+
+/** If older sessions only have mastery records, write the farm cursor now. */
+function backfillFarmProgressCursor() {
+  const records = getAllMasteryLevelRecords();
+  if (!records.length) return;
   const highest = Math.max(...records.map((r) => Number(r.levelId) || 1));
-  return Math.max(1, highest + 1);
+  const saved = loadFarmProgress();
+  if (
+    saved.highestCompletedLevel >= highest &&
+    saved.currentLevelId >= highest + 1
+  ) {
+    return;
+  }
+  saveFarmProgress({
+    currentLevelId: Math.max(saved.currentLevelId || 1, highest + 1),
+    highestCompletedLevel: Math.max(saved.highestCompletedLevel || 0, highest),
+    cash: saved.cash,
+  });
 }
 
 function resolveAptitudePerformance(student) {
@@ -321,8 +344,10 @@ export function resolveLobbyProgress(student, farm = {}) {
   }
 
   const levelRecords = getAllMasteryLevelRecords();
-  const hasHistory = levelRecords.length > 0;
-  const levelId = hasHistory ? resolveCurrentLevelId() : Math.max(1, Number(farm.levelId) || 1);
+  const hasHistory = hasFarmLevelHistory();
+  const levelId = hasHistory
+    ? resolveCurrentLevelId()
+    : Math.max(1, Number(farm.levelId) || 1);
   const prior = getMasteryForLevelStart(levelId);
   const hasBaseline =
     prior.source === 'aptitude_test' ||
@@ -379,16 +404,20 @@ export function resolveLobbyProgress(student, farm = {}) {
     ? Math.min(100, Math.round((answered / maxQuestions) * 100))
     : 0;
 
-  const highestCompleted =
+  const highestCompleted = Math.max(
     levelRecords.length > 0
       ? Math.max(...levelRecords.map((r) => Number(r.levelId) || 1))
-      : 0;
+      : 0,
+    Number(loadFarmProgress().highestCompletedLevel) || 0,
+  );
 
   return {
     phase,
     steps: buildSteps(phase),
     progressPct,
-    progressCountLabel: `${answered} / ${maxQuestions} questions`,
+    progressCountLabel: highestCompleted
+      ? `Level ${highestCompleted} complete · continue Level ${levelId}`
+      : `${answered} / ${maxQuestions} questions`,
     masteryLabel: bandLabelFromPrior(prior),
     targetLabel,
     targetSource: prior.fromLevelId ? 'previous_level' : 'initial',
@@ -405,9 +434,13 @@ export function farmBaselinesFromPrior(prior, levelId = 1) {
   const level = getFarmLevel(levelId);
   const mastery = prior?.mastery ?? 0.5;
   const timeTargetMs = prior?.timeTargetMs ?? DDA_CONFIG.midTargetMs;
+  const saved = loadFarmProgress();
+  const cash = Math.max(0, Number(saved?.cash) || 0);
 
   return {
     levelId,
+    earnings: cash,
+    currentMoney: cash,
     mastery,
     masteryPercent: Math.round(mastery * 100),
     performanceBand: prior?.band || 'medium',
@@ -434,6 +467,7 @@ export function syncBootstrapStudentProgress(student) {
     ensureAptitudeBaselineApplied(student);
   }
 
+  backfillFarmProgressCursor();
   const levelId = resolveCurrentLevelId();
   const prior = getMasteryForLevelStart(levelId);
   const lobby = resolveLobbyProgress(student, { levelId });
@@ -463,6 +497,7 @@ export async function bootstrapStudentProgress(student) {
     }
   }
 
+  backfillFarmProgressCursor();
   const levelId = resolveCurrentLevelId();
   const prior = getMasteryForLevelStart(levelId);
   const lobby = resolveLobbyProgress(student, { levelId });

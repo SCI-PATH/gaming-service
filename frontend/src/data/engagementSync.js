@@ -79,7 +79,9 @@ export async function syncStudentLogin(student, options = {}) {
     studentName: student.displayName || student.username || student.id,
     displayName: student.displayName || student.username || student.id,
     gradeBand: student.grade != null ? String(student.grade) : '6-9',
-    currentLevel: 1,
+    ...(options.currentLevel != null
+      ? { currentLevel: Number(options.currentLevel) }
+      : {}),
   });
 
   const started = await post('/api/engagement/session/start', {
@@ -87,7 +89,7 @@ export async function syncStudentLogin(student, options = {}) {
     studentId: student.id,
     studentName: student.displayName || student.id,
     displayName: student.displayName || student.id,
-    startLevel: 1,
+    startLevel: Math.max(1, Number(options.startLevel) || 1),
     clientVersion: 'gaming-service-web',
     deviceInfo: {
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,

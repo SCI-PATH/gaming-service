@@ -130,7 +130,11 @@ export async function upsertLevelProgress(body = {}) {
   if (!studentId || !(levelNumber >= 1)) {
     throw new Error('studentId and levelNumber required');
   }
-  await upsertStudent({ ...body, currentLevel: levelNumber });
+  const completed = body.status === 'completed' || body.completed === true;
+  await upsertStudent({
+    ...body,
+    currentLevel: completed ? levelNumber + 1 : (body.currentLevel ?? levelNumber),
+  });
 
   const levelProgressId =
     String(body.levelProgressId || '').trim() ||

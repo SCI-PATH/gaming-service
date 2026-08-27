@@ -7609,6 +7609,127 @@ body {
   background: #c45a5a;
 }
 
+.research-journey-headline {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.research-journey-windows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.research-journey-windows div {
+  border: 1px solid rgba(120, 150, 130, 0.35);
+  padding: 8px 10px;
+}
+
+.research-journey-windows dt {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.research-journey-windows dd {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.research-journey-scroll {
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.research-journey-chart {
+  display: block;
+  max-width: none;
+}
+
+.research-journey-grid {
+  stroke: rgba(120, 150, 130, 0.28);
+  stroke-width: 1;
+}
+
+.research-journey-bar {
+  fill: #5cb87a;
+}
+
+.research-journey-bar.tone-ok {
+  fill: #5cb87a;
+}
+.research-journey-bar.tone-caution {
+  fill: #c9a227;
+}
+.research-journey-bar.tone-warn {
+  fill: #d4894a;
+}
+.research-journey-bar.tone-critical {
+  fill: #c45a5a;
+}
+
+.research-journey-chart circle.is-correct {
+  fill: #5cb87a;
+}
+
+.research-journey-chart circle.is-miss {
+  fill: #c45a5a;
+}
+
+.research-journey-axis {
+  margin: 4px 0 8px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.research-journey-phases {
+  list-style: none;
+  margin: 8px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.research-journey-phases li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid rgba(120, 150, 130, 0.35);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.research-journey-phases li strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.research-journey-phases li.tone-ok {
+  border-color: rgba(92, 184, 122, 0.55);
+}
+.research-journey-phases li.tone-caution {
+  border-color: rgba(201, 162, 39, 0.55);
+}
+.research-journey-phases li.tone-warn {
+  border-color: rgba(212, 137, 74, 0.6);
+}
+.research-journey-phases li.tone-critical {
+  border-color: rgba(196, 90, 90, 0.6);
+}
+
+@media (max-width: 720px) {
+  .research-journey-windows {
+    grid-template-columns: 1fr;
+  }
+}
+
 .research-range-list {
   list-style: none;
   margin: 14px 0 0;

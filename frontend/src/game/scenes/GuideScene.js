@@ -22,8 +22,10 @@ export default class GuideScene extends Phaser.Scene {
       if (this._started || !this.sys?.isActive()) return;
       this._started = true;
       const levelId = this.game.registry.get('farmLevelId') || 1;
+      const startingMoney = Number(this.game.registry.get('farmStartingMoney')) || 0;
       this.scene.start('GameScene', {
         levelId,
+        startingMoney,
         storyline: this.game.registry.get('storyline') || null,
       });
     };

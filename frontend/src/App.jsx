@@ -4,6 +4,7 @@ import ForestRPGCanvas, {
   emitUnlockShopClose,
   emitUiInputLock,
   emitStartFarmLevel,
+  emitSetFarmResume,
   emitSyncStudentState,
   emitReturnToMenu,
   emitSaveFarmRun,
@@ -55,6 +56,7 @@ import {
 import {
   bootstrapStudentProgress,
   resolveLobbyProgress,
+  resolveCurrentLevelId,
   syncBootstrapStudentProgress,
 } from './data/aptitudeProgress.js';
 import { resolvePlayWizard } from './data/playWizard.js';
@@ -64,6 +66,7 @@ import {
   hasFarmRun,
   loadFarmRun,
 } from './data/farmRunStore.js';
+import { saveFarmProgress } from './data/farmProgress.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
@@ -134,11 +137,14 @@ export default function App() {
     if (platformLaunchRef?.student?.id) {
       syncStudentLogin(platformLaunchRef.student, {
         sessionId: platformLaunchRef.sessionId || undefined,
+        startLevel: resolveCurrentLevelId(),
       });
       return;
     }
     const existing = getCurrentStudent();
-    if (existing?.id) syncStudentLogin(existing);
+    if (existing?.id) {
+      syncStudentLogin(existing, { startLevel: resolveCurrentLevelId() });
+    }
   }, []);
 
   const [gameReady, setGameReady] = useState(false);
@@ -224,7 +230,7 @@ export default function App() {
     const refreshProgress = () => {
       void bootstrapStudentProgress(student).then(({ lobby, farmPatch }) => {
         setLobbyProgress(lobby);
-        if (farmPatch) {
+        if (farmPatch && !inFarm) {
           setFarm((prev) => ({
             ...prev,
             ...farmPatch,
@@ -235,7 +241,7 @@ export default function App() {
 
     window.addEventListener('focus', refreshProgress);
     return () => window.removeEventListener('focus', refreshProgress);
-  }, [student?.id]);
+  }, [student?.id, inFarm]);
 
   useEffect(() => {
     ForestGameBridge.emit(FARM_EVENTS.LOBBY_GATE, { canStart: true });
@@ -486,7 +492,9 @@ export default function App() {
       if (boot.farmPatch) {
         setFarm({ ...createInitialFarm(), ...boot.farmPatch });
       }
-      syncStudentLogin(nextStudent);
+      syncStudentLogin(nextStudent, {
+        startLevel: boot.lobby?.levelId ?? resolveCurrentLevelId(),
+      });
       setSavedRun(farmRunSummary());
     },
     [resetSessionUi],
@@ -632,15 +640,27 @@ export default function App() {
       });
       return;
     }
+    const levelId = Math.max(1, Number(farm.levelId) || 1);
+    const cash = Math.max(0, Number(farm.earnings) || 0);
+    emitSetFarmResume({
+      levelId,
+      startingMoney: cash,
+    });
     ForestGameBridge.emit(FARM_EVENTS.MENU_START);
-  }, []);
+  }, [farm.levelId, farm.earnings]);
 
   const handleLobbyStartOver = useCallback(() => {
     clearFarmRun();
     setSavedRun(null);
     pendingResumeRef.current = false;
+    const levelId = Math.max(1, Number(farm.levelId) || 1);
+    const cash = Math.max(0, Number(farm.earnings) || 0);
+    emitSetFarmResume({
+      levelId,
+      startingMoney: cash,
+    });
     ForestGameBridge.emit(FARM_EVENTS.MENU_START);
-  }, []);
+  }, [farm.levelId, farm.earnings]);
 
   const handleLobbyLeaderboard = useCallback(() => {
     setLeaderboardOpen(true);
@@ -1294,6 +1314,10 @@ export default function App() {
     refreshChallenges(nextLevelId);
     questScrollLevelRef.current = nextLevelId;
     setQuestScrollOpen(false);
+    saveFarmProgress({
+      currentLevelId: nextLevelId,
+      cash,
+    });
     window.setTimeout(() => {
       emitStartFarmLevel({
         levelId: nextLevelId,
@@ -1341,6 +1365,8 @@ export default function App() {
         <div className="forest-stage-wrap">
           <ForestRPGCanvas
             key={student.id}
+            resumeLevelId={farm.levelId}
+            startingMoney={farm.earnings || 0}
             onReady={handleReady}
             onFarmState={handleFarmState}
             onPlayerMapPos={handlePlayerMapPos}
@@ -1496,6 +1522,8 @@ export default function App() {
             levelId={farm.levelId}
             challenges={challenges}
             goalText={farm.goalText}
+            questionsAnswered={farm.questionsAnswered ?? 0}
+            maxQuestions={farm.maxQuestions ?? 15}
             harvestTarget={farm.harvestTarget ?? 24}
             cropsHarvestedTotal={farm.cropsHarvestedTotal ?? 0}
             cropsSoldThisChallenge={farm.cropsSoldThisChallenge ?? 0}

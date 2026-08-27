@@ -37,6 +37,7 @@ import {
   plantPatchFromMastery,
   saveLevelPerformance,
 } from '../../data/masteryModel';
+import { loadFarmProgress, saveFarmProgress } from '../../data/farmProgress.js';
 import {
   applyFrustrationToGameplaySettings,
   consumePendingGameplayBonus,
@@ -409,6 +410,7 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    this.persistFarmResumeCursor();
     this.emitFarmState();
     this.emitPlayerMapPos();
     this.bindRunPersistence();
@@ -820,6 +822,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.releaseStaleFarmLocks();
     this.focusGameCanvas();
+    this.persistFarmResumeCursor();
     this.emitFarmState();
     this.emitPlayerMapPos();
 
@@ -1747,16 +1750,28 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
+  persistFarmResumeCursor() {
+    const saved = loadFarmProgress();
+    const levelId = Math.max(1, this.levelId || 1);
+    const savedLevel = saved.currentLevelId || 1;
+    saveFarmProgress({
+      currentLevelId: Math.max(savedLevel, levelId),
+      cash: levelId >= savedLevel ? this.currentMoney || 0 : saved.cash,
+    });
+  }
+
   persistLevelMastery() {
     const avgMs = this.levelAvgResponseMs() || null;
 
-    return saveLevelPerformance(this.levelId, {
+    const saved = saveLevelPerformance(this.levelId, {
       attempts: this.levelAttempts,
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
       avgResponseMs: avgMs,
       timeTargetMs: this.timeTargetMs,
+      cash: this.currentMoney || 0,
     });
+    return saved;
   }
 
   /** Persist adaptive gameplay metrics + next-level classification / bonuses. */
@@ -1965,10 +1980,13 @@ export default class GameScene extends Phaser.Scene {
     if ((this.cropsHarvestedTotal || 0) === 0) {
       this.harvestTarget = personalized.harvestTarget;
     }
+    const answered = this.questionsAnswered();
+    const quota = DDA_CONFIG.maxQuestions;
+    const qLine = `Science questions ${answered}/${quota}`;
     this.farmLevel = {
       ...this.farmLevel,
       harvestTarget: this.harvestTarget,
-      goalText: personalized.goalText,
+      goalText: `${qLine}. ${personalized.goalText}`,
     };
   }
 
@@ -2191,17 +2209,19 @@ export default class GameScene extends Phaser.Scene {
     return !this.forestUnlocked;
   }
 
-  /** Level complete after question quota or all library jobs for this level. */
+  questionsAnswered() {
+    return (this.quizCorrect || 0) + (this.quizIncorrect || 0);
+  }
+
+  needsQuestionQuota() {
+    return this.questionsAnswered() < DDA_CONFIG.maxQuestions;
+  }
+
+  /** Level complete only after the science-question quota (15). Farm jobs do not skip it. */
   checkTargetReached() {
     if (this.forestUnlocked) return;
 
-    const answered = this.quizCorrect + this.quizIncorrect;
-    const quotaMet = answered >= DDA_CONFIG.maxQuestions;
-    const jobsDone =
-      Boolean(this.levelCropComplete) &&
-      Boolean(this.levelAnimalComplete) &&
-      Boolean(this.levelCleanComplete);
-    if (!quotaMet && !jobsDone) {
+    if (this.needsQuestionQuota()) {
       this.syncVegetableGoalText();
       this.emitFarmState();
       return;
@@ -3926,7 +3946,12 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // One plant type per bed — cannot replant the same crop on another bed
+    // Extra quizzes still count until the 15-question quota
     if (this.cropPlantedSet?.has(bedCropId)) {
+      if (this.needsQuestionQuota()) {
+        this.openPracticeScienceQuiz(bedDef);
+        return;
+      }
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'plant_blocked',
         reason: 'already_planted',
@@ -3979,6 +4004,39 @@ export default class GameScene extends Phaser.Scene {
       patchRows: this.farmLevel.plantPatchRows ?? 3,
       cropType: this.farmLevel.cropId,
     }));
+  }
+
+  /** Extra science quiz on an already-planted bed until the 15-question quota. */
+  openPracticeScienceQuiz(bedDef = {}) {
+    if (this.farmInputLocked || this.forestUnlocked || !this.needsQuestionQuota()) {
+      return;
+    }
+    this.pendingQuizMode = 'practice';
+    this.freezeFarmForQuiz();
+    const question = pickScienceQuestion(
+      this.farmLevel,
+      this.lastQuestionId,
+      'plant',
+    );
+    this.lastQuestionId = question.id;
+    this.quizOpenedAt = Date.now();
+    const remaining = DDA_CONFIG.maxQuestions - this.questionsAnswered();
+    ForestGameBridge.emit(
+      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
+      this.withGameplayQuizMeta({
+        mode: 'practice',
+        challenge: 'practice',
+        cropName: bedDef.cropName || this.farmLevel?.cropName,
+        cropType: bedDef.cropId || this.farmLevel?.cropId,
+        question,
+        questionData: question,
+        rp: question.rp,
+        levelId: this.farmLevel.id,
+        openedAt: this.quizOpenedAt,
+        questionsRemaining: remaining,
+      }),
+    );
+    this.emitFarmState();
   }
 
   /** Spawn the pending patch after a correct plant quiz (once per crop type). */
@@ -4313,6 +4371,20 @@ export default class GameScene extends Phaser.Scene {
 
       if (mode === 'item_challenge') {
         this.resolveItemChallengeSuccess();
+        return;
+      }
+
+      if (mode === 'practice') {
+        this.pendingQuizMode = null;
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'practice_quiz_success',
+          rp: payload.rp ?? 0,
+          questionsAnswered: this.questionsAnswered(),
+          maxQuestions: DDA_CONFIG.maxQuestions,
+        });
+        this.emitFarmState();
+        this.checkTargetReached();
+        this.resumeAfterQuiz();
         return;
       }
 
@@ -5361,8 +5433,13 @@ export default class GameScene extends Phaser.Scene {
   onForestGateEnter() {
     if (!this.forestUnlocked) return;
     this.clearAllCrops({ silent: true });
+    const nextLevelId = (this.levelId || 1) + 1;
+    saveFarmProgress({
+      currentLevelId: nextLevelId,
+      cash: this.currentMoney || 0,
+    });
     ForestGameBridge.emit(FARM_EVENTS.START_FARM_LEVEL, {
-      levelId: (this.levelId || 1) + 1,
+      levelId: nextLevelId,
       startingMoney: this.currentMoney || 0,
     });
   }

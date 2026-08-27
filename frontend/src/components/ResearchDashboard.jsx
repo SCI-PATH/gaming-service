@@ -264,6 +264,9 @@ export default function ResearchDashboard({
             This number goes up when questions feel heavy (misses, long waits,
             extra retries) and comes down when you recover.
           </p>
+          {frustration.journey?.headline ? (
+            <p className="research-journey-headline">{frustration.journey.headline}</p>
+          ) : null}
           <ul className="dash-band-pills">
             <li className={band === 'low' ? 'is-on is-low' : 'is-low'}>
               Low 0–30

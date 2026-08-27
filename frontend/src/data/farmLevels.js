@@ -5,6 +5,8 @@
  * Prefer Assessment Engine /next for E-key challenges.
  * Local banks are unused by the live quiz path.
  */
+import { SCIENCE_QUESTIONS } from './scienceQuestions.js';
+
 export const FARM_LEVELS = [
   {
     id: 1,
@@ -209,15 +211,49 @@ export function getFarmLevel(levelId = 1) {
 }
 
 /**
- * Local farm question for this level. Used when Assessment Engine is unavailable.
+ * Local farm question for this level / practice quizzes.
+ * Prefer mode-matched banks; fall back to a wider pool so offline practice never crashes.
  */
 export function pickScienceQuestion(level, avoidId, mode = 'plant') {
   const loadLike = mode === 'load' || mode === 'unload' || mode === 'sell';
-  const source =
-    loadLike && level.loadQuestions?.length
+  let source =
+    loadLike && level?.loadQuestions?.length
       ? level.loadQuestions
-      : level.questions;
-  if (!Array.isArray(source) || source.length < 1) return null;
+      : level?.questions;
+
+  if (!Array.isArray(source) || source.length < 1) {
+    const seen = new Set();
+    const unique = [];
+    const push = (list) => {
+      if (!Array.isArray(list)) return;
+      for (const q of list) {
+        if (!q?.id || seen.has(q.id)) continue;
+        seen.add(q.id);
+        unique.push(q);
+      }
+    };
+    push(level?.questions);
+    push(level?.loadQuestions);
+    push(SCIENCE_QUESTIONS);
+    for (const other of FARM_LEVELS) {
+      push(other.questions);
+      push(other.loadQuestions);
+    }
+    source = unique;
+  }
+
+  if (!Array.isArray(source) || source.length < 1) {
+    return {
+      id: 'fallback-science',
+      topic: 'Life Science',
+      prompt: 'Plants use sunlight to make food. What is that process called?',
+      options: ['Photosynthesis', 'Erosion', 'Freezing', 'Orbit'],
+      correctIndex: 0,
+      hint: 'Think of “photo” meaning light.',
+      rp: 20,
+    };
+  }
+
   const pool = source.filter((q) => q.id !== avoidId);
   const list = pool.length ? pool : source;
   return list[Math.floor(Math.random() * list.length)] || null;

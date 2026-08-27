@@ -125,7 +125,9 @@ export default function GameLobbyOverlay({
               ? 'Enter the Farm'
               : savedRun
                 ? 'Continue farm'
-                : 'Start Adventure'}
+                : progress.phase === 'returning'
+                  ? `Continue Level ${progress.levelId ?? farm.levelId ?? 1}`
+                  : 'Start Adventure'}
           </button>
           {!isGuide && savedRun ? (
             <p className="game-lobby-saved">

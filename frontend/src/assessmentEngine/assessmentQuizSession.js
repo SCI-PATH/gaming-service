@@ -83,12 +83,16 @@ function stripSecrets(value) {
 function normalizeGrade(student) {
   const raw = student?.grade ?? student?.gradeLevel ?? null;
   const n = Number(raw);
-  if (!Number.isFinite(n)) return 6;
+  if (!Number.isFinite(n)) return null;
   if (n >= 6 && n <= 9) return Math.trunc(n);
-  return 6;
+  return null;
 }
 
-/** Canonical chapter_id from IAE catalog, e.g. G6_C8. */
+/**
+ * Real IAE catalog id only (e.g. G7_C2). Never invent G{n}_C8 —
+ * omitting chapter_id lets C2 resolve via C1 /progress.
+ * @returns {string | null}
+ */
 function resolveChapterId(student) {
   const raw = String(
     student?.chapterId ||
@@ -98,8 +102,8 @@ function resolveChapterId(student) {
       '',
   ).trim();
   const match = raw.match(/^G([6-9])_C(\d+)$/i);
-  if (match) return `G${match[1]}_C${match[2]}`;
-  return `G${normalizeGrade(student)}_C8`;
+  if (!match) return null;
+  return `G${match[1]}_C${match[2]}`;
 }
 
 /** Canonical Assessment Engine types: MCQ | TrueFalse | ShortAnswer | MultiBlank */
@@ -364,7 +368,12 @@ export function mapAssessmentQuestion(rawQuestion) {
     remoteGrade: true,
     source: 'assessment_engine',
   };
-  aeLog('mapped /next → quiz UI', mapped);
+  aeLog('mapped /next → quiz UI', {
+    id: mapped.id,
+    questionType: mapped.questionType,
+    prompt: mapped.prompt?.slice?.(0, 80),
+    optionCount: mapped.options?.length ?? 0,
+  });
   return mapped;
 }
 
@@ -419,25 +428,23 @@ function isJsonPayload(contentType, data) {
   return Boolean(data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length);
 }
 
+/**
+ * Once a host creates the session, stick to it.
+ * Only explore all candidates when there is no activeBase yet (post-lesson).
+ */
 function basesToTry() {
-  const all = getAssessmentBaseCandidates();
-  if (!activeBase) return all;
-  return [activeBase, ...all.filter((base) => base !== activeBase)];
+  if (activeBase) return [activeBase];
+  return getAssessmentBaseCandidates();
 }
 
 async function fetchWithBases(pathBuilder, { method = 'GET', body, label, timeoutMs } = {}) {
-  // Prefer the host that created the session, but fall back if that proxy/host
-  // 404s or drops. A sticky dead base was blocking every quiz after the first.
   const bases = basesToTry();
   const timeout = Number(timeoutMs) > 0 ? Number(timeoutMs) : FETCH_TIMEOUT_MS;
+  const tag = label || method;
 
   let lastError = null;
   for (const base of bases) {
     const url = `${base.replace(/\/+$/, '')}${pathBuilder()}`;
-    aeLog(`${method} ${label || url} → request`, {
-      url,
-      body: body ?? null,
-    });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -452,19 +459,17 @@ async function fetchWithBases(pathBuilder, { method = 'GET', body, label, timeou
       });
       const contentType = String(res.headers.get('content-type') || '');
       const data = await res.json().catch(() => ({}));
-      aeLog(`${method} ${label || url} ← ${res.status}`, {
-        url,
-        ok: res.ok,
-        status: res.status,
-        contentType,
-        response: data,
-      });
-      if (res.status === 409) {
-        return { ok: false, status: 409, data, base };
-      }
       if (!res.ok) {
+        aeWarn(`${tag} ← ${res.status}`, { url, body: body ?? null, response: data });
         lastError = { status: res.status, data, base };
-        // Validation errors stay on this host. 404/5xx may be a dead proxy.
+        if (res.status === 409) {
+          return { ok: false, status: 409, data, base };
+        }
+        // Sticky host: do not spray other bases for session-bound calls.
+        if (activeBase) {
+          return { ok: false, status: res.status, data, base, lastError };
+        }
+        // First contact (post-lesson): skip dead proxies, try next candidate.
         if (res.status >= 400 && res.status < 500 && res.status !== 404) {
           return { ok: false, status: res.status, data, base, lastError };
         }
@@ -472,27 +477,31 @@ async function fetchWithBases(pathBuilder, { method = 'GET', body, label, timeou
       }
       if (!isJsonPayload(contentType, data)) {
         lastError = { status: res.status, data: 'non-json response', base };
-        aeWarn(`${method} ${label || url} skipped — not JSON`, {
-          url,
-          contentType,
-        });
+        aeWarn(`${tag} skipped — not JSON`, { url, contentType });
+        if (activeBase) {
+          return { ok: false, status: res.status, data: null, base, lastError };
+        }
         continue;
       }
       activeBase = base;
+      aeLog(`${tag} ← ${res.status}`, { url, sticky: activeBase });
       return { ok: true, status: res.status, data, base };
     } catch (err) {
       lastError = { error: err, base };
-      aeWarn(`${method} ${label || url} failed`, {
+      aeWarn(`${tag} failed`, {
         url,
         error: err?.name === 'AbortError'
           ? `timeout after ${timeout}ms`
           : String(err?.message || err),
       });
+      if (activeBase) {
+        return { ok: false, status: 0, data: null, base, lastError };
+      }
     } finally {
       clearTimeout(timer);
     }
   }
-  aeWarn('all bases failed', { label, lastError, stickyBase: activeBase });
+  aeWarn('all bases failed', { label: tag, lastError });
   return { ok: false, status: 0, data: null, lastError };
 }
 
@@ -500,14 +509,19 @@ async function postLesson(student) {
   const studentId = student?.id;
   if (!studentId) return null;
 
+  /** @type {Record<string, unknown>} */
+  const body = { student_id: String(studentId) };
   const grade = normalizeGrade(student);
+  if (grade != null) {
+    body.grade = grade;
+  }
+  // Only real catalog ids (G7_C2…). Never invent G{n}_C8 — omit so C2 uses C1.
   const chapterId = resolveChapterId(student);
-  const body = {
-    student_id: String(studentId),
-    grade,
-    chapter_id: chapterId,
-  };
+  if (chapterId) {
+    body.chapter_id = chapterId;
+  }
 
+  aeLog('POST /quizzes/post-lesson →', body);
   const result = await fetchWithBases(ASSESSMENT_PATHS.postLesson, {
     method: 'POST',
     body,
@@ -530,8 +544,10 @@ async function postLesson(student) {
   nextStopped = false;
   aeLog('session started', {
     session_id: sessionId,
+    base: activeBase,
     max_questions: result.data?.max_questions,
     status: result.data?.status,
+    chapter_id: chapterId || '(omitted — C2/C1 resolve)',
   });
   return sessionId;
 }
@@ -576,6 +592,7 @@ async function fetchNextOnce() {
     aeWarn('/next 404 — Assessment Engine session was lost');
     sessionId = null;
     cachedQuestion = null;
+    activeBase = null;
     return { status: 'lost' };
   }
   if (result.status === 409) {
@@ -600,10 +617,12 @@ async function fetchNextOnce() {
   }
 
   const rawQ = data.question || data;
-  aeLog('/next raw question', rawQ);
   const mapped = mapAssessmentQuestion(rawQ);
   if (!isRenderableQuizQuestion(mapped)) {
-    aeWarn('/next could not map question into quiz UI — skipping item', rawQ);
+    aeWarn('/next could not map question into quiz UI — skipping item', {
+      id: rawQ?.id,
+      type: rawQ?.question_type || rawQ?.questionType,
+    });
     return { status: 'skip' };
   }
   return { status: 'ok', question: mapped };
@@ -644,7 +663,7 @@ async function takeEngineQuestion() {
 
 /**
  * Resolve the next science question from Assessment Engine /next.
- * Opens a new post-lesson session when the previous one finished or was lost.
+ * One post-lesson per session; new post-lesson only when session ended or lost.
  */
 export async function resolveScienceQuestion(_level, _avoidId, _mode = 'plant') {
   fetchGeneration += 1;
@@ -655,21 +674,20 @@ export async function resolveScienceQuestion(_level, _avoidId, _mode = 'plant') 
   }
 
   try {
-    let remote = await takeEngineQuestion();
-    if (!remote) {
-      aeLog('no /next item — opening a fresh Assessment Engine session');
-      clearRuntime();
-      remote = await takeEngineQuestion();
-    }
+    const remote = await takeEngineQuestion();
     if (remote) {
       aeLog('quiz will show Assessment Engine question', {
         id: remote.id,
         prompt: remote.prompt,
-        options: remote.options,
-        optionLetters: remote.optionLetters,
         questionType: remote.questionType,
       });
       return remote;
+    }
+    // Session may have been cleared by /next 404 inside fetchNextOnce — one retry only.
+    if (!sessionId && !assessmentUnavailable && !nextStopped && !sessionComplete) {
+      aeLog('session lost — one recovery post-lesson');
+      const recovered = await takeEngineQuestion();
+      if (recovered) return recovered;
     }
     aeWarn('Assessment Engine returned no usable question');
     return null;
@@ -710,6 +728,7 @@ export async function submitAssessmentAnswer({
     if (result.status === 404) {
       sessionId = null;
       cachedQuestion = null;
+      activeBase = null;
     }
     return { ok: false, isCorrect: false, isComplete: false, data: result.data };
   }

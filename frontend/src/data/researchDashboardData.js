@@ -22,6 +22,10 @@ import {
   FRUSTRATION_LEVEL_RANGES,
   FRUSTRATION_LEVELS,
 } from './frustrationModel.js';
+import {
+  getFrustrationHistory,
+  summarizeFrustrationJourney,
+} from './frustrationHistoryStore.js';
 import { formatResponseTime } from './dda.js';
 
 function unlockCatalogMap() {
@@ -70,13 +74,25 @@ export function buildResearchDashboardSnapshot(live = {}) {
         masteryLevels.length
       : null;
 
-  const frustrationScore = Number(
-    session.frustrationScore ?? metrics.frustration_score ?? 0,
-  );
+  const history = getFrustrationHistory();
+  const journey = summarizeFrustrationJourney(history);
+  const lastSample = history.length ? history[history.length - 1] : null;
+  const liveAnswered =
+    (Number(metrics.correct_answers) || 0) +
+    (Number(metrics.incorrect_answers) || 0);
+  const frustrationScore =
+    liveAnswered > 0
+      ? Number(session.frustrationScore ?? metrics.frustration_score ?? 0)
+      : Number(lastSample?.score ?? session.frustrationScore ?? 0);
   const frustrationLevel =
-    session.frustrationLevel ||
-    metrics.frustration_level ||
-    FRUSTRATION_LEVELS.LOW;
+    liveAnswered > 0
+      ? session.frustrationLevel ||
+        metrics.frustration_level ||
+        FRUSTRATION_LEVELS.LOW
+      : lastSample?.band ||
+        session.frustrationLevel ||
+        metrics.frustration_level ||
+        FRUSTRATION_LEVELS.LOW;
 
   const lessonProgress = masteryLevels.map((rec) => {
     const gp = gameplayLevels.find(
@@ -184,6 +200,8 @@ export function buildResearchDashboardSnapshot(live = {}) {
         hintUsage: metrics.hint_usage ?? null,
         retries: metrics.retries ?? null,
       },
+      history,
+      journey,
     },
     lessonProgress,
     unlocks,
@@ -213,7 +231,7 @@ export function downloadResearchJson(snapshot, filename) {
 }
 
 export function downloadResearchCsv(snapshot, filename) {
-  const rows = [
+  const lessonRows = [
     [
       'levelId',
       'masteryPct',
@@ -243,7 +261,31 @@ export function downloadResearchCsv(snapshot, filename) {
       r.retries ?? '',
     ]),
   ];
-  const csv = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+  const historyRows = [
+    [],
+    ['frustration over play'],
+    [
+      'question',
+      'levelId',
+      'levelQuestion',
+      'score',
+      'band',
+      'correct',
+      'signals',
+    ],
+    ...(snapshot.frustration?.history || []).map((s) => [
+      s.globalIndex,
+      s.levelId,
+      s.questionIndex,
+      s.score,
+      s.band,
+      s.correct ? 'yes' : 'no',
+      (s.signals || []).join('|'),
+    ]),
+  ];
+  const csv = [...lessonRows, ...historyRows]
+    .map((row) => row.map(csvEscape).join(','))
+    .join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   triggerDownload(
     blob,
