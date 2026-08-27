@@ -5,6 +5,7 @@
  */
 import { studentStorageKey } from './mockStudents.js';
 import { frustrationLevelFromScore } from './frustrationModel.js';
+import { getCurriculumTitle, topicDisplayName } from './curriculumTopics.js';
 
 const BASE_KEY = 'scipath_frustration_history';
 const VERSION = 1;
@@ -15,6 +16,9 @@ function storageKey() {
 }
 
 function dayKey(date = new Date()) {
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+    return date.trim();
+  }
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
   const y = d.getFullYear();
@@ -75,6 +79,15 @@ function clampScore(n) {
   return Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 }
 
+function isGenericTopic(value) {
+  const t = String(value || '').trim().toLowerCase();
+  return !t || t === 'science' || t === 'general science' || t === 'general';
+}
+
+function sampleTopicId(row) {
+  return String(row?.topicId || row?.topic || '').trim();
+}
+
 /**
  * Record one quiz / session sample. Safe to call after every answer.
  */
@@ -131,13 +144,16 @@ export function recordFrustrationSample(sample = {}) {
     retries,
     avgTimeSec: timeSec,
     incorrect: isCorrect ? 0 : 1,
+    topicId: String(sample.topicId || sample.topic || '').trim() || null,
   });
   data.points = data.points.slice(-48);
 
-  const topic = String(sample.topic || '').trim();
-  if (topic && topic !== 'Science') {
+  const topic = String(sample.topicId || sample.topic || '').trim();
+  if (topic && !isGenericTopic(topic)) {
     const prev = data.topics[topic] || {
       topic,
+      topicId: topic,
+      title: topicDisplayName(topic, topic),
       n: 0,
       avgScore: score,
       answered: 0,
@@ -151,6 +167,7 @@ export function recordFrustrationSample(sample = {}) {
     if (!isCorrect) prev.misses += 1;
     prev.lastScore = score;
     prev.level = frustrationLevelFromScore(prev.avgScore);
+    prev.title = topicDisplayName(topic, prev.title || topic);
     data.topics[topic] = prev;
   }
 
@@ -171,8 +188,56 @@ function shouldApplyLive(live) {
   return (Number(live.answered) || 0) > 0 || Number(live.score) > 0;
 }
 
-function applyLiveToDays(days, live) {
+/** Last `count` calendar days ending today. Leading empty days are dropped. */
+export function frustrationDaySeries(count = 14, live = null, filters = {}) {
+  const data = loadFrustrationHistory();
+  const { topicId, fromKey, toKey } = normalizeFilters(filters);
+  const days = applyLiveToDays(
+    topicId ? daysFromSamples(data.samples, topicId) : [...data.days],
+    live,
+    topicId,
+  );
+
+  const out = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = dayKey(d);
+    if (fromKey && key < fromKey) continue;
+    if (toKey && key > toKey) continue;
+    const hit = days.find((row) => row.date === key);
+    out.push({
+      date: key,
+      label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      score: hit ? Number(hit.score) : null,
+      level: hit?.level || null,
+      accuracyPct: hit?.accuracyPct ?? null,
+      answered: hit?.answered || 0,
+    });
+  }
+  const first = out.findIndex((row) => row.score != null);
+  return first < 0 ? [] : out.slice(first);
+}
+
+function daysFromSamples(samples = [], topicId = '') {
+  const byDay = new Map();
+  for (const sample of samples || []) {
+    if (topicId && sampleTopicId(sample) !== topicId) continue;
+    const key = dayKey(sample.at || Date.now());
+    const prev = byDay.get(key) || { date: key, n: 0, score: 0, answered: 0 };
+    const n = prev.n + 1;
+    prev.score = Math.round((prev.score * prev.n + clampScore(sample.score)) / n);
+    prev.n = n;
+    prev.answered = n;
+    prev.level = frustrationLevelFromScore(prev.score);
+    byDay.set(key, prev);
+  }
+  return [...byDay.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function applyLiveToDays(days, live, topicId = '') {
   if (!shouldApplyLive(live)) return days;
+  if (topicId && live.topicId && live.topicId !== topicId) return days;
   const today = dayKey();
   const existing = days.find((row) => row.date === today);
   if (existing) {
@@ -195,33 +260,68 @@ function applyLiveToDays(days, live) {
   return days;
 }
 
-/** Last `count` calendar days ending today. Leading empty days are dropped. */
-export function frustrationDaySeries(count = 14, live = null) {
-  const data = loadFrustrationHistory();
-  const days = applyLiveToDays([...data.days], live);
+function filterSamples(samples = [], filters = {}) {
+  const { topicId, fromMs, toMs } = normalizeFilters(filters);
+  return (samples || []).filter((sample) => {
+    if (topicId && sampleTopicId(sample) !== topicId) return false;
+    const at = Number(sample.at);
+    if (fromMs != null && Number.isFinite(at) && at < fromMs) return false;
+    if (toMs != null && Number.isFinite(at) && at > toMs) return false;
+    return true;
+  });
+}
 
-  const out = [];
-  for (let i = count - 1; i >= 0; i -= 1) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = dayKey(d);
-    const hit = days.find((row) => row.date === key);
-    out.push({
-      date: key,
-      label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      score: hit ? Number(hit.score) : null,
-      level: hit?.level || null,
-      accuracyPct: hit?.accuracyPct ?? null,
-      answered: hit?.answered || 0,
-    });
+export function dateRangeFromPreset(preset = 'all', customDate = '') {
+  if (customDate) {
+    const key = dayKey(customDate);
+    const fromMs = new Date(`${key}T00:00:00`).getTime();
+    const toMs = new Date(`${key}T23:59:59.999`).getTime();
+    return { fromMs, toMs, fromKey: key, toKey: key };
   }
-  const first = out.findIndex((row) => row.score != null);
-  return first < 0 ? [] : out.slice(first);
+  if (preset === 'today') {
+    const key = dayKey();
+    return {
+      fromMs: new Date(`${key}T00:00:00`).getTime(),
+      toMs: Date.now(),
+      fromKey: key,
+      toKey: key,
+    };
+  }
+  if (preset === '7d' || preset === '14d') {
+    const span = preset === '7d' ? 7 : 14;
+    const start = new Date();
+    start.setDate(start.getDate() - (span - 1));
+    const fromKey = dayKey(start);
+    return {
+      fromMs: new Date(`${fromKey}T00:00:00`).getTime(),
+      toMs: Date.now(),
+      fromKey,
+      toKey: dayKey(),
+    };
+  }
+  return { fromMs: null, toMs: null, fromKey: null, toKey: null };
+}
+
+function normalizeFilters(filters = {}) {
+  const topicId = String(filters.topicId || '').trim();
+  if (filters.fromMs != null || filters.toMs != null || filters.fromKey || filters.toKey) {
+    return {
+      topicId,
+      fromMs: filters.fromMs ?? null,
+      toMs: filters.toMs ?? null,
+      fromKey: filters.fromKey || null,
+      toKey: filters.toKey || null,
+    };
+  }
+  return {
+    topicId,
+    ...dateRangeFromPreset(filters.preset || 'all', filters.customDate || ''),
+  };
 }
 
 /** Question-by-question scores for first-day / sparse calendars. */
-export function frustrationQuestionSeries(limit = 24, live = null) {
-  const samples = loadFrustrationHistory().samples || [];
+export function frustrationQuestionSeries(limit = 24, live = null, filters = {}) {
+  const samples = filterSamples(loadFrustrationHistory().samples || [], filters);
   const slice = samples.slice(-Math.max(2, limit));
   const out = slice.map((s, i) => ({
     date: `q-${s.seq || s.globalIndex || i}`,
@@ -230,9 +330,11 @@ export function frustrationQuestionSeries(limit = 24, live = null) {
     level: s.band || frustrationLevelFromScore(s.score),
   }));
   if (shouldApplyLive(live) && out.length) {
-    const last = out[out.length - 1];
-    last.score = clampScore(live.score);
-    last.level = live.level || last.level;
+    if (!filters.topicId || !live.topicId || live.topicId === filters.topicId) {
+      const last = out[out.length - 1];
+      last.score = clampScore(live.score);
+      last.level = live.level || last.level;
+    }
   }
   return out;
 }
@@ -241,29 +343,69 @@ export function frustrationQuestionSeries(limit = 24, live = null) {
  * Pick a chart that actually has a line: daily history when it exists,
  * otherwise the question journey from this session.
  */
-export function buildFrustrationChartModel(live = null) {
-  const daySeries = frustrationDaySeries(14, live);
+export function buildFrustrationChartModel(live = null, filters = {}) {
+  const daySeries = frustrationDaySeries(14, live, filters);
   const scoredDays = daySeries.filter((row) => row.score != null);
-  const samples = loadFrustrationHistory().samples || [];
+  const samples = filterSamples(loadFrustrationHistory().samples || [], filters);
+  const filtered = Boolean(
+    String(filters.topicId || '').trim() ||
+      (filters.preset && filters.preset !== 'all') ||
+      filters.customDate ||
+      filters.fromMs != null,
+  );
 
   if (scoredDays.length < 2 && samples.length >= 2) {
     return {
       mode: 'question',
-      series: frustrationQuestionSeries(24, live),
-      subtitle: 'Question by question — green is calm, gold is stuck, coral is high',
+      series: frustrationQuestionSeries(24, live, filters),
+      subtitle: filtered
+        ? 'Question by question for this filter — green is calm, gold is stuck, coral is high'
+        : 'Question by question — green is calm, gold is stuck, coral is high',
       note: null,
     };
   }
 
+  const emptyFilterNote =
+    filtered && scoredDays.length === 0
+      ? 'No play matches this topic or date yet. Try All topics, or pick another day.'
+      : null;
+
   return {
     mode: 'day',
     series: daySeries,
-    subtitle: 'Day by day — green is calm, gold is stuck, coral is high',
+    subtitle: filtered
+      ? 'Day by day for this filter — green is calm, gold is stuck, coral is high'
+      : 'Day by day — green is calm, gold is stuck, coral is high',
     note:
-      scoredDays.length === 1
-        ? 'Only one play day so far. This line fills in as you come back.'
-        : null,
+      emptyFilterNote ||
+      (scoredDays.length === 1
+        ? 'Only one play day in this filter. The line fills in as you play more.'
+        : null),
   };
+}
+
+export function listFrustrationTopics() {
+  const data = loadFrustrationHistory();
+  const ids = new Set();
+  for (const key of Object.keys(data.topics || {})) {
+    if (!isGenericTopic(key)) ids.add(key);
+  }
+  for (const sample of data.samples || []) {
+    const id = sampleTopicId(sample);
+    if (!isGenericTopic(id)) ids.add(id);
+  }
+  for (const point of data.points || []) {
+    const id = sampleTopicId(point);
+    if (!isGenericTopic(id)) ids.add(id);
+  }
+  return [...ids]
+    .sort((a, b) =>
+      topicDisplayName(a, a).localeCompare(topicDisplayName(b, b)),
+    )
+    .map((topicId) => ({
+      topicId,
+      title: getCurriculumTitle(topicId) || topicDisplayName(topicId, topicId),
+    }));
 }
 
 export function frustrationByTopic(misconceptions = []) {
@@ -271,11 +413,13 @@ export function frustrationByTopic(misconceptions = []) {
   const map = { ...data.topics };
 
   for (const m of misconceptions || []) {
-    const topic = String(m.topic || '').trim();
-    if (!topic) continue;
+    const topic = String(m.topicId || m.topic || '').trim();
+    if (!topic || isGenericTopic(topic)) continue;
     const misses = Number(m.missCount) || (m.attempts || []).length || 0;
     const prev = map[topic] || {
       topic,
+      topicId: topic,
+      title: topicDisplayName(topic, topic),
       n: 0,
       avgScore: 0,
       answered: 0,
@@ -287,17 +431,31 @@ export function frustrationByTopic(misconceptions = []) {
       prev.avgScore = Math.min(100, 28 + misses * 14);
       prev.level = frustrationLevelFromScore(prev.avgScore);
     }
+    prev.title = topicDisplayName(topic, prev.title || topic);
     map[topic] = prev;
   }
 
   return Object.values(map)
     .filter((row) => row.topic)
+    .map((row) => ({
+      ...row,
+      topic: topicDisplayName(row.topicId || row.topic, row.title || row.topic),
+    }))
     .sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0) || (b.misses || 0) - (a.misses || 0))
     .slice(0, 8);
 }
 
-export function frustrationPerformancePoints() {
-  return loadFrustrationHistory().points.slice(-24);
+export function frustrationPerformancePoints(filters = {}) {
+  const { topicId, fromMs, toMs } = normalizeFilters(filters);
+  return loadFrustrationHistory()
+    .points.filter((p) => {
+      if (topicId && sampleTopicId(p) !== topicId) return false;
+      const at = Number(p.at);
+      if (fromMs != null && Number.isFinite(at) && at < fromMs) return false;
+      if (toMs != null && Number.isFinite(at) && at > toMs) return false;
+      return true;
+    })
+    .slice(-24);
 }
 
 export function learningStreak() {
@@ -354,6 +512,7 @@ export function appendFrustrationSample(sample = {}) {
   const levelId = Math.max(1, Number(sample.levelId) || 1);
   const inLevel =
     store.samples.filter((s) => Number(s.levelId) === levelId).length + 1;
+  const topicId = String(sample.topicId || sample.topic || '').trim() || null;
   const next = {
     seq,
     globalIndex: seq,
@@ -363,6 +522,8 @@ export function appendFrustrationSample(sample = {}) {
     band: String(sample.level || sample.band || 'low').toLowerCase(),
     correct: Boolean(sample.correct),
     signals: Array.isArray(sample.signals) ? sample.signals.slice(0, 8) : [],
+    topicId,
+    topic: topicId,
     at: Date.now(),
   };
   store.samples = [...store.samples, next].slice(-MAX_SAMPLES);

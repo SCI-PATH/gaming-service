@@ -19,6 +19,7 @@ import {
 } from '../data/frustrationHistoryStore.js';
 import { evaluateStudentState } from './evaluateStudentState.js';
 import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
+import { pickCanonicalTopicId } from '../data/curriculumTopics.js';
 import {
   emptyPreferences,
   extractLearningPreferences,
@@ -57,6 +58,8 @@ export function useBehavioralTelemetry({
   mastery = null,
   masteryBand = null,
   masterySource = null,
+  /** Canonical curriculum skill id from frontend-app launch (e.g. G7_C1_PLA_DIVER) */
+  topicId: launchTopicId = null,
   thresholds = AVATAR_THRESHOLDS,
 } = {}) {
   const [session, setSession] = useState(() => emptySession());
@@ -145,10 +148,18 @@ export function useBehavioralTelemetry({
     (questionData, selectedText) => {
       const attempt = buildMissAttempt(questionData, selectedText);
       const topic =
+        pickCanonicalTopicId(
+          questionData?.topicId,
+          questionData?.topic_id,
+          questionData?.served_topic_id,
+          attempt.topic,
+          launchTopicId,
+        ) ||
         inferConceptFromText(attempt.prompt || questionData?.prompt) ||
         inferConceptFromText(questionData?.skill || questionData?.chapter_name) ||
         resolveTopicKey(attempt.topic) ||
         attempt.topic ||
+        launchTopicId ||
         'General Science';
 
       const prev = misconceptionsRef.current.get(topic) || {
@@ -209,7 +220,7 @@ export function useBehavioralTelemetry({
 
       return { entry: next, mindMap, list, attempt };
     },
-    [listMisconceptions],
+    [listMisconceptions, launchTopicId],
   );
 
   const updateLearningPreferences = useCallback((message) => {
@@ -360,7 +371,7 @@ export function useBehavioralTelemetry({
   }, [externalRetries, levelElapsedSec, thresholds, enemyHits, enemyDeaths, levelRestarts, shopCustomersLeft, previousAvgAnswerTimeSec]);
 
   const recordFrustrationPoint = useCallback(
-    (snapshot, isCorrect) => {
+    (snapshot, isCorrect, topicId = null) => {
       const fr = snapshot?.frustration || {};
       const answered =
         (Number(snapshot?.correct_answers) || 0) +
@@ -372,6 +383,8 @@ export function useBehavioralTelemetry({
         level: fr.level,
         correct: isCorrect,
         signals: fr.signals || [],
+        topicId,
+        topic: topicId,
       });
     },
     [levelId],
@@ -819,7 +832,14 @@ export function useBehavioralTelemetry({
       const usedHint = hintUsedThisQuestionRef.current;
       const selectionSwitches = selectionSwitchesThisQRef.current;
       const longPause = longPauseThisQRef.current;
-      const topic =
+      const topicId =
+        pickCanonicalTopicId(
+          questionData?.topicId,
+          questionData?.topic_id,
+          questionData?.served_topic_id,
+          launchTopicId,
+          questionData?.topic,
+        ) ||
         inferConceptFromText(questionData?.prompt || questionData?.question) ||
         inferConceptFromText(
           questionData?.skill ||
@@ -828,7 +848,9 @@ export function useBehavioralTelemetry({
         ) ||
         resolveTopicKey(questionData?.topic) ||
         questionData?.topic ||
+        launchTopicId ||
         null;
+      const topic = topicId;
       if (questionData) lastQuizDataRef.current = questionData;
 
       pushBehaviorEvent({
@@ -911,6 +933,7 @@ export function useBehavioralTelemetry({
           score: snapCorrect.frustration_score,
           level: snapCorrect.frustration_level,
           topic,
+          topicId: topic,
           isCorrect: true,
           timeSec: elapsedSec,
           hints: usedHint ? 1 : 0,
@@ -929,7 +952,7 @@ export function useBehavioralTelemetry({
         }));
 
         // Non-wrong patterns (slow streak, slow+hint compound, etc.)
-        recordFrustrationPoint(snapCorrect, true);
+        recordFrustrationPoint(snapCorrect, true, topic);
 
         if (post.outcome !== INTERVENTION_OUTCOMES.SUPPRESS) {
           tryRaiseNonWrong();
@@ -992,6 +1015,7 @@ export function useBehavioralTelemetry({
         score: snap.frustration_score,
         level: snap.frustration_level,
         topic,
+        topicId: topic,
         isCorrect: false,
         timeSec: elapsedSec,
         hints: usedHint ? 1 : 0,
@@ -999,7 +1023,7 @@ export function useBehavioralTelemetry({
         correctTotal: snap.correct_answers,
         incorrectTotal: snap.incorrect_answers,
       });
-      recordFrustrationPoint(snap, false);
+      recordFrustrationPoint(snap, false, topic);
       const totalWrong = incorrectRef.current;
       const conceptMisses = Math.max(
         conceptEntry?.missCount || 0,
@@ -1085,6 +1109,7 @@ export function useBehavioralTelemetry({
       recordFrustrationPoint,
       thresholds,
       tryRaiseNonWrong,
+      launchTopicId,
     ],
   );
 

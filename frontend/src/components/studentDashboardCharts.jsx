@@ -193,45 +193,134 @@ export function AccuracyRing({ correct = 0, incorrect = 0 }) {
 
 export function FrustrationPerformanceChart({ points = [] }) {
   const width = 640;
-  const height = 200;
-  const pad = { l: 40, r: 12, t: 12, b: 28 };
+  const height = 260;
+  const pad = { l: 56, r: 18, t: 36, b: 44 };
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
   const pts = (points || []).filter(
     (p) => p && p.score != null && p.accuracyPct != null,
   );
+
+  const xy = pts.map((p, i) => ({
+    ...p,
+    i,
+    x: pad.l + (Math.max(0, Math.min(100, p.accuracyPct)) / 100) * innerW,
+    y: pad.t + innerH - (Math.max(0, Math.min(100, p.score)) / 100) * innerH,
+    mood: moodForScore(p.score),
+  }));
+
+  const path = xy
+    .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ');
+
+  if (!xy.length) {
+    return (
+      <p className="research-empty">
+        After a few farm questions, this playground fills with faces that show
+        how each quiz felt.
+      </p>
+    );
+  }
+
   return (
-    <svg
-      className="dash-scatter-chart"
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label="Frustration versus quiz accuracy"
-    >
-      <text x={pad.l} y={14} className="dash-chart-axis">
-        Frustration
-      </text>
-      <line
-        x1={pad.l}
-        y1={pad.t}
-        x2={pad.l}
-        y2={height - pad.b}
-        className="dash-chart-axis-line"
-      />
-      <line
-        x1={pad.l}
-        y1={height - pad.b}
-        x2={width - pad.r}
-        y2={height - pad.b}
-        className="dash-chart-axis-line"
-      />
-      {pts.map((p, i) => {
-        const x = pad.l + (Math.max(0, Math.min(100, p.accuracyPct)) / 100) * innerW;
-        const y = pad.t + innerH - (Math.max(0, Math.min(100, p.score)) / 100) * innerH;
-        return <circle key={p.at || i} cx={x} cy={y} r="6" className="dash-scatter-dot" />;
-      })}
-      <text x={width / 2} y={height - 4} textAnchor="middle" className="dash-chart-label">
-        Quiz accuracy →
-      </text>
-    </svg>
+    <div className="dash-feel-board">
+      <svg
+        className="dash-scatter-chart dash-feel-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="How quizzes felt versus how many questions you got right"
+      >
+        <rect
+          x={pad.l}
+          y={pad.t}
+          width={innerW}
+          height={innerH / 2}
+          className="dash-feel-zone is-high"
+        />
+        <rect
+          x={pad.l}
+          y={pad.t + innerH / 2}
+          width={innerW}
+          height={innerH / 2}
+          className="dash-feel-zone is-low"
+        />
+        <line
+          x1={pad.l + innerW / 2}
+          x2={pad.l + innerW / 2}
+          y1={pad.t}
+          y2={pad.t + innerH}
+          className="dash-chart-guide"
+        />
+        <text x={pad.l + 8} y={pad.t + 16} className="dash-feel-hint">
+          Tough round 😣
+        </text>
+        <text
+          x={pad.l + innerW - 8}
+          y={pad.t + innerH - 10}
+          textAnchor="end"
+          className="dash-feel-hint is-good"
+        >
+          Nailed it! 🌟
+        </text>
+        {path ? <path d={path} className="dash-feel-path" fill="none" /> : null}
+        {xy.map((p) => (
+          <g key={p.at || p.i}>
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r="14"
+              className={`dash-feel-blob is-${p.mood.band}`}
+            />
+            <text
+              x={p.x}
+              y={p.y + 5}
+              textAnchor="middle"
+              className="dash-feel-emoji"
+            >
+              {p.mood.emoji}
+            </text>
+            <title>
+              {p.mood.label}: frustration {Math.round(p.score)} · quiz{' '}
+              {Math.round(p.accuracyPct)}%
+            </title>
+          </g>
+        ))}
+        <text x={12} y={pad.t + 14} className="dash-chart-axis">
+          Stuck
+        </text>
+        <text x={14} y={pad.t + 32} className="dash-feel-axis-emoji">
+          😤
+        </text>
+        <text x={14} y={pad.t + innerH / 2 + 6} className="dash-feel-axis-emoji">
+          😐
+        </text>
+        <text x={8} y={pad.t + innerH - 8} className="dash-chart-axis">
+          Calm
+        </text>
+        <text x={14} y={pad.t + innerH + 10} className="dash-feel-axis-emoji">
+          😊
+        </text>
+        <text
+          x={width / 2}
+          y={height - 10}
+          textAnchor="middle"
+          className="dash-chart-label"
+        >
+          Quiz stars → more right answers
+        </text>
+      </svg>
+      <ul className="dash-feel-legend" aria-hidden>
+        <li className="is-low">😊 Calm 0–30</li>
+        <li className="is-moderate">😐 A bit stuck 31–60</li>
+        <li className="is-high">😣 Whoa 61–100</li>
+      </ul>
+    </div>
   );
+}
+
+function moodForScore(score) {
+  const n = Number(score) || 0;
+  if (n <= 30) return { emoji: '😊', band: 'low', label: 'Calm' };
+  if (n <= 60) return { emoji: '😐', band: 'moderate', label: 'A bit stuck' };
+  return { emoji: '😣', band: 'high', label: 'Whoa' };
 }

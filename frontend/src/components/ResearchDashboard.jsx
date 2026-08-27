@@ -6,13 +6,16 @@ import {
 } from '../data/researchDashboardData.js';
 import {
   buildFrustrationChartModel,
+  dateRangeFromPreset,
   frustrationByTopic,
   frustrationPerformancePoints,
   learningStreak,
+  listFrustrationTopics,
   seedHistoryFromLessons,
 } from '../data/frustrationHistoryStore.js';
 import { buildSageDashboardAdvice } from '../data/sageDashboardAdvice.js';
 import { frustrationLevelFromScore } from '../data/frustrationModel.js';
+import { topicDisplayName } from '../data/curriculumTopics.js';
 import SageAvatar from '../avatar/SageAvatar.jsx';
 import { createSpeechEngine } from '../avatar/createSpeechEngine.js';
 import { friendlyStudentName } from '../avatar/kidFriendlySpeech.js';
@@ -39,6 +42,9 @@ export default function ResearchDashboard({
   const [exportOpen, setExportOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
+  const [topicFilter, setTopicFilter] = useState('');
+  const [datePreset, setDatePreset] = useState('all');
+  const [customDate, setCustomDate] = useState('');
   const speechRef = useRef(null);
 
   const snapshot = useMemo(
@@ -88,27 +94,71 @@ export default function ResearchDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonFingerprint, liveScore]);
 
+  const launchTopicId = student?.topicId || student?.topic_id || null;
+  const chartFilters = useMemo(
+    () => ({
+      topicId: topicFilter,
+      ...dateRangeFromPreset(datePreset, customDate),
+      preset: datePreset,
+      customDate,
+    }),
+    [topicFilter, datePreset, customDate],
+  );
+
   const chartModel = useMemo(
     () =>
-      buildFrustrationChartModel({
-        score: liveScore,
-        level: liveLevel,
-        answered,
-        correct,
-        incorrect,
-        accuracyPct,
-      }),
-    [liveScore, liveLevel, answered, correct, incorrect, accuracyPct, historyTick],
+      buildFrustrationChartModel(
+        {
+          score: liveScore,
+          level: liveLevel,
+          answered,
+          correct,
+          incorrect,
+          accuracyPct,
+          topicId: launchTopicId,
+        },
+        chartFilters,
+      ),
+    [
+      liveScore,
+      liveLevel,
+      answered,
+      correct,
+      incorrect,
+      accuracyPct,
+      launchTopicId,
+      chartFilters,
+      historyTick,
+    ],
   );
+
+  const topicOptions = useMemo(() => {
+    const rows = listFrustrationTopics();
+    if (
+      launchTopicId &&
+      !rows.some((row) => row.topicId === launchTopicId)
+    ) {
+      rows.unshift({
+        topicId: launchTopicId,
+        title: topicDisplayName(launchTopicId, launchTopicId),
+      });
+    }
+    return rows;
+  }, [historyTick, misconceptions, launchTopicId]);
 
   const topicRows = useMemo(
     () => frustrationByTopic(misconceptions),
     [misconceptions, historyTick],
   );
   const perfPoints = useMemo(() => {
-    const pts = frustrationPerformancePoints();
+    const pts = frustrationPerformancePoints(chartFilters);
     if (pts.some((p) => p.accuracyPct != null)) return pts;
-    if (accuracyPct != null) {
+    if (
+      accuracyPct != null &&
+      !topicFilter &&
+      datePreset === 'all' &&
+      !customDate
+    ) {
       return [
         {
           at: Date.now(),
@@ -116,11 +166,24 @@ export default function ResearchDashboard({
           accuracyPct,
           retries: metrics.retries ?? summary.ddaMisses ?? 0,
           avgTimeSec: metrics.avgTimeSec,
+          topicId: launchTopicId,
         },
       ];
     }
     return pts;
-  }, [liveScore, accuracyPct, metrics.retries, metrics.avgTimeSec, summary.ddaMisses, historyTick]);
+  }, [
+    liveScore,
+    accuracyPct,
+    metrics.retries,
+    metrics.avgTimeSec,
+    summary.ddaMisses,
+    chartFilters,
+    topicFilter,
+    datePreset,
+    customDate,
+    launchTopicId,
+    historyTick,
+  ]);
   const streak = useMemo(() => learningStreak(), [historyTick]);
   const stickyTopic = topicRows[0]?.topic || null;
   const advice = useMemo(
@@ -281,6 +344,86 @@ export default function ResearchDashboard({
         </div>
       </section>
 
+      <section className="dash-filters" aria-label="Filter frustration charts">
+        <label className="dash-filter">
+          <span>Topic</span>
+          <select
+            value={topicFilter}
+            onChange={(e) => setTopicFilter(e.target.value)}
+          >
+            <option value="">All topics</option>
+            {topicOptions.map((row) => (
+              <option key={row.topicId} value={row.topicId}>
+                {row.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="dash-filter dash-filter-dates">
+          <span>Date</span>
+          <div className="dash-date-pills" role="group" aria-label="Date range">
+            {[
+              ['all', 'All days'],
+              ['today', 'Today'],
+              ['7d', 'Last 7 days'],
+              ['14d', 'Last 14 days'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`dash-date-pill${datePreset === id && !customDate ? ' is-on' : ''}`}
+                onClick={() => {
+                  setDatePreset(id);
+                  setCustomDate('');
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="dash-filter">
+          <span>Pick a day</span>
+          <input
+            type="date"
+            value={customDate}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCustomDate(next);
+              if (next) setDatePreset('custom');
+            }}
+          />
+        </label>
+        {topicFilter || customDate || datePreset !== 'all' ? (
+          <button
+            type="button"
+            className="research-btn research-btn-ghost dash-filter-clear"
+            onClick={() => {
+              setTopicFilter('');
+              setDatePreset('all');
+              setCustomDate('');
+            }}
+          >
+            Clear filters
+          </button>
+        ) : null}
+      </section>
+      {topicFilter || customDate || datePreset !== 'all' ? (
+        <p className="dash-filter-summary">
+          Showing {topicFilter ? topicDisplayName(topicFilter, topicFilter) : 'all topics'}
+          {customDate
+            ? ` on ${customDate}`
+            : datePreset === 'today'
+              ? ' for today'
+              : datePreset === '7d'
+                ? ' from the last 7 days'
+                : datePreset === '14d'
+                  ? ' from the last 14 days'
+                  : ''}
+          .
+        </p>
+      ) : null}
+
       <div className="research-panels student-dash-grid">
         <article className="research-panel">
           <header className="research-panel-head">
@@ -355,20 +498,20 @@ export default function ResearchDashboard({
         </div>
       </section>
 
-      <article className="research-panel research-panel-full">
+      <article className="research-panel research-panel-full dash-feel-panel">
         <header className="research-panel-head">
-          <h3>Frustration and performance</h3>
+          <h3>How quizzes felt</h3>
           <p>
-            Each dot is a recent quiz moment. Left = lower accuracy. Up = higher
-            frustration.
+            Each face is a recent quiz. Right = more stars. Up = it felt harder.
+            Follow the dotted path to see your journey.
           </p>
         </header>
         {perfPoints.some((p) => p.accuracyPct != null) ? (
           <FrustrationPerformanceChart points={perfPoints} />
         ) : (
           <p className="research-empty">
-            After a few farm questions, dots will show whether misses and slow
-            answers lift your frustration score.
+            Play a few farm questions and this playground fills with faces —
+            calm, a bit stuck, or whoa — next to your quiz stars.
           </p>
         )}
         <ul className="dash-insights">
