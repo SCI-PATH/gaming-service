@@ -298,6 +298,7 @@ export default function App() {
     shopCustomersLeft: farm.shopCustomersLeft || 0,
     previousAvgAnswerTimeSec:
       gameplay.previousLevel?.avgAnswerTimeSec ?? farm.previousAvgAnswerTimeSec ?? 0,
+    topicId: student?.topicId || student?.topic_id || null,
   });
 
   useEffect(() => {
