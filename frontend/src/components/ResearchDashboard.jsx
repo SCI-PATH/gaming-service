@@ -1,23 +1,45 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildResearchDashboardSnapshot,
   downloadResearchCsv,
   downloadResearchJson,
 } from '../data/researchDashboardData.js';
+import {
+  buildFrustrationChartModel,
+  frustrationByTopic,
+  frustrationPerformancePoints,
+  learningStreak,
+  seedHistoryFromLessons,
+} from '../data/frustrationHistoryStore.js';
+import { buildSageDashboardAdvice } from '../data/sageDashboardAdvice.js';
+import { frustrationLevelFromScore } from '../data/frustrationModel.js';
+import SageAvatar from '../avatar/SageAvatar.jsx';
+import { createSpeechEngine } from '../avatar/createSpeechEngine.js';
+import { friendlyStudentName } from '../avatar/kidFriendlySpeech.js';
+import {
+  AccuracyRing,
+  FrustrationLineChart,
+  FrustrationPerformanceChart,
+  TopicBarChart,
+} from './studentDashboardCharts.jsx';
 
 /**
- * Research / instructor dashboard: lesson progression, unlocks, frustration.
+ * Student learning dashboard: frustration story, topics, progress, Sage advice.
  */
 export default function ResearchDashboard({
   student,
   farm,
   telemetrySession,
   behavioralMetrics,
+  misconceptions = [],
   rpEarned = 0,
   ddaMisses = 0,
   onBackToFarm,
 }) {
-  const [tab, setTab] = useState('overview');
+  const [exportOpen, setExportOpen] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [historyTick, setHistoryTick] = useState(0);
+  const speechRef = useRef(null);
 
   const snapshot = useMemo(
     () =>
@@ -31,648 +53,420 @@ export default function ResearchDashboard({
     [farm, telemetrySession, behavioralMetrics, rpEarned, ddaMisses],
   );
 
-  const { summary, frustration, lessonProgress, unlocks, gameplayHistory } =
-    snapshot;
+  const { summary, frustration, lessonProgress } = snapshot;
+  const liveScore = Math.max(0, Math.min(100, Number(frustration.score) || 0));
+  const liveLevel =
+    frustration.level || frustrationLevelFromScore(liveScore);
 
-  const maxMasteryBar = Math.max(
-    1,
-    ...lessonProgress.map((r) => r.masteryPct || 0),
+  const metrics = frustration.metrics || {};
+  const sessionAnswered =
+    (Number(metrics.correctAnswers) || 0) +
+    (Number(metrics.incorrectAnswers) || 0);
+  const answered = summary.totalAnswered || sessionAnswered || 0;
+  const correct = summary.totalAnswered
+    ? summary.totalCorrect
+    : Number(metrics.correctAnswers) || 0;
+  const incorrect = summary.totalAnswered
+    ? summary.totalIncorrect
+    : Number(metrics.incorrectAnswers) || 0;
+  const accuracyPct =
+    summary.overallAccuracyPct ??
+    (sessionAnswered
+      ? Math.round(
+          ((Number(metrics.correctAnswers) || 0) / sessionAnswered) * 100,
+        )
+      : null);
+
+  const lessonFingerprint = `${(lessonProgress || []).length}:${(lessonProgress || [])
+    .map((row) => `${row.levelId}:${row.savedAt || ''}`)
+    .join('|')}`;
+
+  useEffect(() => {
+    seedHistoryFromLessons(lessonProgress, liveScore);
+    setHistoryTick((n) => n + 1);
+    // lessonProgress identity changes every snapshot; fingerprint is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonFingerprint, liveScore]);
+
+  const chartModel = useMemo(
+    () =>
+      buildFrustrationChartModel({
+        score: liveScore,
+        level: liveLevel,
+        answered,
+        correct,
+        incorrect,
+        accuracyPct,
+      }),
+    [liveScore, liveLevel, answered, correct, incorrect, accuracyPct, historyTick],
   );
 
+  const topicRows = useMemo(
+    () => frustrationByTopic(misconceptions),
+    [misconceptions, historyTick],
+  );
+  const perfPoints = useMemo(() => {
+    const pts = frustrationPerformancePoints();
+    if (pts.some((p) => p.accuracyPct != null)) return pts;
+    if (accuracyPct != null) {
+      return [
+        {
+          at: Date.now(),
+          score: liveScore,
+          accuracyPct,
+          retries: metrics.retries ?? summary.ddaMisses ?? 0,
+          avgTimeSec: metrics.avgTimeSec,
+        },
+      ];
+    }
+    return pts;
+  }, [liveScore, accuracyPct, metrics.retries, metrics.avgTimeSec, summary.ddaMisses, historyTick]);
+  const streak = useMemo(() => learningStreak(), [historyTick]);
+  const stickyTopic = topicRows[0]?.topic || null;
+  const advice = useMemo(
+    () =>
+      buildSageDashboardAdvice({
+        name:
+          friendlyStudentName(student?.displayName || student?.username) ||
+          student?.displayName,
+        score: liveScore,
+        level: liveLevel,
+        consecutiveFails: frustration.consecutiveFails,
+        accuracyPct,
+        avgTimeSec: metrics.avgTimeSec,
+        hints: metrics.hintUsage,
+        retries: metrics.retries ?? summary.ddaMisses,
+        stickyTopic,
+        streak,
+      }),
+    [
+      student,
+      liveScore,
+      liveLevel,
+      frustration.consecutiveFails,
+      accuracyPct,
+      metrics.avgTimeSec,
+      metrics.hintUsage,
+      metrics.retries,
+      summary.ddaMisses,
+      stickyTopic,
+      streak,
+    ],
+  );
+
+  useEffect(() => {
+    const engine = createSpeechEngine({
+      onStart: () => setSpeaking(true),
+      onEnd: () => setSpeaking(false),
+    });
+    speechRef.current = engine;
+    const line = String(advice.spoken || '').slice(0, 320);
+    const t = window.setTimeout(() => {
+      engine.speak(line).catch(() => setSpeaking(false));
+    }, 400);
+    return () => {
+      window.clearTimeout(t);
+      engine.stop();
+      speechRef.current = null;
+    };
+    // One greeting per dashboard visit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const completedTopics = Math.max(
+    summary.levelsCompleted || 0,
+    topicRows.filter((t) => (t.answered || 0) > 0).length,
+  );
+  const band = advice.band;
+
   return (
-    <div className="research-dash">
-      <header className="research-dash-head">
+    <div className="research-dash student-dash">
+      <header className="research-dash-head student-dash-head">
         <div>
-          <p className="research-dash-kicker">Discovery Grove · Research console</p>
-          <h2>
-            {student?.displayName || 'Student'}{' '}
-            <span className="research-dash-id">({student?.id})</span>
-          </h2>
+          <p className="research-dash-kicker">Discovery Grove · Your learning</p>
+          <h2>{student?.displayName || 'Student'}&apos;s dashboard</h2>
           <p className="research-dash-sub">
-            Lesson progression, unlock inventory, and affective telemetry for
-            analysis export.
+            See how your frustration score changes, which topics feel sticky, and
+            what Sage recommends next.
           </p>
         </div>
-        <div className="research-dash-actions">
-          <button
-            type="button"
-            className="research-btn research-btn-ghost"
-            onClick={() => downloadResearchCsv(snapshot)}
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            className="research-btn research-btn-ghost"
-            onClick={() => downloadResearchJson(snapshot)}
-          >
-            Export JSON
-          </button>
-          <button
-            type="button"
-            className="research-btn research-btn-primary"
-            onClick={onBackToFarm}
-          >
-            Back to farm
-          </button>
-        </div>
+        <button
+          type="button"
+          className="research-btn research-btn-primary"
+          onClick={onBackToFarm}
+        >
+          Back to farm
+        </button>
       </header>
 
-      <section className="research-kpi-grid" aria-label="Summary metrics">
-        <Kpi
-          label="Current level"
-          value={String(summary.currentLevel)}
-          hint={
-            summary.highestCompletedLevel
-              ? `Highest saved: L${summary.highestCompletedLevel}`
-              : 'No completed levels yet'
-          }
+      <section className="sage-dash-card" aria-label="Sage advice">
+        <SageAvatar
+          speaking={speaking}
+          mood={advice.mood}
+          size="md"
+          figureOnly
+          onStop={() => {
+            speechRef.current?.stop();
+            setSpeaking(false);
+          }}
         />
-        <Kpi
-          label="Overall mastery"
-          value={
-            summary.overallMasteryPct != null
-              ? `${summary.overallMasteryPct}%`
-              : '—'
-          }
-          hint={`${summary.levelsCompleted} level record(s)`}
-        />
-        <Kpi
-          label="Quiz accuracy"
-          value={
-            summary.overallAccuracyPct != null
-              ? `${summary.overallAccuracyPct}%`
-              : '—'
-          }
-          hint={`${summary.totalCorrect} correct · ${summary.totalIncorrect} incorrect`}
-        />
-        <Kpi
-          label="Frustration"
-          value={`${frustration.score}`}
-          hint={
-            frustration.history?.length
-              ? `${frustrationLabel(frustration.level)} · ${frustration.history.length} Q tracked`
-              : frustrationLabel(frustration.level)
-          }
-          tone={frustrationTone(frustration.level)}
-        />
-        <Kpi
-          label="Unlocks owned"
-          value={String(summary.unlockCount)}
-          hint={`Cash $${summary.cash} · RP ${summary.rpEarned}`}
-        />
-        <Kpi
-          label="Live session"
-          value={`${summary.liveQuestionsAnswered} Q`}
-          hint={
-            summary.liveMasteryLabel
-              ? `Band: ${summary.liveMasteryLabel}`
-              : 'In-progress farm metrics'
-          }
-        />
+        <div className="sage-dash-copy" aria-live="polite">
+          <p className="sage-dash-kicker">
+            Sage&apos;s advice · frustration {liveScore}/100 ({bandLabel(band)})
+          </p>
+          <h3>{advice.headline}</h3>
+          <p>{advice.body}</p>
+          <p className="sage-dash-next">
+            <strong>Next step:</strong> {advice.nextAction}
+          </p>
+          <p className="sage-dash-why">{advice.whyItMatters}</p>
+        </div>
       </section>
 
-      <nav className="research-tabs" aria-label="Dashboard sections">
-        {[
-          ['overview', 'Overview'],
-          ['lessons', 'Lesson path'],
-          ['unlocks', 'Unlocks'],
-          ['affect', 'Frustration'],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`research-tab${tab === id ? ' is-active' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <section className="dash-story" aria-label="How frustration guides learning">
+        <StoryStep
+          n="1"
+          title="Your performance"
+          text={
+            accuracyPct != null
+              ? `${accuracyPct}% correct so far`
+              : 'Play to build your quiz story'
+          }
+        />
+        <span className="dash-story-arrow" aria-hidden>
+          →
+        </span>
+        <StoryStep
+          n="2"
+          title="Frustration score"
+          text={`${liveScore} · ${bandLabel(band)}`}
+          tone={band}
+        />
+        <span className="dash-story-arrow" aria-hidden>
+          →
+        </span>
+        <StoryStep n="3" title="Sage advice" text="Personalized for this score" />
+        <span className="dash-story-arrow" aria-hidden>
+          →
+        </span>
+        <StoryStep n="4" title="What to do" text={shortAction(advice.nextAction)} />
+      </section>
 
-      {tab === 'overview' && (
-        <div className="research-panels">
-          <article className="research-panel">
-            <header className="research-panel-head">
-              <h3>Lesson mastery path</h3>
-              <p>Mastery % by completed farm level</p>
-            </header>
-            {lessonProgress.length === 0 ? (
-              <p className="research-empty">
-                Complete a level to populate the progression path.
-              </p>
-            ) : (
-              <ul className="research-bars">
-                {lessonProgress.map((row) => (
-                  <li key={row.levelId}>
-                    <div className="research-bar-meta">
-                      <strong>Level {row.levelId}</strong>
-                      <span>
-                        {row.masteryPct}% · {row.bandLabel}
-                      </span>
-                    </div>
-                    <div className="research-bar-track">
-                      <div
-                        className={`research-bar-fill band-${row.band || 'medium'}`}
-                        style={{
-                          width: `${Math.max(
-                            4,
-                            (row.masteryPct / maxMasteryBar) * 100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-
-          <article className="research-panel">
-            <header className="research-panel-head">
-              <h3>How play felt</h3>
-              <p>Frustration after each question — early struggle can ease later</p>
-            </header>
-            {frustration.history?.length ? (
-              <>
-                {frustration.journey?.headline ? (
-                  <p className="research-journey-headline">
-                    {frustration.journey.headline}
-                  </p>
-                ) : null}
-                <FrustrationJourneyChart samples={frustration.history} compact />
-                <FrustrationPhases segments={frustration.journey?.segments} />
-              </>
-            ) : (
-              <p className="research-empty">
-                Answer a few farm questions to see how the score moves through
-                play.
-              </p>
-            )}
-            <FrustrationMeter frustration={frustration} />
-            <dl className="research-dl">
-              <div>
-                <dt>Consecutive fails</dt>
-                <dd>{frustration.consecutiveFails}</dd>
-              </div>
-              <div>
-                <dt>Mentor triggers</dt>
-                <dd>{frustration.triggerCount}</dd>
-              </div>
-              <div>
-                <dt>Last reason</dt>
-                <dd>{frustration.lastTriggerReason || '—'}</dd>
-              </div>
-              <div>
-                <dt>Intervention</dt>
-                <dd>{frustration.lastInterventionMode || '—'}</dd>
-              </div>
-            </dl>
-          </article>
-
-          <article className="research-panel research-panel-wide">
-            <header className="research-panel-head">
-              <h3>Recent unlocks</h3>
-              <p>Shop purchases that persist across levels</p>
-            </header>
-            {unlocks.length === 0 ? (
-              <p className="research-empty">No unlocks purchased yet.</p>
-            ) : (
-              <ul className="research-unlock-grid">
-                {unlocks.slice(0, 8).map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.name}</strong>
-                    <span>
-                      {item.category}
-                      {item.purchasedAtLevel
-                        ? ` · after L${item.purchasedAtLevel}`
-                        : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
+      <section className="dash-hero-frust" aria-label="Current frustration score">
+        <div className={`dash-score-orb is-${band}`}>
+          <span>Now</span>
+          <strong>{liveScore}</strong>
+          <em>/ 100</em>
         </div>
-      )}
-
-      {tab === 'lessons' && (
-        <article className="research-panel research-panel-full">
-          <header className="research-panel-head">
-            <h3>Lesson progression table</h3>
-            <p>Per-level mastery, accuracy, timing, and gameplay adaptation</p>
-          </header>
-          {lessonProgress.length === 0 ? (
-            <p className="research-empty">No saved lesson records yet.</p>
-          ) : (
-            <div className="research-table-wrap">
-              <table className="research-table">
-                <thead>
-                  <tr>
-                    <th>Level</th>
-                    <th>Mastery</th>
-                    <th>Band</th>
-                    <th>Correct</th>
-                    <th>Incorrect</th>
-                    <th>Accuracy</th>
-                    <th>Avg RT</th>
-                    <th>Target</th>
-                    <th>Beat target</th>
-                    <th>Gameplay</th>
-                    <th>Grade</th>
-                    <th>Retries</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lessonProgress.map((row) => (
-                    <tr key={row.levelId}>
-                      <td>{row.levelId}</td>
-                      <td>{row.masteryPct}%</td>
-                      <td>{row.bandLabel}</td>
-                      <td>{row.quizCorrect}</td>
-                      <td>{row.quizIncorrect}</td>
-                      <td>
-                        {row.accuracyPct != null ? `${row.accuracyPct}%` : '—'}
-                      </td>
-                      <td>{row.avgResponseLabel}</td>
-                      <td>{row.timeTargetLabel}</td>
-                      <td>
-                        {row.beatTimeTarget == null
-                          ? '—'
-                          : row.beatTimeTarget
-                            ? 'Yes'
-                            : 'No'}
-                      </td>
-                      <td>{row.gameplayLabel || '—'}</td>
-                      <td>{row.grade || '—'}</td>
-                      <td>{row.retries ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {gameplayHistory.length > 0 && (
-            <>
-              <header className="research-panel-head research-panel-head-spaced">
-                <h3>Gameplay adaptation history</h3>
-                <p>Rolling window used for next-level enemy / timer settings</p>
-              </header>
-              <div className="research-table-wrap">
-                <table className="research-table">
-                  <thead>
-                    <tr>
-                      <th>Level</th>
-                      <th>Classification</th>
-                      <th>Grade</th>
-                      <th>Avg answer (s)</th>
-                      <th>Retries</th>
-                      <th>Composite</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gameplayHistory.map((h, i) => (
-                      <tr key={`${h.levelId}-${i}`}>
-                        <td>{h.levelId}</td>
-                        <td>{h.label || h.classification}</td>
-                        <td>{h.grade || '—'}</td>
-                        <td>
-                          {h.avgAnswerTimeSec != null
-                            ? Number(h.avgAnswerTimeSec).toFixed(1)
-                            : '—'}
-                        </td>
-                        <td>{h.retries ?? '—'}</td>
-                        <td>
-                          {h.compositeScore != null
-                            ? Math.round(h.compositeScore)
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </article>
-      )}
-
-      {tab === 'unlocks' && (
-        <article className="research-panel research-panel-full">
-          <header className="research-panel-head">
-            <h3>Owned unlock inventory</h3>
-            <p>
-              Items purchased in the end-of-level shop — shown on subsequent
-              farms
-            </p>
-          </header>
-          {unlocks.length === 0 ? (
-            <p className="research-empty">No unlocks owned for this student.</p>
-          ) : (
-            <ul className="research-unlock-grid research-unlock-grid-lg">
-              {unlocks.map((item) => (
-                <li key={item.id}>
-                  <strong>{item.name}</strong>
-                  <span className="research-unlock-cat">{item.category}</span>
-                  <span>
-                    {item.purchasedAtLevel
-                      ? `Purchased after level ${item.purchasedAtLevel}`
-                      : 'Purchase level unknown'}
-                  </span>
-                  {item.price != null && <span>Base price ${item.price}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-      )}
-
-      {tab === 'affect' && (
-        <div className="research-panels">
-          <article className="research-panel research-panel-wide">
-            <header className="research-panel-head">
-              <h3>Frustration through play</h3>
-              <p>
-                Score after every question (0–100). First questions can look
-                high even if later play settles.
-              </p>
-            </header>
-            {frustration.history?.length ? (
-              <>
-                {frustration.journey?.headline ? (
-                  <p className="research-journey-headline">
-                    {frustration.journey.headline}
-                  </p>
-                ) : null}
-                <FrustrationWindowStats journey={frustration.journey} />
-                <FrustrationJourneyChart samples={frustration.history} />
-                <FrustrationPhases segments={frustration.journey?.segments} />
-              </>
-            ) : (
-              <p className="research-empty">
-                No question-by-question history yet. Play a level, then reopen
-                this tab.
-              </p>
-            )}
-          </article>
-          <article className="research-panel">
-            <header className="research-panel-head">
-              <h3>Frustration score</h3>
-              <p>Weighted multi-signal model for mentoring interventions</p>
-            </header>
-            <FrustrationMeter frustration={frustration} large />
-            <ul className="research-range-list">
-              {Object.entries(frustration.ranges || {}).map(([key, range]) => (
-                <li
-                  key={key}
-                  className={
-                    key === frustration.level ? 'is-current' : undefined
-                  }
-                >
-                  <strong>{frustrationLabel(key)}</strong>
-                  <span>
-                    {range[0]}–{range[1]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </article>
-          <article className="research-panel">
-            <header className="research-panel-head">
-              <h3>Session telemetry</h3>
-              <p>Signals feeding the live frustration estimate</p>
-            </header>
-            <dl className="research-dl">
-              <div>
-                <dt>Score</dt>
-                <dd>{frustration.score}</dd>
-              </div>
-              <div>
-                <dt>Level</dt>
-                <dd>{frustrationLabel(frustration.level)}</dd>
-              </div>
-              <div>
-                <dt>Correct (session)</dt>
-                <dd>{frustration.metrics.correctAnswers ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Incorrect (session)</dt>
-                <dd>{frustration.metrics.incorrectAnswers ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Avg time / Q (s)</dt>
-                <dd>
-                  {frustration.metrics.avgTimeSec != null
-                    ? Number(frustration.metrics.avgTimeSec).toFixed(1)
-                    : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt>Hints used</dt>
-                <dd>{frustration.metrics.hintUsage ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Retries</dt>
-                <dd>{frustration.metrics.retries ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Misses (UI)</dt>
-                <dd>{summary.ddaMisses}</dd>
-              </div>
-            </dl>
-          </article>
-          {frustration.history?.length ? (
-            <article className="research-panel research-panel-wide">
-              <header className="research-panel-head">
-                <h3>Question log</h3>
-                <p>Each farm quiz updates the live frustration estimate</p>
-              </header>
-              <div className="research-table-wrap">
-                <table className="research-table">
-                  <thead>
-                    <tr>
-                      <th>Q</th>
-                      <th>Level</th>
-                      <th>Result</th>
-                      <th>Score</th>
-                      <th>Band</th>
-                      <th>Signals</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {frustration.history.map((row) => (
-                      <tr key={row.seq}>
-                        <td>{row.globalIndex}</td>
-                        <td>
-                          L{row.levelId}.{row.questionIndex}
-                        </td>
-                        <td>{row.correct ? 'Correct' : 'Miss'}</td>
-                        <td>{row.score}</td>
-                        <td>{frustrationLabel(row.band)}</td>
-                        <td>
-                          {(row.signals || []).length
-                            ? row.signals.join(', ')
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
+        <div className="dash-score-copy">
+          <h3>Frustration score</h3>
+          <p>
+            This number goes up when questions feel heavy (misses, long waits,
+            extra retries) and comes down when you recover.
+          </p>
+          {frustration.journey?.headline ? (
+            <p className="research-journey-headline">{frustration.journey.headline}</p>
           ) : null}
+          <ul className="dash-band-pills">
+            <li className={band === 'low' ? 'is-on is-low' : 'is-low'}>
+              Low 0–30
+            </li>
+            <li className={band === 'moderate' ? 'is-on is-moderate' : 'is-moderate'}>
+              Moderate 31–60
+            </li>
+            <li className={band === 'high' ? 'is-on is-high' : 'is-high'}>
+              High 61–100
+            </li>
+          </ul>
         </div>
-      )}
+      </section>
 
-      <footer className="research-dash-foot">
-        Snapshot ready for export · {snapshot.exportedAt}
+      <div className="research-panels student-dash-grid">
+        <article className="research-panel">
+          <header className="research-panel-head">
+            <h3>Frustration over time</h3>
+            <p>{chartModel.subtitle}</p>
+          </header>
+          <FrustrationLineChart series={chartModel.series} />
+          {chartModel.note ? (
+            <p className="dash-chart-note">{chartModel.note}</p>
+          ) : null}
+          <ul className="dash-chart-legend" aria-hidden>
+            <li className="is-low">Low 0–30</li>
+            <li className="is-moderate">Moderate 31–60</li>
+            <li className="is-high">High 61–100</li>
+          </ul>
+        </article>
+
+        <article className="research-panel">
+          <header className="research-panel-head">
+            <h3>Frustration by topic</h3>
+            <p>Higher bars mean that chapter felt heavier</p>
+          </header>
+          <TopicBarChart rows={topicRows} />
+        </article>
+      </div>
+
+      <section aria-label="Learning progress">
+        <header className="research-panel-head dash-section-head">
+          <h3>Learning progress</h3>
+          <p>Simple stats from your farm quizzes</p>
+        </header>
+        <div className="dash-stat-grid">
+          <article className="dash-stat">
+            <span>Questions answered</span>
+            <strong>{answered}</strong>
+          </article>
+          <article className="dash-stat dash-stat-ring">
+            <AccuracyRing correct={correct} incorrect={incorrect} />
+            <div>
+              <span>Correct vs incorrect</span>
+              <p>
+                {correct} right · {incorrect} to retry
+              </p>
+            </div>
+          </article>
+          <article className="dash-stat">
+            <span>Retry attempts</span>
+            <strong>{metrics.retries ?? summary.ddaMisses ?? 0}</strong>
+          </article>
+          <article className="dash-stat">
+            <span>Hints used</span>
+            <strong>{metrics.hintUsage ?? 0}</strong>
+          </article>
+          <article className="dash-stat">
+            <span>Average answer time</span>
+            <strong>
+              {metrics.avgTimeSec != null
+                ? `${Number(metrics.avgTimeSec).toFixed(1)}s`
+                : '—'}
+            </strong>
+          </article>
+          <article className="dash-stat">
+            <span>Completed topics</span>
+            <strong>{completedTopics}</strong>
+          </article>
+          <article className="dash-stat">
+            <span>Learning streak</span>
+            <strong>
+              {streak} day{streak === 1 ? '' : 's'}
+            </strong>
+          </article>
+        </div>
+      </section>
+
+      <article className="research-panel research-panel-full">
+        <header className="research-panel-head">
+          <h3>Frustration and performance</h3>
+          <p>
+            Each dot is a recent quiz moment. Left = lower accuracy. Up = higher
+            frustration.
+          </p>
+        </header>
+        {perfPoints.some((p) => p.accuracyPct != null) ? (
+          <FrustrationPerformanceChart points={perfPoints} />
+        ) : (
+          <p className="research-empty">
+            After a few farm questions, dots will show whether misses and slow
+            answers lift your frustration score.
+          </p>
+        )}
+        <ul className="dash-insights">
+          <li>
+            {performanceInsight(
+              perfPoints,
+              metrics.retries ?? summary.ddaMisses,
+              metrics.avgTimeSec,
+            )}
+          </li>
+          <li>
+            Repeated misses in a row currently: {frustration.consecutiveFails || 0}
+          </li>
+          <li>
+            Sage opened {frustration.triggerCount || 0} time
+            {(frustration.triggerCount || 0) === 1 ? '' : 's'} this session to help
+          </li>
+          {stickyTopic ? (
+            <li>
+              Stickiest topic right now: <strong>{stickyTopic}</strong>
+            </li>
+          ) : null}
+        </ul>
+      </article>
+
+      <footer className="research-dash-foot student-dash-foot">
+        <button
+          type="button"
+          className="research-btn research-btn-ghost"
+          onClick={() => setExportOpen((v) => !v)}
+        >
+          {exportOpen ? 'Hide' : 'Show'} research export
+        </button>
+        {exportOpen ? (
+          <div className="student-dash-export">
+            <p>For your project log — CSV and JSON of this snapshot.</p>
+            <button
+              type="button"
+              className="research-btn research-btn-ghost"
+              onClick={() => downloadResearchCsv(snapshot)}
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              className="research-btn research-btn-ghost"
+              onClick={() => downloadResearchJson(snapshot)}
+            >
+              Export JSON
+            </button>
+          </div>
+        ) : null}
       </footer>
     </div>
   );
 }
 
-function Kpi({ label, value, hint, tone }) {
+function StoryStep({ n, title, text, tone }) {
   return (
-    <div className={`research-kpi${tone ? ` tone-${tone}` : ''}`}>
-      <span className="research-kpi-label">{label}</span>
-      <strong className="research-kpi-value">{value}</strong>
-      {hint ? <span className="research-kpi-hint">{hint}</span> : null}
+    <div className={`dash-story-step${tone ? ` is-${tone}` : ''}`}>
+      <span>{n}</span>
+      <strong>{title}</strong>
+      <em>{text}</em>
     </div>
   );
 }
 
-function FrustrationMeter({ frustration, large = false }) {
-  const score = Math.max(0, Math.min(100, Number(frustration.score) || 0));
-  return (
-    <div className={`research-frust-meter${large ? ' is-large' : ''}`}>
-      <div className="research-frust-score">
-        <strong>{score}</strong>
-        <span>/ 100 · {frustrationLabel(frustration.level)} now</span>
-      </div>
-      <div className="research-frust-track" aria-hidden>
-        <div
-          className={`research-frust-fill tone-${frustrationTone(frustration.level)}`}
-          style={{ width: `${score}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function FrustrationWindowStats({ journey }) {
-  if (!journey?.firstWindow) return null;
-  return (
-    <dl className="research-journey-windows">
-      <div>
-        <dt>First {journey.firstWindow.count} questions</dt>
-        <dd>{journey.firstWindow.avg}/100</dd>
-      </div>
-      {journey.laterWindow ? (
-        <div>
-          <dt>After that ({journey.laterWindow.count} questions)</dt>
-          <dd>{journey.laterWindow.avg}/100</dd>
-        </div>
-      ) : null}
-      {journey.overallAvg != null ? (
-        <div>
-          <dt>Whole play</dt>
-          <dd>{journey.overallAvg}/100</dd>
-        </div>
-      ) : null}
-    </dl>
-  );
-}
-
-function FrustrationPhases({ segments }) {
-  if (!segments?.length) return null;
-  return (
-    <ul className="research-journey-phases" aria-label="Frustration phases">
-      {segments.map((seg) => (
-        <li key={`${seg.start}-${seg.band}`} className={`tone-${frustrationTone(seg.band)}`}>
-          <strong>{seg.questionRange}</strong>
-          <span>
-            {frustrationLabel(seg.band)} · avg {seg.avgScore}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function FrustrationJourneyChart({ samples = [], compact = false }) {
-  if (!samples.length) return null;
-  const maxScore = 100;
-  const barW = compact ? 10 : 14;
-  const gap = 3;
-  const height = compact ? 72 : 120;
-  const width = samples.length * (barW + gap) + 8;
-  return (
-    <div className="research-journey-scroll" role="img" aria-label="Frustration score by question">
-      <svg
-        className="research-journey-chart"
-        viewBox={`0 0 ${width} ${height + 22}`}
-        width={width}
-        height={height + 22}
-      >
-        {[25, 50, 75].map((mark) => {
-          const y = height - (mark / maxScore) * height;
-          return (
-            <line
-              key={mark}
-              x1="0"
-              x2={width}
-              y1={y}
-              y2={y}
-              className="research-journey-grid"
-            />
-          );
-        })}
-        {samples.map((sample, i) => {
-          const h = Math.max(2, (sample.score / maxScore) * height);
-          const x = 4 + i * (barW + gap);
-          const y = height - h;
-          return (
-            <g key={sample.seq}>
-              <title>
-                {`Q${sample.globalIndex} · L${sample.levelId} · ${sample.score}/100 · ${sample.correct ? 'correct' : 'miss'}`}
-              </title>
-              <rect
-                x={x}
-                y={y}
-                width={barW}
-                height={h}
-                className={`research-journey-bar tone-${frustrationTone(sample.band)}`}
-              />
-              <circle
-                cx={x + barW / 2}
-                cy={height + 10}
-                r="2.4"
-                className={sample.correct ? 'is-correct' : 'is-miss'}
-              />
-            </g>
-          );
-        })}
-      </svg>
-      <p className="research-journey-axis">
-        Each bar is one question · dots: green correct, red miss
-      </p>
-    </div>
-  );
-}
-
-function frustrationLabel(level) {
-  const key = String(level || 'low').toLowerCase();
-  if (key === 'very_high') return 'Very high';
-  if (key === 'high') return 'High';
-  if (key === 'moderate') return 'Moderate';
+function bandLabel(band) {
+  if (band === 'high') return 'High';
+  if (band === 'moderate') return 'Moderate';
   return 'Low';
 }
 
-function frustrationTone(level) {
-  const key = String(level || 'low').toLowerCase();
-  if (key === 'very_high') return 'critical';
-  if (key === 'high') return 'warn';
-  if (key === 'moderate') return 'caution';
-  return 'ok';
+function shortAction(text) {
+  const t = String(text || '');
+  return t.length > 52 ? `${t.slice(0, 51).trim()}…` : t;
+}
+
+function performanceInsight(points, retries, avgTime) {
+  const pts = (points || []).filter((p) => p && p.accuracyPct != null);
+  if (pts.length >= 3) {
+    const high = pts.filter((p) => p.score >= 50);
+    const low = pts.filter((p) => p.score < 50);
+    if (high.length && low.length) {
+      const avgHigh =
+        high.reduce((s, p) => s + Number(p.accuracyPct), 0) / high.length;
+      const avgLow =
+        low.reduce((s, p) => s + Number(p.accuracyPct), 0) / low.length;
+      if (avgHigh < avgLow - 4) {
+        return 'When your accuracy drops, your frustration score often rises. That is the signal Sage uses to slow the farm down.';
+      }
+    }
+  }
+  if ((Number(retries) || 0) >= 2) {
+    return 'Extra retries tend to lift frustration. Sage treats that as “this question was tough,” not as a failing grade.';
+  }
+  if (Number.isFinite(Number(avgTime)) && Number(avgTime) >= 25) {
+    return 'Longer answer times often travel with a higher frustration score. A short pause can bring both down.';
+  }
+  return 'Frustration score is the bridge between how you perform and how Sage helps you next.';
 }

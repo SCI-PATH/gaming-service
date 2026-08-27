@@ -6,7 +6,7 @@ import {
   friendlyWrongAnswer,
   sanitizeKidSpeech,
 } from './kidFriendlySpeech.js';
-import { resolveTopicKey } from './conceptMaps.js';
+import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import {
   buildBehaviorDiagnostic,
   getBehaviorProbe,
@@ -272,19 +272,33 @@ export function pickFocusConcept({
   mindMap = null,
   lastWrongAnswer = null,
 } = {}) {
+  const livePrompt =
+    quiz?.prompt ||
+    quiz?.question ||
+    quiz?.questionData?.prompt ||
+    quiz?.questionData?.question ||
+    null;
+  const liveTopic =
+    inferConceptFromText(livePrompt) ||
+    inferConceptFromText(quiz?.skill || quiz?.sub_concept || quiz?.chapter_name) ||
+    resolveTopicKey(quiz?.topic || quiz?.questionData?.topic) ||
+    null;
+
   // Prefer the concept of the most recent struggle event (wrong / slow / hint)
   // so performance mentoring targets the current difficulty, not an old tally.
   const recentEvents = [...(events || [])].slice(-12).reverse();
   const recentStruggle = recentEvents.find(
     (e) =>
-      (e.topic || e.concept) &&
+      (e.topic || e.concept || e.prompt) &&
       (e.isCorrect === false || e.slow || e.usedHint || e.longPause),
   );
   if (recentStruggle) {
-    const topic =
+    const struggleTopic =
+      inferConceptFromText(recentStruggle.prompt) ||
       resolveTopicKey(recentStruggle.topic || recentStruggle.concept) ||
       recentStruggle.topic ||
       recentStruggle.concept;
+    const topic = liveTopic || struggleTopic;
     const mc = (misconceptions || []).find(
       (m) => resolveTopicKey(m.topic) === topic || m.topic === topic,
     );
@@ -292,6 +306,7 @@ export function pickFocusConcept({
       topic,
       missCount: Math.max(mc?.missCount || 0, recentStruggle.isCorrect === false ? 1 : 0),
       samplePrompts: [
+        livePrompt,
         recentStruggle.prompt,
         quiz?.prompt || quiz?.question || quiz?.questionData?.prompt,
         ...(mc?.prompts || mc?.sample_prompts || []),
@@ -309,23 +324,25 @@ export function pickFocusConcept({
   }
 
   const ranked = scoreTopics({ misconceptions, events, quiz, mindMap });
-  if (ranked[0]) {
+  if (liveTopic || ranked[0]) {
     const top = ranked[0];
+    const topic = liveTopic || top?.topic;
     const mc = (misconceptions || []).find(
-      (m) => resolveTopicKey(m.topic) === top.topic || m.topic === top.topic,
+      (m) => resolveTopicKey(m.topic) === topic || m.topic === topic,
     );
     return {
-      topic: top.topic,
-      missCount: Math.max(top.missCount, mc?.missCount || 0),
+      topic,
+      missCount: Math.max(top?.missCount || 0, mc?.missCount || 0),
       samplePrompts: [
+        livePrompt,
         ...(mc?.prompts || mc?.sample_prompts || []),
-        ...top.prompts,
+        ...(top?.prompts || []),
       ]
         .filter(Boolean)
         .slice(-3),
       wrongAnswers: [
         ...(mc?.wrongAnswers || mc?.recent_wrong_answers || []),
-        ...top.wrongs,
+        ...(top?.wrongs || []),
         lastWrongAnswer,
       ]
         .filter(Boolean)
@@ -334,13 +351,17 @@ export function pickFocusConcept({
   }
 
   const qTopic =
-    quiz?.topic || quiz?.questionData?.topic || mindMap?.topic || null;
+    liveTopic ||
+    quiz?.topic ||
+    quiz?.questionData?.topic ||
+    mindMap?.topic ||
+    null;
   if (qTopic) {
     return {
       topic: resolveTopicKey(qTopic) || qTopic,
       missCount: 0,
       samplePrompts: [
-        quiz?.prompt || quiz?.question || quiz?.questionData?.prompt || null,
+        livePrompt || quiz?.prompt || quiz?.question || quiz?.questionData?.prompt || null,
       ].filter(Boolean),
       wrongAnswers: lastWrongAnswer ? [lastWrongAnswer] : [],
     };
@@ -609,6 +630,14 @@ function finalizeFocus({
       null,
     questionText,
     farm_question: questionText,
+    skill: quiz?.skill || quiz?.questionData?.skill || null,
+    sub_concept: quiz?.sub_concept || quiz?.questionData?.sub_concept || null,
+    chapter_name:
+      quiz?.chapter_name ||
+      quiz?.chapter ||
+      quiz?.questionData?.chapter_name ||
+      quiz?.questionData?.chapter ||
+      null,
   });
   const diagnostic_question = structured.diagnostic_question;
 

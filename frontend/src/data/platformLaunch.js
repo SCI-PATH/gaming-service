@@ -5,6 +5,7 @@
  *   http://localhost:5173/?studentId=abc&username=alex&displayName=Alex&sessionId=sess_xyz&topicId=plant_biology&grade=7&source=sci-path
  */
 import { loginStudentFromPlatform } from './mockStudents.js';
+import { applyRemoteFarmProgress } from './farmProgress.js';
 
 function readSearchParams() {
   if (typeof window === 'undefined') return null;
@@ -23,6 +24,8 @@ function readSearchParams() {
  *   sessionId: string | null,
  *   topicId: string | null,
  *   grade: number | null,
+ *   startLevel: number | null,
+ *   cash: number | null,
  *   source: string | null
  * } | null}
  */
@@ -43,6 +46,19 @@ export function parsePlatformLaunchFromUrl(search = readSearchParams()) {
       ? Number(gradeRaw)
       : null;
 
+  const levelRaw =
+    search.get('startLevel') || search.get('level') || search.get('currentLevel');
+  const startLevel =
+    levelRaw != null && levelRaw !== '' && Number.isFinite(Number(levelRaw))
+      ? Math.max(1, Number(levelRaw))
+      : null;
+
+  const cashRaw = search.get('cash') || search.get('wallet');
+  const cash =
+    cashRaw != null && cashRaw !== '' && Number.isFinite(Number(cashRaw))
+      ? Math.max(0, Number(cashRaw))
+      : null;
+
   return {
     studentId,
     username,
@@ -50,6 +66,8 @@ export function parsePlatformLaunchFromUrl(search = readSearchParams()) {
     sessionId: sessionId || null,
     topicId: topicId || null,
     grade,
+    startLevel,
+    cash,
     source: search.get('source') || null,
   };
 }
@@ -73,6 +91,15 @@ export function resolvePlatformLaunch() {
     sessionId: launch.sessionId,
   });
 
+  if (student && (launch.startLevel != null || launch.cash != null)) {
+    applyRemoteFarmProgress({
+      currentLevel: launch.startLevel,
+      highestCompletedLevel:
+        launch.startLevel != null ? Math.max(0, launch.startLevel - 1) : 0,
+      cash: launch.cash,
+    });
+  }
+
   // Clean URL so refresh doesn't duplicate telemetry bootstrap noise
   if (typeof window !== 'undefined' && window.history?.replaceState) {
     try {
@@ -86,6 +113,11 @@ export function resolvePlatformLaunch() {
         'topicId',
         'topic',
         'grade',
+        'startLevel',
+        'level',
+        'currentLevel',
+        'cash',
+        'wallet',
         'source',
       ]) {
         clean.searchParams.delete(key);
@@ -100,6 +132,8 @@ export function resolvePlatformLaunch() {
     student,
     sessionId: launch.sessionId,
     topicId: launch.topicId,
+    startLevel: launch.startLevel,
+    cash: launch.cash,
     fromPlatform: Boolean(student),
     source: launch.source,
   };

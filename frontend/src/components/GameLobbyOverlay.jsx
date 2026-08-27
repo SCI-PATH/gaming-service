@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { GAME_NAME, GAME_PLATFORM, GAME_TAGLINE } from '../data/gameBrand.js';
 import {
   GameIconButton,
@@ -34,13 +35,27 @@ export default function GameLobbyOverlay({
   lobbyProgress,
   musicEnabled = true,
   gameReady = false,
+  savedRun = null,
   onStart,
+  onStartOver,
   onLeaderboard,
   onToggleMusic,
   onOpenProgress,
 }) {
   const isGuide = mode === 'guide';
   const progress = lobbyProgress || {};
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.code !== 'Enter' && event.code !== 'NumpadEnter') return;
+      if (event.repeat) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onStart?.();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onStart]);
   const levelLabel =
     progress.phase === 'returning'
       ? `Level ${progress.levelId ?? farm.levelId}`
@@ -108,10 +123,28 @@ export default function GameLobbyOverlay({
             <IconPlay size={18} />
             {isGuide
               ? 'Enter the Farm'
-              : progress.phase === 'returning'
-                ? `Continue Level ${progress.levelId ?? farm.levelId ?? 1}`
-                : 'Start Adventure'}
+              : savedRun
+                ? 'Continue farm'
+                : progress.phase === 'returning'
+                  ? `Continue Level ${progress.levelId ?? farm.levelId ?? 1}`
+                  : 'Start Adventure'}
           </button>
+          {!isGuide && savedRun ? (
+            <p className="game-lobby-saved">
+              Saved: {savedRun.label}. Pick up where you left the crops, cash, and
+              shop.
+            </p>
+          ) : null}
+          {!isGuide && savedRun && onStartOver ? (
+            <button
+              type="button"
+              className="game-lobby-start-over"
+              onClick={onStartOver}
+              disabled={!gameReady}
+            >
+              Start this level over
+            </button>
+          ) : null}
           <p className="game-lobby-enter-hint">Press Enter to continue</p>
         </section>
 

@@ -51,6 +51,48 @@ export const CONCEPT_CATALOG = {
     ],
   },
 
+  'Plant Diversity': {
+    root: 'Plant Diversity',
+    summary:
+      'Monocots and dicots are two plant groups with different seeds, leaves, and roots.',
+    nodes: [
+      {
+        id: 'monocot',
+        label: 'Monocot',
+        role: 'One seed leaf',
+        explanation:
+          'Monocots (like grasses, rice, maize) have one cotyledon and usually fibrous roots — many thin threads.',
+        relatedWrongHints: ['taproot', 'two seed leaves', 'net veins'],
+      },
+      {
+        id: 'dicot',
+        label: 'Dicot',
+        role: 'Two seed leaves',
+        explanation:
+          'Dicots (like beans, tomato, mango) have two cotyledons and usually a taproot — one thick main root.',
+        relatedWrongHints: ['fibrous roots', 'one seed leaf', 'parallel veins'],
+      },
+      {
+        id: 'fibrous',
+        label: 'Fibrous roots',
+        role: 'Monocot root system',
+        explanation:
+          'Fibrous roots are a bunch of similar thin roots. They are typical of monocots.',
+      },
+      {
+        id: 'taproot',
+        label: 'Taproot',
+        role: 'Dicot root system',
+        explanation:
+          'A taproot has one main root with smaller side roots. They are typical of dicots.',
+      },
+    ],
+    links: [
+      ['monocot', 'fibrous'],
+      ['dicot', 'taproot'],
+    ],
+  },
+
   Photosynthesis: {
     root: 'Photosynthesis',
     summary: 'How plants make food from light, water, and carbon dioxide.',
@@ -437,27 +479,147 @@ export const CONCEPT_CATALOG = {
   },
 };
 
+const GENERIC_TOPIC_LABELS = new Set([
+  'science',
+  'general science',
+  'farm science',
+  'this science idea',
+  'this farm science idea',
+  'science idea',
+  'idea',
+  'chapter',
+  'topic',
+]);
+
+function isGenericTopicLabel(value) {
+  const lower = String(value || '')
+    .trim()
+    .toLowerCase();
+  return !lower || GENERIC_TOPIC_LABELS.has(lower);
+}
+
+/**
+ * Infer the catalog topic from a farm-question stem, chapter title, or skill.
+ * Order matters: specific lesson ideas beat generic words like "root" or "science".
+ */
+export function inferConceptFromText(text) {
+  const lower = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!lower || isGenericTopicLabel(lower)) return null;
+  if (/monocot|dicot|cotyledon|taproot|fibrous root/.test(lower)) {
+    return 'Plant Diversity';
+  }
+  if (/physical change|chemical change/.test(lower)) {
+    return 'Physical & Chemical Changes';
+  }
+  if (/food chain|ecosystem|habitat/.test(lower)) return 'Ecology';
+  if (/digest|stomach|intestin/.test(lower)) return 'Digestive System';
+  if (/photo|chloroph|carbon dioxide|glucose/.test(lower)) return 'Photosynthesis';
+  if (/pollen|bee|pollinat/.test(lower)) return 'Pollination';
+  if (/\bsoil\b|fertiliz/.test(lower)) return 'Soil Science';
+  if (/water cycle|evapor|precip/.test(lower)) return 'Water Cycle';
+  if (/nutri|food energy/.test(lower)) return 'Nutrition';
+  if (/flower|anther|pistil|pollinat/.test(lower)) return 'Plant Biology';
+  if (/\broot\b|\bstem\b|\bleaf\b|plant part/.test(lower)) return 'Plant Biology';
+  if (/\bplant/.test(lower)) return 'Plant Biology';
+  return null;
+}
+
+/** Short kid-facing name for Sage prompts (not a generic catalog bucket). */
+export function kidConceptLabel(evidence = {}) {
+  const stem = String(
+    evidence.farm_question ||
+      evidence.questionText ||
+      evidence.prompt ||
+      evidence.current_question ||
+      '',
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  const fromStem = kidPhraseFromStem(stem);
+  if (fromStem) return fromStem;
+
+  const chapterBits = [
+    evidence.skill,
+    evidence.sub_concept,
+    evidence.chapter_name,
+    evidence.chapter,
+  ]
+    .map((value) =>
+      String(value || '')
+        .replace(/^Ch\.?\s*\d+:\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((value) => value && value.length < 72 && !isGenericTopicLabel(value));
+  if (chapterBits[0]) return chapterBits[0];
+
+  const topic =
+    inferConceptFromText(stem) ||
+    resolveTopicKey(evidence.concept || evidence.concept_topic || evidence.topic);
+  if (topic && !isGenericTopicLabel(topic)) return topic;
+  return 'this science idea';
+}
+
+export function mixUpLabel(evidence = {}) {
+  const stem = String(
+    evidence.farm_question || evidence.questionText || evidence.prompt || '',
+  ).toLowerCase();
+  if (/monocot|dicot|cotyledon/.test(stem) && /root/.test(stem)) {
+    return 'I mix taproots up with fibrous roots';
+  }
+  if (/monocot|dicot|cotyledon/.test(stem)) {
+    return 'I mix monocots up with dicots';
+  }
+  if (/photosynth|chloroph/.test(stem)) {
+    return 'I mix photosynthesis up with respiration';
+  }
+  if (/\bsoil\b/.test(stem)) {
+    return 'I mix soil types or layers up with each other';
+  }
+  const concept = kidConceptLabel(evidence);
+  return `I mix ${concept} up with a similar idea`;
+}
+
+function kidPhraseFromStem(stem) {
+  const s = String(stem || '').toLowerCase();
+  if (!s) return null;
+  if (/monocot|dicot|cotyledon/.test(s) && /root/.test(s)) {
+    return 'monocot and dicot root systems';
+  }
+  if (/monocot|dicot|cotyledon/.test(s) && /leaf|venation/.test(s)) {
+    return 'monocot and dicot leaves';
+  }
+  if (/monocot|dicot|cotyledon/.test(s)) return 'monocot and dicot plants';
+  if (/taproot|fibrous root/.test(s)) return 'taproots and fibrous roots';
+  if (/photosynth/.test(s)) return 'how plants make food with light';
+  if (/pollinat/.test(s)) return 'how pollen moves between flowers';
+  if (/\bsoil\b/.test(s) && /erosion/.test(s)) return 'soil erosion';
+  return null;
+}
+
 /** Normalize free-form topic labels to catalog keys. */
 export function resolveTopicKey(topic) {
   if (!topic) return null;
   const t = String(topic).trim();
+  if (!t || isGenericTopicLabel(t)) return inferConceptFromText(t);
   if (CONCEPT_CATALOG[t]) return t;
   const lower = t.toLowerCase();
   for (const key of Object.keys(CONCEPT_CATALOG)) {
     if (key.toLowerCase() === lower) return key;
-    if (lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) {
-      return key;
-    }
   }
-  if (/digest|stomach|intestin/.test(lower)) return 'Digestive System';
-  if (/photo|chloroph|carbon dioxide/.test(lower)) return 'Photosynthesis';
-  if (/pollen|bee|pollinat/.test(lower)) return 'Pollination';
-  if (/soil/.test(lower)) return 'Soil Science';
-  if (/water cycle|evapor|precip/.test(lower)) return 'Water Cycle';
-  if (/nutri|food energy/.test(lower)) return 'Nutrition';
-  if (/root|stem|leaf|plant part/.test(lower)) return 'Plant Parts';
-  if (/plant|flower|anther/.test(lower)) return 'Plant Biology';
-  return t;
+  // Prefer the longest catalog name contained in the label.
+  // Never the reverse ("Science" must not match "Soil Science").
+  let best = null;
+  for (const key of Object.keys(CONCEPT_CATALOG)) {
+    const k = key.toLowerCase();
+    if (k.length < 5) continue;
+    if (lower.includes(k) && (!best || k.length > best.length)) best = key;
+  }
+  if (best) return best;
+  return inferConceptFromText(t) || t;
 }
 
 /**

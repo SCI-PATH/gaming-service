@@ -7,7 +7,13 @@
  * Science content only when the reason is concept-related (or trigger is concept struggle).
  */
 
-import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
+import {
+  CONCEPT_CATALOG,
+  inferConceptFromText,
+  kidConceptLabel,
+  mixUpLabel,
+  resolveTopicKey,
+} from './conceptMaps.js';
 import { asQuestionText } from './kidFriendlySpeech.js';
 
 /** Keep in sync with INTERVENTION_FOCUS_CODES (avoid circular imports). */
@@ -77,11 +83,8 @@ function opt(letter, label, reason_key) {
  */
 export function getBehaviorProbe(code, evidence = {}) {
   let c = String(code || '').toUpperCase();
-  const concept =
-    resolveTopicKey(evidence.concept || evidence.concept_topic) ||
-    evidence.concept ||
-    evidence.concept_topic ||
-    'this science idea';
+  const concept = kidConceptLabel(evidence);
+  const mixLabel = mixUpLabel(evidence);
   const wrong = String(
     evidence.last_wrong || evidence.wrongAnswer || evidence.last_wrong_answer || '',
   )
@@ -159,7 +162,7 @@ export function getBehaviorProbe(code, evidence = {}) {
         : 'A few answers were not quite right. What feels most true?',
       options: [
         opt('A', `I still need help understanding ${concept}`, REASON_KEYS.CONCEPT_GAP),
-        opt('B', `I mix ${concept} up with another idea`, REASON_KEYS.MIXES_IDEAS),
+        opt('B', mixLabel, REASON_KEYS.MIXES_IDEAS),
         opt('C', 'I was guessing', REASON_KEYS.GUESSING),
         opt('D', 'The farm question wording was hard', REASON_KEYS.MISUNDERSTOOD_Q),
       ],
@@ -168,10 +171,10 @@ export function getBehaviorProbe(code, evidence = {}) {
 
   if (c === C.SAME_CONCEPT_STRUGGLE) {
     return {
-      prompt: `${concept} keeps feeling sticky${wrong ? ` (last try: "${wrong}")` : ''}. What is hardest right now?`,
+      prompt: `This idea about ${concept} still feels sticky${wrong ? ` (last try: "${wrong}")` : ''}. What is hardest right now?`,
       options: [
         opt('A', `Explain ${concept} simply for me`, REASON_KEYS.WANTS_EXPLAIN),
-        opt('B', `I mix ${concept} up with a similar idea`, REASON_KEYS.MIXES_IDEAS),
+        opt('B', mixLabel, REASON_KEYS.MIXES_IDEAS),
         opt('C', 'The farm questions are worded in a tricky way', REASON_KEYS.MISUNDERSTOOD_Q),
         opt('D', 'I need more time on each question', REASON_KEYS.NEED_MORE_TIME),
       ],
@@ -308,6 +311,11 @@ export function buildBehaviorDiagnostic(code, evidence = {}) {
       evidence.last_wrong || evidence.wrongAnswer || evidence.last_wrong_answer,
     miss_count: evidence.miss_count || evidence.missCount || evidence.concept_miss_count,
     farm_question: evidence.questionText || evidence.farm_question,
+    questionText: evidence.questionText || evidence.farm_question,
+    skill: evidence.skill,
+    sub_concept: evidence.sub_concept,
+    chapter_name: evidence.chapter_name || evidence.chapter,
+    chapter: evidence.chapter || evidence.chapter_name,
   });
   const text = formatDiagnosticText(probe);
   const farmQ = asQuestionText(evidence.questionText || evidence.farm_question, 70);
@@ -427,9 +435,19 @@ export function needsScienceSupport(reasonKey, code = '') {
   return false;
 }
 
-function softConceptBite(topic) {
-  const key = resolveTopicKey(topic) || topic;
+function softConceptBite(topic, farmQuestion = null) {
+  const fromQ = inferConceptFromText(farmQuestion);
+  const key = fromQ || resolveTopicKey(topic) || topic;
   const catalog = CONCEPT_CATALOG[key];
+  if (
+    key === 'Plant Diversity' ||
+    /monocot|dicot|cotyledon|taproot|fibrous root/i.test(String(farmQuestion || ''))
+  ) {
+    return (
+      'Tiny science note: monocots usually have fibrous roots (many thin threads). ' +
+      'Dicots usually have a taproot (one thick main root). That is a key root-system difference.'
+    );
+  }
   if (/photo/i.test(String(key))) {
     return (
       'Tiny science note: plants build food in their leaves using light, water, and carbon dioxide — ' +
@@ -458,13 +476,18 @@ export function buildBehaviorSupportReply({
   farmQuestion = null,
 } = {}) {
   const who = name || 'friend';
+  const idea = kidConceptLabel({
+    farm_question: farmQuestion,
+    concept,
+    concept_topic: concept,
+  });
   const heard = choiceLabel
     ? `I hear you: "${String(choiceLabel).slice(0, 70)}".`
     : 'Thanks for telling me.';
   const farmBit = farmQuestion
     ? ` When you return to the farm question, read it once slowly.`
     : '';
-  const science = softConceptBite(concept);
+  const science = softConceptBite(idea, farmQuestion);
   const useScience = needsScienceSupport(reasonKey, code);
 
   const supportByReason = {
@@ -526,12 +549,12 @@ export function buildBehaviorSupportReply({
 
     [REASON_KEYS.CONCEPT_GAP]:
       `${who}, ${heard} Thanks — that helps. The underlying issue looks like the science idea itself. ` +
-      `${science || `Let's keep ${concept} super simple for now.`} ` +
+      `${science || `Let's keep ${idea} super simple for now.`} ` +
       `I came because ${why}. When you go back, look for the choice that matches that tiny idea.${farmBit}`,
 
     [REASON_KEYS.MIXES_IDEAS]:
       `${who}, ${heard} Mixing similar ideas is common. ` +
-      `${science || `Pick one label for ${concept} and stick to its job only.`} ` +
+      `${science || `Pick one label for ${idea} and stick to its job only.`} ` +
       `I opened because ${why}. Before answering, ask: “Is this the same idea, or a cousin idea?”${farmBit}`,
 
     [REASON_KEYS.FEELS_RUSHED]:
@@ -545,7 +568,7 @@ export function buildBehaviorSupportReply({
 
     [REASON_KEYS.WANTS_EXPLAIN]:
       `${who}, ${heard} Happy to explain simply. ` +
-      `${science || `Think of ${concept} as one farm job the plant or soil must do.`} ` +
+      `${science || `Think of ${idea} as one farm job the plant or soil must do.`} ` +
       `I came because ${why}. Tell me if you want an even tinier step.`,
 
     [REASON_KEYS.WANTS_READING_HELP]:

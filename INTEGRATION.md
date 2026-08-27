@@ -270,7 +270,8 @@ Health check: `GET /api/health`
 | `POST` | `/api/engagement/level` | Level completion + mastery snapshot |
 | `POST` | `/api/engagement/quiz` | Individual quiz attempt |
 | `POST` | `/api/engagement/unlock` | Shop purchase |
-| `POST` | `/api/engagement/frustration` | Frustration snapshot |
+| `POST` | `/api/engagement/frustration` | Frustration snapshot (write) |
+| `GET` | `/api/engagement/frustration` | Latest frustration (+ optional history) |
 | `POST` | `/api/engagement/mentor` | Sage intervention log |
 | `POST` | `/api/engagement/event` | Generic gameplay event |
 | `GET` | `/api/engagement/leaderboard` | Leaderboard query |
@@ -368,7 +369,7 @@ useBehavioralTelemetry()  →  telemetrySession { frustrationScore, frustrationL
 
 **To your backend / other services**
 
-Throttled POST when score changes:
+Throttled POST when score changes (farm client → Neon):
 
 ```http
 POST /api/engagement/frustration
@@ -388,15 +389,61 @@ Content-Type: application/json
 }
 ```
 
-**Implementation:** `syncFrustration()` in `engagementSync.js`, triggered from `App.jsx`.
+**Read API for other components** (poll after the farm has synced):
+
+```http
+GET /api/engagement/frustration?studentId=<id>
+GET /api/engagement/frustration?studentId=<id>&sessionId=<sess>&limit=5
+```
+
+| Query | Required | Notes |
+|-------|----------|-------|
+| `studentId` | yes | Same id used at farm launch |
+| `sessionId` | no | Restrict to one play session |
+| `limit` | no | History length (default `1`, max `50`) |
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "studentId": "abc123",
+  "frustrationScore": 42,
+  "frustrationLevel": "moderate",
+  "recordedAt": "2026-08-26T09:50:00.000Z",
+  "sessionId": "sess_…",
+  "levelNumber": 3,
+  "source": "gameplay",
+  "signals": {},
+  "dominantIndicators": [],
+  "history": [
+    {
+      "snapshotId": "fr_…",
+      "frustrationScore": 42,
+      "frustrationLevel": "moderate",
+      "sessionId": "sess_…",
+      "levelNumber": 3,
+      "source": "gameplay",
+      "recordedAt": "2026-08-26T09:50:00.000Z"
+    }
+  ]
+}
+```
+
+Score is `0–100`; level is `low` | `moderate` | `high` | `very_high`.  
+If no snapshots yet: `frustrationScore` / `frustrationLevel` are `null` and `history` is `[]`.  
+Requires `DATABASE_URL` on gaming-service (same as other engagement routes).
+
+**Implementation:** `syncFrustration()` in `engagementSync.js`, triggered from `App.jsx`; GET handled by `getFrustration()` in `engagementDb.mjs`.
 
 ### If your component needs live frustration
 
 | Approach | How |
 |----------|-----|
-| **Same Neon DB** | Subscribe or poll `frustration_snapshots` / student latest (see engagement schema) |
-| **Embed farm in parent** | Listen for `ForestGameBridge` events: `FARM_STATE`, `GAME_INTERACTION` (type includes frustration on many payloads) |
-| **Iframe parent** | Recommended: shared backend via engagement API; optional future `postMessage` bridge not implemented yet |
+| **HTTP poll (recommended)** | `GET /api/engagement/frustration?studentId=…` on gaming-service |
+| **Same Neon DB** | Read `students.latest_frustration_*` / `frustration_snapshots` |
+| **Embed farm in parent** | Listen for `ForestGameBridge` events: `FARM_STATE`, `GAME_INTERACTION` |
+| **Iframe parent** | Prefer the GET above; optional `postMessage` bridge not implemented yet |
 
 Example parent listener (same page, shared bundle):
 

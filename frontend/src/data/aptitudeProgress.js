@@ -18,7 +18,8 @@ import {
 import { PERFORMANCE_LABELS } from './performanceCategories.js';
 import { getFarmLevel } from './farmLevels.js';
 import { getAptitudePerformance } from '../storyline/aptitude/AptitudePerformanceProvider.js';
-import { hasSavedFarmProgress, loadFarmProgress, saveFarmProgress } from './farmProgress.js';
+import { hasSavedFarmProgress, loadFarmProgress, saveFarmProgress, applyRemoteFarmProgress } from './farmProgress.js';
+import { fetchEngagementStudent } from './engagementSync.js';
 
 const APTITUDE_BASE_KEY = 'scipath_aptitude_result';
 
@@ -223,6 +224,13 @@ export function resolveCurrentLevelId() {
   const saved = loadFarmProgress();
   const fromSaved = Math.max(1, Number(saved?.currentLevelId) || 1);
   return Math.max(1, fromMastery, fromSaved);
+}
+
+export async function hydrateFarmProgressFromEngagement(studentId) {
+  if (!studentId) return loadFarmProgress();
+  const remote = await fetchEngagementStudent(studentId);
+  if (!remote) return loadFarmProgress();
+  return applyRemoteFarmProgress(remote);
 }
 
 /** If older sessions only have mastery records, write the farm cursor now. */
@@ -497,6 +505,7 @@ export async function bootstrapStudentProgress(student) {
     }
   }
 
+  await hydrateFarmProgressFromEngagement(student.id);
   backfillFarmProgressCursor();
   const levelId = resolveCurrentLevelId();
   const prior = getMasteryForLevelStart(levelId);

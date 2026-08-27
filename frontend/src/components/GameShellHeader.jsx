@@ -32,7 +32,7 @@ export default function GameShellHeader({
         {!isDashboard ? (
           <span className="game-shell-header-kicker">{GAME_PLATFORM}</span>
         ) : null}
-        <h1>{isDashboard ? 'Research dashboard' : GAME_NAME}</h1>
+        <h1>{isDashboard ? 'Your learning dashboard' : GAME_NAME}</h1>
         {isPlaying ? (
           <p className="game-shell-header-sub">
             {gameReady ? (
@@ -47,7 +47,7 @@ export default function GameShellHeader({
         ) : mode === 'lobby' ? (
           <p className="game-shell-header-sub">Farm &amp; unlock adventure</p>
         ) : (
-          <p className="game-shell-header-sub">Session insights and progression</p>
+          <p className="game-shell-header-sub">Frustration, topics, and Sage&apos;s next step</p>
         )}
       </div>
 
@@ -81,7 +81,7 @@ export default function GameShellHeader({
             type="button"
             className="game-shell-btn is-accent"
             onClick={onOpenDashboard}
-            title="Research dashboard"
+            title="Learning dashboard"
           >
             <IconChart size={16} />
             <span>Dashboard</span>

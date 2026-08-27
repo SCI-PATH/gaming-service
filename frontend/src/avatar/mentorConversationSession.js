@@ -66,7 +66,7 @@ import {
 
 } from './adaptiveMentorReply.js';
 
-import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
+import { CONCEPT_CATALOG, inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 
 
 
@@ -108,7 +108,15 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
   const topCode = focus.code || focus.focus_code || code;
 
+  const farmQuestion = asQuestionText(
+
+      focus.current_question || extras.farmQuestion || null,
+
+    );
+
   const concept =
+
+    inferConceptFromText(farmQuestion) ||
 
     resolveTopicKey(focus.concept_topic || extras.concept) ||
 
@@ -122,11 +130,7 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
   const evidence = {
 
-    farm_question: asQuestionText(
-
-      focus.current_question || extras.farmQuestion || null,
-
-    ),
+    farm_question: farmQuestion,
 
     last_wrong: friendlyWrongAnswer(
 

@@ -34,7 +34,9 @@ function overlayBlocksWalk() {
       document.querySelector('.quest-scroll-overlay') ||
       document.querySelector('.unlock-shop-overlay') ||
       document.querySelector('.motivation-overlay') ||
-      document.querySelector('.game-over-overlay'),
+      document.querySelector('.game-over-overlay') ||
+      document.querySelector('.farm-pause-overlay') ||
+      document.querySelector('.avatar-assistant-overlay'),
   );
 }
 
@@ -116,6 +118,7 @@ export default function ForestRPGCanvas({
         levelId,
         startingMoney: Number(payload.startingMoney) || 0,
         storyline: nextStoryline,
+        resume: payload.resume === true,
       };
       ['GameOverScene', 'MenuScene', 'GuideScene'].forEach(
         (key) => {
@@ -129,6 +132,17 @@ export default function ForestRPGCanvas({
         },
       );
       ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
+      if (startData.resume) {
+        try {
+          if (game.scene.isActive('GameScene') || game.scene.isPaused('GameScene')) {
+            game.scene.stop('GameScene');
+          }
+        } catch {
+          /* ignore */
+        }
+        game.scene.start('GameScene', startData);
+        return;
+      }
       const gameScene = game.scene.getScene('GameScene');
       const canSoftReset =
         gameScene &&
@@ -406,4 +420,8 @@ export function emitSyncStudentState(payload) {
 
 export function emitReturnToMenu() {
   ForestGameBridge.emit(FARM_EVENTS.RETURN_TO_MENU);
+}
+
+export function emitSaveFarmRun() {
+  ForestGameBridge.emit(FARM_EVENTS.SAVE_FARM_RUN);
 }

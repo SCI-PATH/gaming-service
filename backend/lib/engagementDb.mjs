@@ -408,7 +408,7 @@ function normalizeFrustrationRow(row) {
       row.frustration_score != null ? Number(row.frustration_score) : null,
     frustrationLevel: row.frustration_level || null,
     sessionId: row.session_id || null,
-    levelNumber: row.level_number ?? null,
+    levelNumber: row.level_number != null ? Number(row.level_number) : null,
     source: row.source || null,
     recordedAt: recorded ? new Date(recorded).toISOString() : null,
     signals: row.signals && typeof row.signals === 'object' ? row.signals : {},
@@ -419,48 +419,85 @@ function normalizeFrustrationRow(row) {
 }
 
 /**
- * Latest frustration snapshot(s) for another SCI-PATH component (Socrates).
- * Score is 0–100; caller divides by 100 for Component 4's 0–1 cue.
+ * Latest frustration for a student (and optional recent history).
+ * Other services poll this after the farm POSTs snapshots.
+ * Score is 0–100; Socrates divides by 100 for Component 4's 0–1 cue.
+ * @param {{ studentId: string, sessionId?: string, limit?: number }} opts
  */
-export async function getFrustrationForStudent({
-  studentId,
-  sessionId = null,
-  limit = 1,
-} = {}) {
-  const id = String(studentId || '').trim();
-  if (!id) throw new Error('studentId required');
-  const historyLimit = Math.max(1, Math.min(50, Number(limit) || 1));
-  const session = String(sessionId || '').trim() || null;
+export async function getFrustration(opts = {}) {
+  const studentId = String(opts.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
 
-  const result = await query(
-    `SELECT snapshot_id, student_id, session_id, level_number,
-            frustration_score, frustration_level, signals, dominant_indicators,
-            source, recorded_at
+  const sessionId = String(opts.sessionId || '').trim() || null;
+  const limit = Math.min(50, Math.max(1, Number(opts.limit) || 1));
+
+  const historyResult = await query(
+    `SELECT
+       snapshot_id,
+       session_id,
+       level_number,
+       frustration_score,
+       frustration_level,
+       signals,
+       dominant_indicators,
+       source,
+       recorded_at
      FROM engagement_gaming.frustration_snapshots
      WHERE student_id = $1
        AND ($2::text IS NULL OR session_id::text = $2)
      ORDER BY recorded_at DESC
      LIMIT $3`,
-    [id, session, historyLimit],
+    [studentId, sessionId, limit],
   );
 
-  const history = (result.rows || [])
+  const history = (historyResult.rows || [])
     .map(normalizeFrustrationRow)
     .filter(Boolean);
   const latest = history[0] || null;
 
+  // Prefer denormalized student columns when not filtering by session
+  let frustrationScore = latest?.frustrationScore ?? null;
+  let frustrationLevel = latest?.frustrationLevel ?? null;
+  let recordedAt = latest?.recordedAt ?? null;
+
+  if (!sessionId) {
+    const studentResult = await query(
+      `SELECT latest_frustration_score, latest_frustration_level, last_seen_at
+       FROM engagement_gaming.students
+       WHERE student_id = $1`,
+      [studentId],
+    );
+    const student = studentResult.rows?.[0];
+    if (student) {
+      if (student.latest_frustration_score != null) {
+        frustrationScore = Number(student.latest_frustration_score);
+      }
+      if (student.latest_frustration_level) {
+        frustrationLevel = student.latest_frustration_level;
+      }
+      if (!recordedAt && student.last_seen_at) {
+        recordedAt = new Date(student.last_seen_at).toISOString();
+      }
+    }
+  }
+
   return {
-    studentId: id,
-    frustrationScore: latest?.frustrationScore ?? null,
-    frustrationLevel: latest?.frustrationLevel ?? null,
-    recordedAt: latest?.recordedAt ?? null,
-    sessionId: latest?.sessionId ?? session,
+    studentId,
+    frustrationScore,
+    frustrationLevel,
+    recordedAt,
+    sessionId: latest?.sessionId ?? sessionId,
     levelNumber: latest?.levelNumber ?? null,
     source: latest?.source ?? null,
     signals: latest?.signals ?? {},
     dominantIndicators: latest?.dominantIndicators ?? [],
     history,
   };
+}
+
+/** Alias used by the Socrates handoff on main. */
+export async function getFrustrationForStudent(opts = {}) {
+  return getFrustration(opts);
 }
 
 export async function insertMentorIntervention(body = {}) {
@@ -500,6 +537,72 @@ export async function insertMentorIntervention(body = {}) {
     ],
   );
   return { interventionId };
+}
+
+/**
+ * Live farm cursor for launch / resume (frontend-app Game Arena card).
+ */
+export async function getStudentProgress(studentId) {
+  const id = String(studentId || '').trim();
+  if (!id) throw new Error('studentId required');
+
+  const result = await query(
+    `SELECT
+       s.student_id,
+       COALESCE(NULLIF(TRIM(s.display_name), ''), s.student_name) AS display_name,
+       COALESCE(s.current_level, 1) AS current_level,
+       COALESCE(s.wallet_balance, 0) AS wallet_balance,
+       COALESCE(s.lessons_completed, 0) AS lessons_completed,
+       s.latest_frustration_score,
+       s.latest_frustration_level,
+       s.last_seen_at,
+       COALESCE(lp.highest_completed, 0)::int AS highest_completed_level
+     FROM engagement_gaming.students s
+     LEFT JOIN (
+       SELECT student_id, MAX(level_number)::int AS highest_completed
+       FROM engagement_gaming.level_progress
+       WHERE status = 'completed'
+       GROUP BY student_id
+     ) lp ON lp.student_id = s.student_id
+     WHERE s.student_id = $1`,
+    [id],
+  );
+
+  const row = result.rows?.[0];
+  if (!row) {
+    return {
+      found: false,
+      studentId: id,
+      currentLevel: 1,
+      highestCompletedLevel: 0,
+      cash: 0,
+      isReturning: false,
+    };
+  }
+
+  const highestCompletedLevel = Math.max(
+    0,
+    Number(row.highest_completed_level) || 0,
+  );
+  const storedLevel = Math.max(1, Number(row.current_level) || 1);
+  const currentLevel = Math.max(storedLevel, highestCompletedLevel + 1);
+
+  return {
+    found: true,
+    studentId: row.student_id,
+    displayName: row.display_name || null,
+    currentLevel,
+    highestCompletedLevel,
+    cash: Math.max(0, Number(row.wallet_balance) || 0),
+    lessonsCompleted: Number(row.lessons_completed) || 0,
+    frustrationScore:
+      row.latest_frustration_score != null
+        ? Number(row.latest_frustration_score)
+        : null,
+    frustrationLevel: row.latest_frustration_level || null,
+    lastSeenAt: row.last_seen_at || null,
+    isReturning: currentLevel > 1 || highestCompletedLevel > 0,
+  };
 }
 
 export async function insertGameplayEvent(body = {}) {

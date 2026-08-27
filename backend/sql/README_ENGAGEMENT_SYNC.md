@@ -38,5 +38,6 @@ DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxxx.us-east-2.aws.neon.tech/neondb?
 - `POST /api/engagement/quiz`
 - `POST /api/engagement/unlock`
 - `POST /api/engagement/frustration`
+- `GET /api/engagement/frustration?studentId=` (latest score + optional history)
 - `POST /api/engagement/mentor`
 - `POST /api/engagement/event`
