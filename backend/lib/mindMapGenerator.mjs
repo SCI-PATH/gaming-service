@@ -173,9 +173,9 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       why_wrong: explainWhyWrong(conceptual, voice),
       key_concept: clip(right || topic, 40) || 'Key idea',
       key_concept_explain: explainCorrectIdea(conceptual, voice),
-      farm_link: q
-        ? `On the farm, this idea shows up whenever the crop story needs: “${clip(q, 70)}”.`
-        : `Use the ${topic} idea on your farm crop story.`,
+      farm_link: right
+        ? `If this question comes back in the exam, circle ${clip(right, 48)}.`
+        : `Say the exam line out loud once, then try the next miss.`,
       color_index: i % 6,
     };
   });

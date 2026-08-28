@@ -610,7 +610,7 @@ export default function ConceptMindMap({
               ) : null}
               {compact && selected && (b.why || b.keyExplain) ? (
                 <p className="mm-card-why">
-                  <span>{b.why ? 'Why' : 'How it works'}</span>{' '}
+                  <span>{b.why ? 'Exam' : 'Write this'}</span>{' '}
                   {speechOn ? (
                     <Sync
                       fieldKey={b.why ? 'why' : 'explain'}
@@ -642,7 +642,7 @@ export default function ConceptMindMap({
           </h4>
           {active.why ? (
             <p className="mm-focus-p">
-              <strong>Why this mix-up happens:</strong>{' '}
+              <strong>Remember for the exam:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="why" text={active.why} on />
               ) : (
@@ -652,7 +652,7 @@ export default function ConceptMindMap({
           ) : null}
           {active.keyExplain ? (
             <p className="mm-focus-p">
-              <strong>Why the science is true:</strong>{' '}
+              <strong>Write this:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="explain" text={active.keyExplain} on />
               ) : (

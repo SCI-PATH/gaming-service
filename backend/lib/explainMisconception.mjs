@@ -537,97 +537,107 @@ export function questionJob(attempt = {}) {
   const p = lower(prompt);
   const claim = unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
 
-  if (/produces pollen|produce pollen|makes pollen|pollen/i.test(p) && /part|which|flower/.test(p)) {
+  if (
+    /(produces|produce|makes|making) pollen|which part of the flower/.test(p) &&
+    !/moving pollen|transfer of pollen/.test(p)
+  ) {
     return {
       verbPhrase: 'produce pollen',
-      rightHow:
-        hint ||
-        claim?.fact ||
-        'The anther (on the stamen) is the male flower part that produces pollen.',
+      examRemember:
+        'the flower part that MAKES pollen is the anther (stamen), not the petal',
+      rightHow: 'The anther on the stamen is the male part that produces pollen.',
     };
   }
   if (/gas/.test(p) && /photosynth|take in/.test(p)) {
     return {
       verbPhrase: 'get taken in by the leaf to make food',
+      examRemember:
+        'the gas plants TAKE IN for photosynthesis is carbon dioxide — not oxygen, not helium',
       rightHow:
-        hint ||
-        'This question is about the gas a leaf takes in to make food: carbon dioxide, with water and light.',
+        'The leaf takes in carbon dioxide, plus water and light, to build sugar. Oxygen is given off.',
     };
   }
   if (/photosynth/.test(p) && !/gas/.test(p)) {
     return {
       verbPhrase: 'name the process that makes plant food with light',
+      examRemember:
+        'the process that makes plant food with light is photosynthesis',
       rightHow:
-        hint ||
-        claim?.fact ||
         'Photosynthesis is how green plants make food from light, water, and carbon dioxide.',
     };
   }
   if (/pollen from one flower|bees moving pollen|pollinat/.test(p)) {
     return {
       verbPhrase: 'move pollen so seeds can form',
-      rightHow: hint || claim?.fact || 'Pollination is moving pollen from anther toward a pistil.',
+      examRemember:
+        'bees moving pollen is pollination — not evaporation, erosion, or condensation',
+      rightHow: 'Pollination is moving pollen from anther toward a pistil so seeds can form.',
     };
   }
   if (/need water for|mainly need water/.test(p)) {
     return {
       verbPhrase: 'say what plants use water for',
-      rightHow: hint || 'Plants need water for photosynthesis and to move nutrients.',
+      examRemember:
+        'plants need water for photosynthesis and to move nutrients',
+      rightHow: 'Water helps make food and move minerals through the plant.',
     };
   }
   if (/load harvested|cart or barn/.test(p)) {
     return {
       verbPhrase: 'say why harvests are loaded and stored',
-      rightHow: hint || 'Farmers load crops to store and move the harvest safely.',
+      examRemember: 'farmers load crops to store and move the harvest safely',
+      rightHow: 'Harvests are moved and stored so they can be sold or used later.',
     };
   }
   if (/underground|takes in water/.test(p) && /part/.test(p)) {
     return {
       verbPhrase: 'name the part that takes in water from soil',
-      rightHow: hint || claim?.fact || 'Roots grow underground and take in water and minerals.',
+      examRemember: 'roots grow underground and take in water and minerals',
+      rightHow: 'Roots, not petals or anthers, take in water from the soil.',
     };
   }
   if (/stores energy|nutrient/.test(p) && /corn/.test(p)) {
     return {
       verbPhrase: 'name the main energy-store nutrient',
-      rightHow: hint || claim?.fact || 'Corn stores energy mainly as carbohydrates (starch).',
+      examRemember:
+        'corn stores energy mainly as carbohydrates (starch), not protein, vitamins, or salt',
+      rightHow: 'Starch is the carbohydrate energy store in corn kernels.',
     };
   }
   if (/water moving from plant leaves|transpiration|into the air/.test(p)) {
     return {
       verbPhrase: 'name water leaving leaves into the air',
-      rightHow: hint || claim?.fact || 'That process is transpiration.',
+      examRemember:
+        'water leaving leaves into the air is transpiration, not precipitation or freezing',
+      rightHow: 'Transpiration is water vapour leaving the leaf — like plant sweating.',
     };
   }
   if (/captures most sunlight|food-making/.test(p)) {
     return {
       verbPhrase: 'name the part that captures sunlight for food-making',
-      rightHow: hint || 'Leaves hold chlorophyll and capture most sunlight for photosynthesis.',
+      examRemember: 'leaves capture most sunlight for photosynthesis, not roots or cart wheels',
+      rightHow: 'Leaves hold chlorophyll, so they catch the light for food-making.',
     };
   }
   if (claim?.fact) {
     return {
       verbPhrase: 'match the science idea in the sentence',
-      rightHow: hint || claim.fact,
+      examRemember: clip(claim.fact.replace(/^“/, '').replace(/^\w/, (c) => c.toLowerCase()), 160),
+      rightHow: claim.fact,
     };
-  }
-  if (hint && right) {
-    return {
-      verbPhrase: `match “${clip(right, 48)}”`,
-      rightHow: `${hint} That is why “${clip(right, 60)}” fits this question.`,
-    };
-  }
-  if (hint) {
-    return { verbPhrase: 'match the science job in the question', rightHow: hint };
   }
   if (right) {
     return {
       verbPhrase: `match “${clip(right, 48)}”`,
-      rightHow: `This question is asking for ${right}. ${clip(prompt, 110)}`,
+      examRemember: `the scoring idea is ${right}`,
+      rightHow: hint
+        ? `${right}. ${hint}`
+        : `This question is asking for ${right}.`,
     };
   }
   return {
     verbPhrase: 'answer this farm question',
+    examRemember: 'name the process or part the stem is really asking for',
     rightHow: stemIntent(prompt).asking,
   };
 }
@@ -651,96 +661,78 @@ export function isUsableStudentIdea(sentence, attempt = {}) {
   return true;
 }
 
-function rightMechanism(attempt, band) {
+function examLock(attempt) {
   const job = questionJob(attempt);
-  const text = job.rightHow;
-  if (band === 'micro') return clip(text, 140);
-  return text;
+  if (job.examRemember) return job.examRemember;
+  const right = norm(attempt.correctAnswer);
+  if (right && !isTrueFalseToken(right)) return `the scoring idea is ${right}`;
+  return job.rightHow || 'name the process or part the stem is really asking for';
 }
 
-function genericMeet(wrong, band) {
-  const w = clip(wrong, 48);
-  if (!w) return '';
-  if (band === 'micro' || band === 'simple') {
-    return `You used “${w}”. That idea belongs to a different science job than this question.`;
-  }
-  return `You used “${w}”. Keep that word in mind — it is a real idea, but it does a different job than this farm question is asking.`;
+function rightMechanism(attempt, band) {
+  const lock = examLock(attempt);
+  const job = questionJob(attempt);
+  const text = job.rightHow && job.rightHow !== lock ? `${lock}. ${job.rightHow}` : lock;
+  if (band === 'micro') return clip(`You know that ${lock}.`, 200);
+  return `You know that ${lock}.`;
 }
 
-function mismatchLine(wrong, attempt, idea) {
+function trapLine(wrong, attempt, idea) {
   if (idea?.mismatch) return idea.mismatch;
   const job = questionJob(attempt);
-  return `“${clip(wrong, 48)}” does not ${job.verbPhrase}.`;
+  return `“${clip(wrong, 40)}” will not score — it does not ${job.verbPhrase}.`;
 }
 
-function composeThreeBeat({ meet, right, mismatch }, band) {
-  const parts = [meet, right, mismatch].map((p) => norm(p)).filter(Boolean);
-  return clip(parts.join(' '), bandClip(band));
-}
-
-export function explainWhyWrong(attempt = {}, voice = {}) {
+function composeExamCoach(attempt, voice) {
   const band = voiceBand(voice);
   const wrong = norm(attempt.studentAnswer);
   const right = norm(attempt.correctAnswer);
   const prompt = norm(attempt.prompt || attempt.question || '');
   const idea = lookupStudentIdea(wrong);
-  const rightText = rightMechanism(attempt, band);
   const extraMeet = norm(attempt.extraMeet || '');
+  const lock = examLock(attempt);
+  const know = `You know that ${lock}.`;
 
   if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
-    return clip(rightText, bandClip(band));
+    return clip(`${know} Hold that line for the exam.`, bandClip(band));
   }
 
   if (isTrueFalseToken(wrong) && isTrueFalseToken(right)) {
     const claim = unpackScienceClaim(prompt, attempt.topic);
-    const meet = isAffirmative(wrong)
-      ? 'True would mean this sentence is a real science fact.'
-      : 'False would mean this science sentence is untrue.';
-    const mismatch = isAffirmative(right)
-      ? claim?.rejectFalse ||
-        'The naming or process in the sentence really is how the science works, so False does not fit.'
-      : 'The sentence does not match how the science works, so True does not fit.';
-    return composeThreeBeat(
-      { meet, right: claim?.fact || rightText, mismatch },
-      band,
-    );
+    const fact = claim?.fact || lock;
+    const knowTf = isAffirmative(right)
+      ? `You know that this sentence is true. ${fact}`
+      : `You know that this sentence is false. ${fact}`;
+    const trap = isAffirmative(wrong)
+      ? 'True only scores if the science in the sentence is actually right.'
+      : claim?.rejectFalse || 'False would throw away a real definition — that loses the mark.';
+    return clip(`${knowTf} ${trap}`, bandClip(band));
   }
 
-  const meet =
-    pickMeet(idea, band) || extraMeet || genericMeet(wrong, band);
-  const mismatch = mismatchLine(wrong, attempt, idea);
-  return composeThreeBeat({ meet, right: rightText, mismatch }, band);
+  const identity = pickMeet(idea, band) || extraMeet;
+  const trap = trapLine(wrong, attempt, idea);
+  if (band === 'micro') {
+    return clip(`${know} You chose ${clip(wrong, 36)}. ${trap}`, 240);
+  }
+  if (band === 'simple') {
+    return clip(`${know} You chose ${clip(wrong, 40)}. ${trap}`, 300);
+  }
+  const colour = identity ? `${identity}` : '';
+  return clip(
+    `${know} You chose ${clip(wrong, 48)}. ${colour} ${trap}`.replace(/\s+/g, ' '),
+    bandClip(band),
+  );
+}
+
+export function explainWhyWrong(attempt = {}, voice = {}) {
+  return composeExamCoach(attempt, voice);
 }
 
 export function explainCorrectIdea(attempt = {}, voice = {}) {
   const band = voiceBand(voice);
-  const right = norm(attempt.correctAnswer);
-  const prompt = norm(attempt.prompt || attempt.question || '');
-  const hint = norm(attempt.hint || '');
-  const claim =
-    unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
-
-  if (isTrueFalseToken(right)) {
-    const fact = claim?.fact || hint;
-    if (isAffirmative(right)) {
-      return clip(
-        fact ? `${fact} That is why the statement is true.` : rightMechanism(attempt, band),
-        bandClip(band),
-      );
-    }
-    return clip(
-      fact
-        ? `${fact} The given sentence does not match that, so it is false.`
-        : rightMechanism(attempt, band),
-      bandClip(band),
-    );
-  }
-
-  if (claim?.fact) {
-    const extra = hint && !claim.fact.includes(hint) ? ` ${hint}` : '';
-    return clip(`${claim.fact}${extra}`, bandClip(band));
-  }
-  return clip(rightMechanism(attempt, band), bandClip(band));
+  const lock = examLock(attempt);
+  const line = `Write this: ${lock.replace(/^the /, 'The ')}.`;
+  return clip(line, band === 'micro' ? 180 : 280);
 }
 
 /**
