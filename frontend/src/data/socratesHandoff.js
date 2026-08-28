@@ -3,9 +3,10 @@
  *
  * On click:
  *  1. Flush the live farm score to gaming-service (0–100)
- *  2. GET /api/engagement/frustration (Sachini's open API)
- *  3. POST that score to Component 4 /api/v1/engagement/frustration-cue (0–1)
- *  4. Open the SCI-PATH Socrates screen so the first tutor turn can soften tone
+ *  2. GET /api/engagement/frustration (per student — not per topic)
+ *  3. POST that score to Component 4 as a user-level tone cue (topic_id USER)
+ *  4. Open SCI-PATH /tutor?from=farm with the lesson unlocked so Socrates
+ *     can infer the real topic from the student's question
  */
 import {
   fetchFrustration,
@@ -15,7 +16,8 @@ import {
 
 const DEFAULT_ANALYTICS_API = 'http://127.0.0.1:8003';
 const DEFAULT_SCIPATH_APP = 'http://127.0.0.1:3000';
-const FALLBACK_TOPIC_ID = 'G6_S1_ORG_CHARS';
+/** Matches Component 4 USER_LEVEL_FRUSTRATION_TOPIC — not a curriculum skill. */
+const USER_LEVEL_TOPIC_ID = 'USER';
 
 function envUrl(key, fallback) {
   try {
@@ -57,23 +59,6 @@ function toUnitScore(raw) {
   return Math.max(0, Math.min(1, n));
 }
 
-export function resolveHandoffTopicId({ student, farm, quiz, telemetry } = {}) {
-  return (
-    pickText(
-      student?.topicId,
-      student?.topic_id,
-      farm?.topicId,
-      farm?.topic_id,
-      quiz?.topicId,
-      quiz?.topic_id,
-      quiz?.skillId,
-      quiz?.skill_id,
-      telemetry?.topicId,
-      telemetry?.topic_id,
-    ) || FALLBACK_TOPIC_ID
-  );
-}
-
 export function resolveHandoffStudentId(student) {
   return pickText(student?.id, student?.studentId, student?.userId);
 }
@@ -96,14 +81,14 @@ function liveFrustration(telemetry = {}, metrics = {}) {
   };
 }
 
-async function postFrustrationCue({ userId, topicId, frustrationScore, source }) {
+async function postFrustrationCue({ userId, frustrationScore, source }) {
   const base = envUrl('VITE_LEARNER_ANALYTICS_API_BASE', DEFAULT_ANALYTICS_API);
   const res = await fetch(`${base}/api/v1/engagement/frustration-cue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       user_id: userId,
-      topic_id: topicId,
+      topic_id: USER_LEVEL_TOPIC_ID,
       frustration_score: frustrationScore,
       source,
     }),
@@ -119,11 +104,10 @@ async function postFrustrationCue({ userId, topicId, frustrationScore, source })
   return data;
 }
 
-function buildSocratesUrl(topicId) {
+function buildSocratesUrl() {
   const app = envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
   const url = new URL('/tutor', `${app}/`);
   url.searchParams.set('from', 'farm');
-  if (topicId) url.searchParams.set('topicId', topicId);
   return url.toString();
 }
 
@@ -145,8 +129,7 @@ export async function handoffToSocrates({
   metrics = {},
 } = {}) {
   const userId = resolveHandoffStudentId(student);
-  const topicId = resolveHandoffTopicId({ student, farm, quiz, telemetry });
-  const tutorUrl = buildSocratesUrl(topicId);
+  const tutorUrl = buildSocratesUrl();
   const live = liveFrustration(telemetry, metrics);
 
   if (!userId) {
@@ -154,7 +137,7 @@ export async function handoffToSocrates({
       opened: false,
       cuePosted: false,
       frustrationScore: null,
-      topicId,
+      topicId: USER_LEVEL_TOPIC_ID,
       tutorUrl,
       error: 'No student id — relaunch the farm from SCI-PATH.',
     };
@@ -196,7 +179,6 @@ export async function handoffToSocrates({
   try {
     await postFrustrationCue({
       userId,
-      topicId,
       frustrationScore: unit,
       source: 'gaming_socrates_unlock',
     });
@@ -219,7 +201,7 @@ export async function handoffToSocrates({
       opened: false,
       cuePosted,
       frustrationScore: unit,
-      topicId,
+      topicId: USER_LEVEL_TOPIC_ID,
       tutorUrl,
       error: err?.message || 'Could not open Socrates',
     };
@@ -229,7 +211,7 @@ export async function handoffToSocrates({
     opened,
     cuePosted,
     frustrationScore: unit,
-    topicId,
+    topicId: USER_LEVEL_TOPIC_ID,
     tutorUrl,
     ...(cuePosted ? {} : { error: cueError }),
   };
