@@ -317,16 +317,30 @@ export function buildPersonalizedMindMap({
     const cleanRight =
       safeScienceLine(a.correctAnswer, null) || 'see the lesson key idea';
     const related = catalogRelated(t, cleanRight, usedRelated);
-    const why = explainWhyWrong({
-      ...a,
-      studentAnswer: cleanWrong,
-      correctAnswer: cleanRight,
-    });
-    const rightExplain = explainCorrectIdea({
-      ...a,
-      studentAnswer: cleanWrong,
-      correctAnswer: cleanRight,
-    });
+    const why = explainWhyWrong(
+      {
+        ...a,
+        studentAnswer: cleanWrong,
+        correctAnswer: cleanRight,
+      },
+      {
+        tone: profile.tone,
+        frustrationLevel: profile.frustrationLevel,
+        explainDepth: profile.explainDepth,
+      },
+    );
+    const rightExplain = explainCorrectIdea(
+      {
+        ...a,
+        studentAnswer: cleanWrong,
+        correctAnswer: cleanRight,
+      },
+      {
+        tone: profile.tone,
+        frustrationLevel: profile.frustrationLevel,
+        explainDepth: profile.explainDepth,
+      },
+    );
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
     const nodes = [

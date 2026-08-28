@@ -1,15 +1,14 @@
 /**
- * Contrastive elaborative feedback for Sage mind-map "why".
+ * Sage "why" = learn from the student's own idea.
  *
- * Knowledge-of-correct-response ("you picked X, the answer is Y") does not
- * repair a misconception. These helpers produce:
- *   why_wrong  — why the student's model fails this scientific job
- *   key_explain — causal / definitional account of why the correct idea is true
+ * Three beats, personalized by frustration / mind-map tone:
+ *   1. Honour what they picked as a real-world idea (helium → balloons)
+ *   2. Why the correct idea does THIS job (CO₂ for photosynthesis)
+ *   3. Why their idea does not do that job
+ *
+ * Never recap the mark scheme. Never grade typing/placeholders.
  */
-import {
-  CONCEPT_CATALOG,
-  resolveTopicKey,
-} from './conceptMaps.js';
+import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
 
 function clip(text, n = 220) {
   const s = String(text || '')
@@ -51,18 +50,40 @@ function isPlaceholderBlank(text) {
   return /^\s*n(\s*\|\s*n)*\s*$/i.test(norm(text)) || /^n+$/i.test(norm(text));
 }
 
+export function voiceBand(voice = {}) {
+  const level = String(voice.frustrationLevel || voice.level || 'moderate').toLowerCase();
+  const tone = String(voice.tone || 'practice').toLowerCase();
+  const depth = String(voice.explainDepth || 'medium').toLowerCase();
+  if (level === 'very_high' || depth === 'micro') return 'micro';
+  if (level === 'high' || tone === 'support' || depth === 'simple') return 'simple';
+  if (level === 'low' || tone === 'challenge' || depth === 'rich') return 'rich';
+  return 'medium';
+}
+
+function bandClip(band) {
+  if (band === 'micro') return 240;
+  if (band === 'simple') return 320;
+  if (band === 'rich') return 420;
+  return 360;
+}
+
 export function hasCausalLanguage(text) {
-  return /because|so that|which means|named for|prefix|is for\b|job of|does not (fit|answer|make|do|mean|produce)|mix-?up|would mean|in nature|happens when|works by|defined as|stands for|not the same|different job|asking about|the claim|seed leaf|cotyledon|process of|function of|male part|female part|makes pollen|take in|released as|transfer of pollen/i.test(
+  return /because|so that|which means|named for|prefix|is for\b|job of|does not (fit|answer|make|do|mean|produce)|mix-?up|would mean|in nature|happens when|works by|defined as|stands for|not the same|different job|asking about|the claim|seed leaf|cotyledon|process of|function of|male part|female part|makes pollen|take in|released as|transfer of pollen|balloons|react|raw material/i.test(
     String(text || ''),
   );
 }
 
-/**
- * Detect score-key restatement: "you selected X, but the answer is Y".
- */
+/** Grader/UI talk — not a science lesson. */
+export function looksLikeGraderMeta(text) {
+  return /placeholder|fills the blanks|the response fills|arbitrary symbols|categories the question asks|not a science word|typing [“"']n|blank [1-9]|pipe-separated/i.test(
+    String(text || ''),
+  );
+}
+
 export function looksLikeAnswerKeyRestatement(text, wrong = '', right = '') {
   const raw = String(text || '').trim();
   if (!raw) return true;
+  if (looksLikeGraderMeta(raw)) return true;
   if (
     /you (picked|chose|selected|answered)/i.test(raw) &&
     /but (the )?(better|correct|right) (idea|answer|one)/i.test(raw)
@@ -86,6 +107,16 @@ export function looksLikeAnswerKeyRestatement(text, wrong = '', right = '') {
     t.includes(r.slice(0, Math.min(24, r.length)));
   if (mentionsBoth && !hasCausalLanguage(raw) && raw.length < 200) return true;
   return false;
+}
+
+function honorsStudentIdea(ai, wrong) {
+  if (isPlaceholderBlank(wrong) || isNoPick(wrong) || isTrueFalseToken(wrong)) {
+    return true;
+  }
+  const w = lower(wrong);
+  const token = w.split(/[^a-z0-9]+/).find((t) => t.length >= 4) || w.slice(0, 8);
+  if (!token || token.length < 3) return true;
+  return lower(ai).includes(token);
 }
 
 function stemIntent(prompt) {
@@ -126,9 +157,6 @@ function stemIntent(prompt) {
   };
 }
 
-/**
- * Unpack the scientific claim hiding in a Grade 6–9 stem.
- */
 export function unpackScienceClaim(prompt, topic = '') {
   const blob = `${prompt} ${topic}`;
   if (/dicotyledon|dicot|\btwo seed|\btwo cotyledon|seed lobes?/i.test(blob)) {
@@ -145,18 +173,6 @@ export function unpackScienceClaim(prompt, topic = '') {
         'Choosing False would deny that naming rule — one seed leaf is how monocots are defined.',
     };
   }
-  if (/fibrous root/i.test(blob) && /monocot/i.test(blob)) {
-    return {
-      fact: 'Monocots usually have fibrous roots — many thin roots of similar size, not one thick taproot.',
-      rejectFalse: 'A taproot is the dicot pattern, so swapping the two groups is the mix-up.',
-    };
-  }
-  if (/taproot/i.test(blob) && /dicot/i.test(blob)) {
-    return {
-      fact: 'Dicots usually have a taproot — one main root with smaller side roots.',
-      rejectFalse: 'Fibrous roots belong with most monocots, not dicots.',
-    };
-  }
   if (/photosynth|chlorophyll/i.test(blob) && /carbon dioxide|co2|oxygen/i.test(blob)) {
     return {
       fact: 'Photosynthesis builds sugar from carbon dioxide, water, and light. Oxygen is released as a leftover, not the main gas the leaf takes in.',
@@ -171,53 +187,130 @@ export function unpackScienceClaim(prompt, topic = '') {
   }
   if (/pollinat|pollen transfer/i.test(blob)) {
     return {
-      fact: 'Pollination is the transfer of pollen from anther toward a pistil so seeds can form. It is not evaporation, erosion, or storing water in leaves.',
-      rejectFalse: 'Those other words name different Earth or plant jobs.',
+      fact: 'Pollination is the transfer of pollen from anther toward a pistil so seeds can form.',
+      rejectFalse: 'Evaporation or storing water is a different job.',
     };
   }
   if (/anther|stamen|pollen-maker|produces pollen/i.test(blob)) {
     return {
-      fact: 'The anther (on the stamen) is the male part that makes pollen. Petals, leaves, and roots have other jobs.',
-      rejectFalse: 'Attracting insects or making food is not the same as producing pollen.',
+      fact: 'The anther (on the stamen) is the male part that makes pollen.',
+      rejectFalse: 'Petals attract visitors; they do not produce pollen.',
     };
   }
-  if (/pistil|stigma|ovary/i.test(blob)) {
+  if (/fibrous root/i.test(blob) && /monocot/i.test(blob)) {
     return {
-      fact: 'The pistil is the female flower part that can receive pollen and later form seeds or fruit.',
-      rejectFalse: 'The pollen-maker is the anther, not the pistil.',
+      fact: 'Monocots usually have fibrous roots — many thin roots of similar size, not one thick taproot.',
+      rejectFalse: 'A taproot is the dicot pattern.',
     };
   }
-  if (/physical change/i.test(blob) && /chemical change/i.test(blob)) {
+  if (/taproot/i.test(blob) && /dicot/i.test(blob)) {
     return {
-      fact: 'A physical change rearranges form (melt, freeze, crush) without making a new substance. A chemical change makes new substances (burn, rust, cook).',
-      rejectFalse: 'The mix-up is treating a form change as if new matter were created, or the reverse.',
-    };
-  }
-  if (/chlorophyll/i.test(blob)) {
-    return {
-      fact: 'Chlorophyll is the green pigment that captures light energy for photosynthesis.',
-      rejectFalse: 'It is not a root, a seed, or a leftover gas.',
-    };
-  }
-  if (/stomata|stoma/i.test(blob)) {
-    return {
-      fact: 'Stomata are tiny leaf pores that let gases in and out, including carbon dioxide for photosynthesis.',
-      rejectFalse: 'They are openings, not the food the plant stores.',
-    };
-  }
-  if (/xylem/i.test(blob)) {
-    return {
-      fact: 'Xylem is the plant “water highway” that moves water and minerals up from the roots.',
-      rejectFalse: 'Food sugars usually travel in phloem, a different tissue.',
-    };
-  }
-  if (/phloem/i.test(blob)) {
-    return {
-      fact: 'Phloem moves sugars made in the leaves to growing or storing parts of the plant.',
-      rejectFalse: 'Water from the soil travels mainly in xylem, not phloem.',
+      fact: 'Dicots usually have a taproot — one main root with smaller side roots.',
+      rejectFalse: 'Fibrous roots belong with most monocots.',
     };
   }
   return null;
+}
+
+/** Everyday science identity of a typical wrong pick. */
+const STUDENT_WORLD_IDEAS = [
+  {
+    test: /helium/,
+    meetShort: 'Helium is the light gas that makes party balloons float.',
+    meet: 'Helium is a very light gas. We fill party balloons with it so they float.',
+    meetRich:
+      'Helium is a light noble gas: it barely reacts with other chemicals, which is why balloons filled with it stay light and float.',
+    mismatch:
+      'Helium does not go into the leaf’s food-making reaction, so it cannot be the gas plants take in for photosynthesis.',
+  },
+  {
+    test: /\boxygen\b|\bo2\b/,
+    meetShort: 'Oxygen is the gas we breathe, and plants usually give it off in light.',
+    meet: 'Oxygen is the gas animals breathe. Green plants usually release it during photosynthesis.',
+    meetRich:
+      'Oxygen is a product of photosynthesis: the leaf gives it off after using light to build sugar, which is why we often say plants “make oxygen”.',
+    mismatch:
+      'Oxygen is not the main gas the leaf takes in to build sugar — that intake gas is carbon dioxide.',
+  },
+  {
+    test: /nitrogen|\bn2\b/,
+    meetShort: 'Nitrogen makes up a lot of the air, and plants need it for proteins.',
+    meet: 'Nitrogen is a big part of air. Plants need nitrogen for proteins, often from soil or fertilizer.',
+    meetRich:
+      'Nitrogen is about four-fifths of air and is a building block of proteins, usually entering plants from the soil rather than as a photosynthesis gas.',
+    mismatch:
+      'Nitrogen is not the gas the leaf takes in to make sugar during photosynthesis.',
+  },
+  {
+    test: /hydrogen/,
+    meetShort: 'Hydrogen is a very light gas; water is H₂O.',
+    meet: 'Hydrogen is a light gas we meet in water (H₂O) and some fuels.',
+    meetRich:
+      'Hydrogen is the lightest element; in plants it arrives as part of water, not as a balloon-style gas the leaf “breathes in” to make food.',
+    mismatch:
+      'Leaves do not take in hydrogen gas the way they take in carbon dioxide for photosynthesis.',
+  },
+  {
+    test: /petal/,
+    meetShort: 'Petals are the colourful flower parts that attract visitors.',
+    meet: 'Petals are the colourful parts of a flower. They often help attract bees and other visitors.',
+    meetRich:
+      'Petals advertise the flower to pollinators with colour and scent; that is a visitor-attraction job, not a pollen-making job.',
+    mismatch: 'Petals do not make pollen — the anther on the stamen does that.',
+  },
+  {
+    test: /evaporation/,
+    meetShort: 'Evaporation is water turning into vapour, like puddles drying.',
+    meet: 'Evaporation is when liquid water becomes vapour — puddles drying, or steam from a warm field.',
+    meetRich:
+      'Evaporation is a water-cycle change of state: liquid water gains energy and becomes gas. It moves water, not pollen.',
+    mismatch: 'Evaporation does not transfer pollen, so it is not pollination.',
+  },
+  {
+    test: /erosion/,
+    meetShort: 'Erosion is soil or rock being worn away by wind or water.',
+    meet: 'Erosion is when wind, water, or ice wear away soil or rock and carry it off.',
+    meetRich:
+      'Erosion reshapes land by moving particles. That is an Earth-surface job, not a flower-reproduction job.',
+    mismatch: 'Erosion does not move pollen to make seeds.',
+  },
+  {
+    test: /condensation/,
+    meetShort: 'Condensation is vapour turning back into liquid, like dew.',
+    meet: 'Condensation is when water vapour cools and becomes liquid — dew, clouds, a cold glass “sweating”.',
+    meetRich:
+      'Condensation is the water-cycle partner of evaporation: gas becomes liquid. It does not carry pollen.',
+    mismatch: 'Condensation is not pollen transfer.',
+  },
+  {
+    test: /fibrous/,
+    meetShort: 'Fibrous roots are many thin roots of similar size.',
+    meet: 'Fibrous roots look like a bunch of thin similar roots. They are typical of many monocots, like grasses.',
+    meetRich:
+      'A fibrous root system is a mat of similar thin roots, common in monocots. It is a different architecture from a single thick taproot.',
+    mismatch: 'Fibrous roots are not the usual dicot / taproot pattern.',
+  },
+  {
+    test: /taproot/,
+    meetShort: 'A taproot is one thick main root with smaller side roots.',
+    meet: 'A taproot is one main root with smaller branches — think carrot. Many dicots grow this way.',
+    meetRich:
+      'A taproot has one dominant axis with laterals. That is the typical dicot pattern, not the monocot fibrous bunch.',
+    mismatch: 'A taproot is not the usual monocot root system.',
+  },
+];
+
+function lookupStudentIdea(wrong) {
+  const t = lower(wrong);
+  if (!t) return null;
+  return STUDENT_WORLD_IDEAS.find((row) => row.test.test(t)) || null;
+}
+
+function pickMeet(idea, band) {
+  if (!idea) return '';
+  if (band === 'micro' || band === 'simple') return idea.meetShort || idea.meet;
+  if (band === 'rich') return idea.meetRich || idea.meet;
+  return idea.meet || idea.meetShort;
 }
 
 function findCatalogNode(catalog, text) {
@@ -253,209 +346,143 @@ function catalogForAttempt(attempt) {
   return key && CONCEPT_CATALOG[key] ? CONCEPT_CATALOG[key] : null;
 }
 
-function contrastFromCatalog(attempt, wrong, right) {
-  const cat = catalogForAttempt(attempt);
-  if (!cat) return null;
-  const wrongNode = findCatalogNode(cat, wrong);
-  const rightNode =
-    findCatalogNode(cat, right) ||
-    findCatalogNode(cat, attempt.prompt || attempt.question || '');
-  if (wrongNode && rightNode && wrongNode.id !== rightNode.id) {
-    return `${wrongNode.label} is for ${String(wrongNode.role || 'a different job').toLowerCase()} — ${wrongNode.explanation} This question needs ${String(rightNode.role || 'another job').toLowerCase()}: ${rightNode.explanation}`;
-  }
-  if (rightNode && (!wrongNode || wrongNode.id === rightNode.id)) {
-    return `That pick does not do this job. ${rightNode.explanation}`;
-  }
-  if (wrongNode) {
-    return `${wrongNode.label} has a real job (${String(wrongNode.role || 'in the plant').toLowerCase()}), but it is not what this question is testing. ${wrongNode.explanation}`;
-  }
-  return null;
-}
-
-function contrastFromOptions(wrong, right, prompt) {
-  const w = lower(wrong);
-  const r = `${lower(right)} ${lower(prompt)}`;
-  if (/petal|leaf tip|leaf vein/.test(w) && /pollen|anther|stamen/.test(r)) {
-    return `${wrong} is a plant part, but it is not the pollen-maker. Petals attract visitors; pollen is produced on the anther (stamen).`;
-  }
-  if (/oxygen|nitrogen|helium/.test(w) && /carbon dioxide|co2|photosynth/.test(r)) {
-    return `Leaves take in carbon dioxide to build sugar. ${wrong} is a different gas — oxygen is what photosynthesis usually releases, not the main gas taken in.`;
-  }
-  if (/evaporation|erosion|condensation/.test(w) && /pollen|pollinat/.test(r)) {
-    return `${wrong} is an Earth/water process. Pollination is moving pollen so seeds can form — a different job.`;
-  }
-  if (/making metal|rocks|soil disappear|thunder/.test(w)) {
-    return `${wrong} is not a job this farm-science idea does. Match the option to the living process in the question.`;
-  }
-  if (/fibrous/.test(w) && /taproot|dicot/.test(r)) {
-    return `Fibrous roots are many thin similar roots (typical of monocots). A taproot is one thick main root (typical of dicots). Those two patterns belong to different plant groups.`;
-  }
-  if (/taproot/.test(w) && /fibrous|monocot/.test(r)) {
-    return `A taproot is one main root with side branches (typical of dicots). Monocots usually have a fibrous bunch of thin roots instead.`;
-  }
-  return null;
-}
-
-function explainTrueFalse(attempt, wrong, right) {
+function rightMechanism(attempt, band) {
+  const right = norm(attempt.correctAnswer);
   const prompt = norm(attempt.prompt || attempt.question || '');
-  const intent = stemIntent(prompt);
-  const claim = unpackScienceClaim(prompt, attempt.topic);
   const hint = norm(attempt.hint || '');
-  const fact = claim?.fact || hint || clip(prompt, 160);
+  const claim =
+    unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
+  const blob = `${prompt} ${right} ${attempt.topic || ''}`;
 
-  if (isAffirmative(right)) {
-    return `${intent.asking} ${fact} ${claim?.rejectFalse || 'Choosing False would reject a real science definition, not catch a trick.'}`.trim();
+  if (/carbon dioxide|co2/i.test(blob) && /photosynth|leaf|plant|gas/i.test(blob)) {
+    if (band === 'micro' || band === 'simple') {
+      return 'This question is about the gas a leaf uses to make food: carbon dioxide, with water and light.';
+    }
+    return 'This question is about photosynthesis: the leaf takes in carbon dioxide, plus water and light, to build sugar (food).';
   }
-  return `${intent.asking} The sentence is not accurate science. ${claim?.fact || hint || 'The wording does not match how the process actually works.'} Choosing True would treat an inaccurate claim as fact.`.trim();
+  if (claim?.fact) {
+    if (band === 'micro') return clip(claim.fact, 120);
+    return claim.fact;
+  }
+  const cat = catalogForAttempt(attempt);
+  const rightNode = findCatalogNode(cat, right) || findCatalogNode(cat, prompt);
+  if (rightNode?.explanation) return rightNode.explanation;
+  if (hint) return hint;
+  if (right) {
+    return `${right} is the idea that does this farm-science job.`;
+  }
+  return stemIntent(prompt).asking;
+}
+
+function genericMeet(wrong, band) {
+  const w = clip(wrong, 40);
+  if (!w) return '';
+  if (band === 'micro') return `${w} is a real idea — just for a different job.`;
+  if (band === 'rich') {
+    return `${w} is something real in science or everyday life; it has its own job.`;
+  }
+  return `${w} is a real idea in the world — it just does a different job than this question.`;
+}
+
+function composeThreeBeat({ meet, right, mismatch }, band) {
+  const parts = [meet, right, mismatch].map((p) => norm(p)).filter(Boolean);
+  return clip(parts.join(' '), bandClip(band));
 }
 
 /**
- * Why the student's idea fails — mechanism / discriminating feature.
- * Never “you picked X, the answer is Y”.
+ * Why the student's idea fails — start from THEIR idea, then the science job.
  */
-export function explainWhyWrong(attempt = {}) {
+export function explainWhyWrong(attempt = {}, voice = {}) {
+  const band = voiceBand(voice);
   const wrong = norm(attempt.studentAnswer);
   const right = norm(attempt.correctAnswer);
   const prompt = norm(attempt.prompt || attempt.question || '');
-  const hint = norm(attempt.hint || '');
-  const intent = stemIntent(prompt);
-  const claim = unpackScienceClaim(prompt, attempt.topic);
+  const idea = lookupStudentIdea(wrong);
+  const rightText = rightMechanism(attempt, band);
+
+  if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
+    return clip(rightText, bandClip(band));
+  }
 
   if (isTrueFalseToken(wrong) && isTrueFalseToken(right)) {
-    return clip(explainTrueFalse(attempt, wrong, right), 320);
-  }
-
-  if (isPlaceholderBlank(wrong)) {
-    const fact = claim?.fact || hint;
-    return clip(
-      fact
-        ? `Typing “N” is a placeholder, not a science word. ${intent.asking} ${fact}`
-        : `Typing “N” does not name the structure or process. ${intent.asking} Use the real science words the sentence is asking for.`,
-      320,
+    const claim = unpackScienceClaim(prompt, attempt.topic);
+    const meet = isAffirmative(wrong)
+      ? 'True would mean this sentence is a real science fact.'
+      : 'False would mean this science sentence is untrue.';
+    const mismatch = isAffirmative(right)
+      ? claim?.rejectFalse || 'The naming or process in the sentence really is how the science works, so False does not fit.'
+      : 'The sentence does not match how the science works, so True does not fit.';
+    return composeThreeBeat(
+      { meet, right: claim?.fact || rightText, mismatch },
+      band,
     );
   }
 
-  if (isNoPick(wrong)) {
-    const fact = claim?.fact || hint;
-    return clip(
-      fact
-        ? `${intent.asking} ${fact}`
-        : `${intent.asking} Name the idea that ${intent.because}.`,
-      320,
-    );
-  }
+  const cat = catalogForAttempt(attempt);
+  const wrongNode = findCatalogNode(cat, wrong);
+  const meet =
+    pickMeet(idea, band) ||
+    (wrongNode?.explanation
+      ? `${wrongNode.label}: ${wrongNode.explanation}`
+      : genericMeet(wrong, band));
+  const mismatch =
+    idea?.mismatch ||
+    (wrongNode
+      ? `${wrongNode.label} is for ${String(wrongNode.role || 'another job').toLowerCase()}, so it does not do this question’s job.`
+      : `${clip(wrong, 40)} does not do that food-or-farm job here.`);
 
-  if (right && lower(wrong) === lower(right)) {
-    return clip(
-      `That choice already matches the science idea. ${claim?.fact || hint || 'Say it in your own words so it sticks.'}`,
-      280,
-    );
-  }
-
-  const fromCatalog = contrastFromCatalog(attempt, wrong, right);
-  if (fromCatalog) return clip(fromCatalog, 320);
-
-  const fromOptions = contrastFromOptions(wrong, right, prompt);
-  if (fromOptions) return clip(fromOptions, 320);
-
-  if (claim?.fact) {
-    return clip(
-      `That choice answers a different science job. ${intent.asking} ${claim.fact}`,
-      320,
-    );
-  }
-
-  if (hint) {
-    return clip(
-      `${intent.asking} ${hint} “${clip(wrong, 48)}” does not do that job.`,
-      300,
-    );
-  }
-
-  return clip(
-    `${intent.asking} “${clip(wrong, 48)}” belongs to a different job than this stem. Look for the idea that ${intent.because}.`,
-    280,
-  );
+  return composeThreeBeat({ meet, right: rightText, mismatch }, band);
 }
 
 /**
- * Why the correct idea is true in nature — mini-lesson, not an answer key line.
+ * Mini-lesson on why the correct idea is true (beat 2, stretched).
  */
-export function explainCorrectIdea(attempt = {}) {
+export function explainCorrectIdea(attempt = {}, voice = {}) {
+  const band = voiceBand(voice);
   const right = norm(attempt.correctAnswer);
   const prompt = norm(attempt.prompt || attempt.question || '');
   const hint = norm(attempt.hint || '');
-  const intent = stemIntent(prompt);
-  const claim = unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
-
-  const cat = catalogForAttempt(attempt);
-  const rightNode =
-    findCatalogNode(cat, right) || findCatalogNode(cat, prompt);
+  const claim =
+    unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
 
   if (isTrueFalseToken(right)) {
     const fact = claim?.fact || hint;
     if (isAffirmative(right)) {
       return clip(
-        fact
-          ? `${fact} That is why the statement is true.`
-          : `The sentence matches a real scientific definition, so it is true.`,
-        320,
+        fact ? `${fact} That is why the statement is true.` : rightMechanism(attempt, band),
+        bandClip(band),
       );
     }
     return clip(
       fact
         ? `${fact} The given sentence does not match that, so it is false.`
-        : `The sentence does not match how the science actually works, so it is false.`,
-      320,
+        : rightMechanism(attempt, band),
+      bandClip(band),
     );
   }
 
+  const cat = catalogForAttempt(attempt);
+  const rightNode =
+    findCatalogNode(cat, right) || findCatalogNode(cat, prompt);
   if (rightNode?.explanation) {
     const extra = hint && !rightNode.explanation.includes(hint) ? ` ${hint}` : '';
-    return clip(`${rightNode.explanation}${extra} That is why it answers this farm question.`, 320);
+    return clip(`${rightNode.explanation}${extra}`, bandClip(band));
   }
-
   if (claim?.fact) {
     const extra = hint && !claim.fact.includes(hint) ? ` ${hint}` : '';
-    return clip(`${claim.fact}${extra}`, 320);
+    return clip(`${claim.fact}${extra}`, bandClip(band));
   }
-
-  if (hint) {
-    return clip(
-      right ? `${hint} Hold this idea: ${right}.` : hint,
-      300,
-    );
-  }
-
-  if (right) {
-    return clip(
-      `${right} fits because ${intent.because}. ${intent.asking}`,
-      280,
-    );
-  }
-
-  if (prompt) {
-    return clip(`${intent.asking} Re-read the stem and name the process or structure it is really about.`, 240);
-  }
-  return 'Re-read the key idea and say why it works in nature, not only what the label is.';
+  return clip(rightMechanism(attempt, band), bandClip(band));
 }
 
-/**
- * Keep AI text only when it actually explains; otherwise use local conceptual copy.
- */
 export function preferConceptualText(aiText, localText, attempt = {}) {
   const ai = norm(aiText);
   const local = norm(localText);
   if (!ai) return local;
-  if (
-    looksLikeAnswerKeyRestatement(
-      ai,
-      attempt.studentAnswer || attempt.student_answer,
-      attempt.correctAnswer || attempt.correct_answer,
-    )
-  ) {
-    return local || ai;
-  }
+  const wrong = attempt.studentAnswer || attempt.student_answer || '';
+  const right = attempt.correctAnswer || attempt.correct_answer || '';
+  if (looksLikeAnswerKeyRestatement(ai, wrong, right)) return local || ai;
+  if (!honorsStudentIdea(ai, wrong)) return local || ai;
   if (ai.length < 48 && !hasCausalLanguage(ai)) return local || ai;
   return ai;
 }

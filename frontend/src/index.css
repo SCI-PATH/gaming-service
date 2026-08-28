@@ -4720,6 +4720,11 @@ body {
   backdrop-filter: blur(3px);
 }
 
+.avatar-assistant-overlay.has-map-split {
+  overflow: hidden;
+  align-items: center;
+}
+
 .avatar-assistant-card {
   box-sizing: border-box;
   width: min(560px, 100%);
@@ -4756,7 +4761,8 @@ body {
 }
 
 .avatar-assistant-card.is-voice-shell.has-map-split {
-  width: min(960px, 100%);
+  width: min(1080px, calc(100vw - 16px));
+  height: calc(100dvh - 16px);
   max-height: calc(100dvh - 16px);
 }
 
@@ -4982,7 +4988,7 @@ body {
 }
 
 .avatar-assistant-card.has-map-split {
-  width: min(1040px, 100%);
+  width: min(1080px, calc(100vw - 16px));
   height: calc(100vh - 16px);
   height: calc(100dvh - 16px);
   max-height: calc(100vh - 16px);
@@ -4999,7 +5005,8 @@ body {
 
 .avatar-assistant-card.has-map-split .avatar-section-label,
 .avatar-assistant-card.has-map-split .avatar-quick-prompts,
-.avatar-assistant-card.has-map-split .avatar-formats {
+.avatar-assistant-card.has-map-split .avatar-formats,
+.avatar-assistant-card.has-map-split .avatar-focus-question {
   display: none;
 }
 
@@ -5013,9 +5020,82 @@ body {
   display: none;
 }
 
-.avatar-assistant-card.has-map-split .avatar-compose {
+.avatar-action-dock {
   flex-shrink: 0;
-  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.avatar-action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.avatar-assistant-card.has-map-split .avatar-action-dock {
+  padding-top: 4px;
+  border-top: 1px solid rgba(180, 150, 80, 0.22);
+}
+
+.avatar-assistant-card.has-map-split .avatar-letter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: min(128px, 22vh);
+  overflow: auto;
+}
+
+.avatar-assistant-card.has-map-split .avatar-probe-prompt,
+.avatar-assistant-card.has-map-split .avatar-probe-hint {
+  grid-column: 1 / -1;
+}
+
+.avatar-assistant-card.has-map-split .avatar-probe-hint {
+  margin: 0;
+  font-size: 0.68rem;
+}
+
+.avatar-assistant-card.has-map-split .avatar-letter-chip.is-labeled {
+  min-height: 2.1rem;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+}
+
+.avatar-assistant-card.has-map-split .avatar-action-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.avatar-assistant-card.has-map-split .avatar-socrates-row {
+  margin: 0;
+  min-width: 0;
+}
+
+.avatar-assistant-card.has-map-split .avatar-socrates-btn {
+  width: auto;
+  height: 100%;
+  white-space: nowrap;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  box-shadow: none;
+}
+
+.avatar-assistant-card.has-map-split .avatar-socrates-hint {
+  display: none;
+}
+
+.avatar-assistant-card.has-map-split .avatar-socrates-note {
+  font-size: 0.62rem;
+  text-align: left;
+}
+
+.avatar-assistant-card.has-map-split .avatar-compose {
+  margin: 0;
 }
 
 .avatar-section-label {
@@ -5061,7 +5141,6 @@ body {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.45),
     0 10px 24px rgba(0, 0, 0, 0.28);
-  flex-shrink: 0;
 }
 
 .mm-empty {
@@ -5118,6 +5197,36 @@ body {
   margin: 6px 0 0;
   font-size: 0.65rem;
   color: #6a5a40;
+}
+
+.mm-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  border: 1px solid #8a7348;
+  background: linear-gradient(180deg, #ead7a8, #c9a66a);
+  color: #2c1a0c;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.mm-download:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.mm-download:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mm-download.is-done {
+  background: linear-gradient(180deg, #cfe8c4, #8fbf78);
+  border-color: #4f7a3d;
 }
 
 .mm-load {
@@ -5562,6 +5671,10 @@ body {
     grid-template-columns: 1fr !important;
   }
 
+  .mm.is-compact .mm-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
   .mm-hub-core {
     width: 52px;
     height: 52px;
@@ -5614,7 +5727,7 @@ body {
 /* Main stage: LEFT mind map Â· RIGHT speaking avatar */
 .avatar-split-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(0, 1.7fr) minmax(180px, 0.55fr);
   gap: 10px;
   align-items: stretch;
   flex: 1 1 0;
@@ -5634,6 +5747,10 @@ body {
   background: rgba(8, 16, 12, 0.55);
   padding: 8px;
   overflow: hidden;
+}
+
+.avatar-split-left {
+  position: relative;
 }
 
 .avatar-split-right {
@@ -5972,30 +6089,135 @@ body {
 }
 
 .avatar-split-map-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
   border-radius: 10px;
-  -webkit-overflow-scrolling: touch;
 }
 
-.avatar-split-map-scroll .mm {
+.avatar-split-map-scroll .mm,
+.mm.is-compact {
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
-  padding: 8px;
+  padding: 10px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.avatar-split-map-scroll .mm-top h3 {
-  font-size: 0.95rem;
+.avatar-split-map-scroll .mm-top,
+.mm.is-compact .mm-top {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  padding-right: 188px;
 }
 
-.avatar-split-map-scroll .mm-lead,
-.avatar-split-map-scroll .mm-note {
-  font-size: 0.68rem;
+.avatar-split-map-scroll .mm-top h3,
+.mm.is-compact .mm-top h3 {
+  font-size: 1.05rem;
+  margin: 2px 0 0;
+}
+
+.mm.is-compact .mm-lead,
+.mm.is-compact .mm-big,
+.mm.is-compact .mm-note,
+.mm.is-compact .mm-path,
+.mm.is-compact .mm-load,
+.mm.is-compact .mm-focus {
+  display: none;
+}
+
+.mm.is-compact .mm-hub-row,
+.avatar-split-map-scroll .mm-hub-row {
+  flex-shrink: 0;
+  margin: 0;
+  gap: 6px;
+}
+
+.mm.is-compact .mm-grid,
+.avatar-split-map-scroll .mm.is-compact .mm-grid {
+  flex: 1 1 auto;
+  margin: 0;
+  gap: 8px;
+  align-content: start;
+}
+
+.mm.is-compact .mm-card {
+  min-height: 0;
+  overflow: visible;
+  padding: 10px;
+  gap: 6px;
+  display: grid;
+}
+
+.mm.is-compact .mm-card-q {
+  -webkit-line-clamp: 4;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.mm.is-compact .mm-card-row {
+  padding: 6px 8px;
+  font-size: 0.74rem;
+}
+
+.mm.is-compact .mm-card-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.mm.is-compact .mm-card-key,
+.mm.is-compact .mm-card-why {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #3a3428;
+}
+
+.mm.is-compact .mm-card-why {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(40, 50, 60, 0.12);
+}
+
+.mm.is-compact .mm-card-why span,
+.mm.is-compact .mm-card-key span {
+  display: inline;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  color: #5a4e38;
 }
 
 .avatar-split-left .avatar-map-voice-note,
 .avatar-split-left .avatar-mindmap-toggle {
   flex-shrink: 0;
+}
+
+.avatar-split-left .avatar-mindmap-toggle.is-subtle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  background: rgba(20, 28, 16, 0.82);
+}
+
+.mm.is-compact .mm-download {
+  position: absolute;
+  top: 8px;
+  right: 96px;
+  z-index: 4;
+  margin-top: 0;
+  padding: 4px 10px;
+  font-size: 0.68rem;
 }
 
 .avatar-split-right .sage-avatar {
@@ -6171,6 +6393,15 @@ body {
 }
 
 @media (max-width: 820px) {
+  .avatar-assistant-card.has-map-split .avatar-action-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .avatar-assistant-card.has-map-split .avatar-socrates-btn {
+    width: 100%;
+    height: auto;
+  }
+
   .avatar-split-stage {
     grid-template-columns: 1fr;
     flex: 1 1 0;
@@ -6179,12 +6410,12 @@ body {
 
   .avatar-split-right {
     order: -1;
-    max-height: 48%;
-    min-height: 220px;
+    max-height: 28%;
+    min-height: 120px;
   }
 
   .avatar-split-right.is-sage-only .sage-agent {
-    width: min(84%, 310px);
+    width: min(70%, 240px);
   }
 
   .avatar-split-left {

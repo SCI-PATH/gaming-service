@@ -187,7 +187,8 @@ export default function ForestRPGCanvas({
       if (
         overlayBlocksWalk() ||
         scene?.pendingQuizMode ||
-        scene?.farmInputLocked
+        scene?.farmInputLocked ||
+        scene?.shouldPassKeysToDom?.(event)
       ) {
         return;
       }
@@ -291,6 +292,7 @@ export default function ForestRPGCanvas({
 
     // Focus canvas on click so Phaser keys work after React UI usage
     const focusCanvas = () => {
+      if (overlayBlocksWalk() || isTypingTarget(document.activeElement)) return;
       const canvas = parent.querySelector('canvas');
       if (canvas) {
         canvas.setAttribute('tabindex', '0');

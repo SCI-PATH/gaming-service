@@ -32,6 +32,11 @@ function hasTypedAnswer(questionType, shortText, blanks) {
   return String(shortText || '').trim().length > 0;
 }
 
+/** Keep farm WASD / Q / E / Space from eating letters in typed answers. */
+function stopGameKeyCapture(event) {
+  event.stopPropagation();
+}
+
 function isGradeStatusFeedback(text) {
   const s = String(text || '').trim();
   if (!s) return true;
@@ -260,6 +265,19 @@ export default function ScienceQuizModal({
     hintText,
     blankCount,
   ]);
+
+  useEffect(() => {
+    if (loading || isChoiceType || !questionData) return undefined;
+    const focusInput = () => {
+      const el = document.querySelector(
+        '.science-quiz-overlay .science-quiz-input:not([disabled])',
+      );
+      el?.focus?.();
+    };
+    focusInput();
+    const t = window.setTimeout(focusInput, 80);
+    return () => window.clearTimeout(t);
+  }, [loading, isChoiceType, questionData?.id, questionType]);
 
   const finish = (isCorrect, responseTimeMs) => {
     if (isCorrect) {
@@ -749,7 +767,12 @@ export default function ScienceQuizModal({
             })}
           </div>
         ) : (
-          <form className="science-quiz-typed" onSubmit={handleTypedSubmit}>
+          <form
+            className="science-quiz-typed"
+            onSubmit={handleTypedSubmit}
+            onKeyDown={stopGameKeyCapture}
+            onKeyUp={stopGameKeyCapture}
+          >
             {questionType === 'ShortAnswer' && (
               <input
                 className="science-quiz-input"
@@ -758,7 +781,11 @@ export default function ScienceQuizModal({
                 disabled={Boolean(result) || busy}
                 autoFocus
                 autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="Type your answer…"
+                onKeyDown={stopGameKeyCapture}
+                onKeyUp={stopGameKeyCapture}
                 onChange={(event) => {
                   const next = event.target.value;
                   shortTextRef.current = next;
@@ -777,7 +804,11 @@ export default function ScienceQuizModal({
                     disabled={Boolean(result) || busy}
                     autoFocus={idx === 0}
                     autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder={`Answer for blank ${idx + 1}`}
+                    onKeyDown={stopGameKeyCapture}
+                    onKeyUp={stopGameKeyCapture}
                     onChange={(event) => updateBlank(idx, event.target.value)}
                   />
                 </label>

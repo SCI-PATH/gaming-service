@@ -1397,7 +1397,9 @@ export default function AvatarAssistantModal({
 
   return (
     <div
-      className="avatar-assistant-overlay"
+      className={`avatar-assistant-overlay${
+        mapVisible && mindMap ? ' has-map-split' : ''
+      }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -1430,6 +1432,7 @@ export default function AvatarAssistantModal({
                 <ConceptMindMap
                   map={mindMap}
                   misconceptions={misconceptions}
+                  compact
                   onNodeSelect={handleMissSelect}
                   onMapChange={handleMapChange}
                   speechFocus={speechMapFocus}
@@ -1538,6 +1541,7 @@ export default function AvatarAssistantModal({
           </section>
         ) : null}
 
+        <div className="avatar-action-dock">
         {/* Compact letter picks during behavior probe (not science answers) */}
         {behaviorOptions?.length && !busy ? (
           <div
@@ -1570,6 +1574,7 @@ export default function AvatarAssistantModal({
           </div>
         ) : null}
 
+        <div className="avatar-action-bar">
         <div className="avatar-socrates-row">
           <button
             type="button"
@@ -1674,6 +1679,8 @@ export default function AvatarAssistantModal({
             Send
           </button>
         </form>
+        </div>
+        </div>
 
         {error ? (
           <p className="avatar-error" role="alert">

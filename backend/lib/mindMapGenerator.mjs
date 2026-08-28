@@ -142,7 +142,7 @@ function conceptualAttempt(a) {
 /**
  * Deterministic map guaranteed to include every miss (local fallback).
  */
-export function buildLocalMindMap(attempts) {
+export function buildLocalMindMap(attempts, adaptation = null) {
   const list = (attempts || []).map((a) => ({
     ...a,
     topic: topicFromAttempt(a),
@@ -152,11 +152,17 @@ export function buildLocalMindMap(attempts) {
   const topics = [...new Set(list.map((a) => a.topic).filter(Boolean))];
   const title =
     topics.length === 1 ? topics[0] : 'Your Science Gaps';
+  const voice = {
+    tone: adaptation?.mindMap?.tone || 'practice',
+    frustrationLevel: adaptation?.level || 'moderate',
+    explainDepth: adaptation?.mindMap?.explainDepth || 'medium',
+  };
 
   const branches = list.map((a, i) => {
     const topic = a.topic || 'Science';
     const right = a.correctAnswer;
     const q = clip(a.prompt || a.question, 140);
+    const conceptual = conceptualAttempt(a);
     return {
       miss_index: i + 1,
       topic,
@@ -164,9 +170,9 @@ export function buildLocalMindMap(attempts) {
       question: a.prompt || a.question || '',
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
-      why_wrong: explainWhyWrong(conceptualAttempt(a)),
+      why_wrong: explainWhyWrong(conceptual, voice),
       key_concept: clip(right || topic, 40) || 'Key idea',
-      key_concept_explain: explainCorrectIdea(conceptualAttempt(a)),
+      key_concept_explain: explainCorrectIdea(conceptual, voice),
       farm_link: q
         ? `On the farm, this idea shows up whenever the crop story needs: “${clip(q, 70)}”.`
         : `Use the ${topic} idea on your farm crop story.`,
@@ -225,8 +231,8 @@ function extractJson(text) {
 /**
  * Merge AI enrichments onto ground-truth attempts so every miss is present.
  */
-function mergeAiOntoAttempts(attempts, ai) {
-  const local = buildLocalMindMap(attempts);
+function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
+  const local = buildLocalMindMap(attempts, adaptation);
   if (!ai || typeof ai !== 'object') return local;
 
   const aiBranches = Array.isArray(ai.branches) ? ai.branches : [];
@@ -322,72 +328,80 @@ function buildPrompt(attempts, adaptation = null) {
   const simplify = Boolean(map.simplifyLanguage);
   const tone = map.tone || 'practice';
 
+  const sageHint =
+    adaptation?.sage?.voiceHint ||
+    {
+      low: 'Upbeat farm buddy. Honour their idea with extra science colour, then the mechanism.',
+      moderate:
+        'Warm coach. Honour their idea in everyday life, then the farm-science job, then why it does not fit.',
+      high: 'Gentle. Short. Everyday image first, then one sentence on the correct idea, then one on why theirs does not fit.',
+      very_high:
+        'Softest. Two or three short sentences. Everyday image first. No extra vocabulary. No shame.',
+    }[level] ||
+    'Warm coach. Honour the student’s idea, then teach the correct job.';
+
   const depthGuide = {
     micro:
-      'Each branch: why_wrong = 1–2 short cause sentences (about 25–40 words). key_concept_explain = 1–2 short mechanism sentences. farm_link one short sentence. Never shrink into “you picked X, answer is Y”.',
+      'why_wrong: 2–3 SHORT sentences in the 3-beat order (meet → correct job → why theirs fails). key_concept_explain: 1–2 short sentences on the correct idea only.',
     simple:
-      'Each branch: why_wrong = 2 short sentences that name the mix-up. key_concept_explain = 2 sentences on how the correct idea works. farm_link one sentence.',
+      'why_wrong: 3 short sentences, same 3-beat order, everyday words. key_concept_explain: 2 sentences on how the correct idea works.',
     medium:
-      'Each branch: why_wrong = 2–3 sentences (discriminating feature + why the wrong model fails). key_concept_explain = 2–3 sentences teaching the mechanism. farm_link one sentence.',
+      'why_wrong: 3–4 sentences, 3-beat order. key_concept_explain: 2–3 sentences teaching the correct mechanism.',
     rich:
-      'Each branch: fuller misconception repair (still Grade 6–9 words). Teach cause, definition, or structure–function. farm_link connects the idea to a crop story.',
+      'why_wrong: fuller 3-beat (still Grade 6–9). Add one extra science detail when honouring their idea (e.g. helium barely reacts). key_concept_explain: richer mechanism.',
   };
 
   const bandGuide = {
     low: 'Student is ready to explore. Allow richer connections. Encourage curiosity.',
     moderate: 'Balanced repair map. Clear and encouraging.',
-    high: 'Gentle repair only. Fewer words. No shame. Focus on the correct idea first.',
+    high: 'Gentle repair. Honour their idea in one everyday image first, then the correct job. No shame.',
     very_high:
       'Softest map. Tiny language. One step per branch. Reassure effort. Prefer the most important misses only.',
   };
 
-  return `You are Sage, a research mentor for Grades 6–9. Your job is misconception repair: help the student learn WHY an idea fails and WHY the science is true. You are not an answer key.
+  return `You are Sage, a Grade 6–9 farm mentor. Students learn FROM THEIR MISTAKE. You are not a grader and not an answer key.
 
-Create ONE clear interactive mind map from EVERY incorrect answer below.
-Personalization band (PRIVATE — never write these words on the map): frustration_level=${level}, tone=${tone}, explain_depth=${depth}.
+Create ONE mind map from EVERY incorrect answer below.
+Personalization (PRIVATE — never write score/level words on the map): frustration_level=${level}, mind_map_tone=${tone}, sage_voice=${tone}, explain_depth=${depth}.
+Sage voice: ${sageHint}
 ${bandGuide[level] || bandGuide.moderate}
 ${depthGuide[depth] || depthGuide.medium}
-${simplify ? 'Use very simple Grade-6 words. Avoid long clauses. Still include a real because/how sentence.' : 'Use clear school language.'}
-This request is already capped to ${attempts.length} miss(es) for personalization (maxBranches=${maxBranches}).
+${simplify ? 'Use very simple Grade-6 words.' : 'Use clear school language.'}
+This request is capped to ${attempts.length} miss(es) (maxBranches=${maxBranches}).
 
-Pedagogy (this is the contribution — follow it strictly):
-- why_wrong MUST be a CONTRASTIVE EXPLANATION: name the scientific mix-up (what job the wrong idea actually does, or why it does not answer THIS stem) and the discriminating feature that separates it from the correct idea.
-- key_concept_explain MUST be a MINI-LESSON: how the correct idea works in nature (definition, cause, structure–function, or process). Teach why it is true.
-- For True/False: do NOT write “you selected False but the answer is True”. Unpack the claim (prefixes, definitions, processes) so the student can judge the sentence next time.
-- Use because / which means / is for / named for / happens when. Farm analogies are welcome when they teach the mechanism.
+WHY_WRONG must follow this 3-beat lesson (this is the research contribution):
+1. MEET THE STUDENT'S IDEA as a real thing in the world. If they said helium, talk about helium (balloons, light gas) FIRST — not the mark scheme.
+2. Then jump to WHY THE CORRECT IDEA DOES THIS JOB (e.g. carbon dioxide is the gas the leaf takes in to make food).
+3. Then WHY THEIR IDEA FAILS THIS JOB (helium does not join the food-making reaction).
+Keep the three beats in that order. Personalize LENGTH and WARMTH to frustration_level / tone / explain_depth. Never mention frustration.
 
-FORBIDDEN in why_wrong and key_concept_explain (reject these patterns):
-- “you picked/chose/selected X, but the (better/correct) idea/answer is Y”
-- “On [question], you picked X, but …”
-- “Correct for [question]: [answer]”
-- Repeating the question plus both answers with no mechanism
-- Shame words: frustrated, struggling, weak, dummy, stupid
+key_concept_explain = mini-lesson on the CORRECT idea only (how it works in nature).
 
-GOOD example:
-Q: Plants that have two seed lobes are called dicotyledonous plants.
-Wrong: False. Right: True.
-BAD why_wrong: You selected False, but the answer is True.
-GOOD why_wrong: This question is checking a name. “Di-” means two, and cotyledons are seed leaves, so two seed lobes is exactly how dicots are defined. False would reject that naming rule, not catch a trick.
-GOOD key_concept_explain: Dicotyledonous (dicot) plants are named for two seed leaves. That definition is why the statement is true.
+GOLDEN EXAMPLE — copy this shape, not the old grader shape:
+Q: Which gas do plants mainly take in for photosynthesis?
+Wrong: helium. Right: carbon dioxide.
+BAD: You selected helium, but the answer is carbon dioxide.
+BAD: The response fills the blanks with placeholder letters / categories / symbols.
+GOOD (tone=practice, moderate frustration): Helium is a very light gas. We fill party balloons with it so they float. This question is about the gas a leaf uses to make food: the leaf takes in carbon dioxide, plus water and light, to build sugar. Helium does not go into that food-making reaction, so it is the wrong gas here.
+GOOD (tone=support, high frustration): Helium is the light gas that makes balloons float. Leaves make food with carbon dioxide from the air, not helium. Helium is the wrong job for a leaf.
+GOOD (tone=challenge, low frustration): Helium is a light noble gas — it barely reacts, which is why balloons stay “helium” and float. Photosynthesis needs carbon dioxide as a reactant (CO₂ + water + light → sugar + oxygen). Helium is not a reactant in that equation.
 
-GOOD example 2:
-Q: How do flowering plants primarily reproduce?
-Wrong: Using leaves to store water. Right: Through flowers that produce seeds.
-BAD why_wrong: You picked leaves storing water, but the better idea is flowers that produce seeds.
-GOOD why_wrong: Storing water in leaves is a survival job, not making offspring. Reproduction in flowering plants happens when flowers produce seeds (often after pollen moves).
-GOOD key_concept_explain: Flowering plants make the next generation in the flower, where pollen and ovules meet and seeds form.
+FORBIDDEN:
+- “you picked X, but the answer is Y”
+- Talking about placeholders, letter N, blanks, symbols, “the response fills”
+- Shame words: frustrated, struggling, weak, dummy
+- Inventing a different correct_answer than the input
 
 Rules:
-1. Output ONLY valid JSON (no markdown, no prose outside JSON).
-2. Include EXACTLY ${attempts.length} branches — one per miss, miss_index 1..${attempts.length}.
-3. Do NOT invent extra mistakes. Do NOT drop any miss.
-4. Keep language encouraging and age-appropriate.
-5. Never invent a different correct answer than the one given — copy correct_answer from input when present.
-6. Every why_wrong / key_concept_explain / farm_link MUST be about THAT branch's question — not a vague neighboring topic.
-7. summary and big_picture must match the LIVE personalization band (${tone}, frustration_level=${level}).
-8. If a correct_answer looks like an API/grading error, ignore it and explain from the question stem only.
+1. Output ONLY valid JSON (no markdown).
+2. EXACTLY ${attempts.length} branches, miss_index 1..${attempts.length}.
+3. Do not drop or invent misses.
+4. Copy question / student_answer / correct_answer from input.
+5. Every why_wrong MUST mention the student's actual wrong idea (unless it is blank/timeout) as a real-world thing before teaching the correct job.
+6. summary / big_picture match tone ${tone}.
+7. If correct_answer looks like a grading error, explain from the question stem only.
 
-Incorrect answers (ground truth — each branch is one student miss):
+Incorrect answers:
 ${JSON.stringify(payload, null, 2)}
 
 JSON schema:
@@ -405,10 +419,10 @@ JSON schema:
       "question": "copy from input",
       "student_answer": "copy from input",
       "correct_answer": "copy from input",
-      "why_wrong": "contrastive explanation of the mix-up (mechanism, not score restatement)",
+      "why_wrong": "3-beat lesson: honour their idea → why the correct idea works here → why theirs does not",
       "key_concept": "short correct concept label",
-      "key_concept_explain": "why that science idea is true (mini-lesson)",
-      "farm_link": "how the mechanism shows up on a farm"
+      "key_concept_explain": "mini-lesson on why the correct idea is true",
+      "farm_link": "how the correct mechanism shows up on a farm"
     }
   ]
 }`;
@@ -440,7 +454,7 @@ export async function generateMindMapFromMistakes(body = {}) {
   // Cap attempts for very high frustration (still keep earliest misses)
   const capped = attempts.slice(0, adaptation.mindMap.maxBranches || attempts.length);
 
-  const local = buildLocalMindMap(capped);
+  const local = buildLocalMindMap(capped, adaptation);
   const cfg = getLlamaConfig();
 
   if (cfg.provider === 'offline' || cfg.provider === 'fallback') {
@@ -462,7 +476,7 @@ export async function generateMindMapFromMistakes(body = {}) {
         {
           role: 'system',
           content:
-            'You design personalized student mind maps for misconception repair. Reply with JSON only. why_wrong must explain the scientific mix-up; key_concept_explain must teach why the correct idea is true. Never restate “you picked X, the answer is Y”. Always include one branch per incorrect answer given. Never mention frustration scores to students.',
+            'You design Sage mind maps so students learn from THEIR idea. why_wrong is a 3-beat lesson: honour the wrong idea as a real-world thing, then why the correct idea does this job, then why theirs does not. Never talk about placeholders or “you picked X, the answer is Y”. JSON only. One branch per miss. Never mention frustration scores.',
         },
         { role: 'user', content: buildPrompt(capped, adaptation) },
       ],
@@ -474,7 +488,7 @@ export async function generateMindMapFromMistakes(body = {}) {
     });
 
     const parsed = extractJson(result.content);
-    const merged = mergeAiOntoAttempts(capped, parsed);
+    const merged = mergeAiOntoAttempts(capped, parsed, adaptation);
     return {
       ok: true,
       mindMap: toClientShape({
