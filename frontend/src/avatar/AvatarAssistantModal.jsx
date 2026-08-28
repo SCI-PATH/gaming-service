@@ -23,6 +23,7 @@ import {
 } from './createSpeechEngine.js';
 import ConceptMindMap from './ConceptMindMap.jsx';
 import SageAvatar from './SageAvatar.jsx';
+import SageLessonPanel from './SageLessonPanel.jsx';
 import MindMapHistoryDrawer from './MindMapHistoryDrawer.jsx';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
 import {
@@ -1591,7 +1592,17 @@ export default function AvatarAssistantModal({
 
         {tutorTurn && !behaviorOptions.length ? (
           <div className="avatar-tutor-panel" aria-live="polite">
-            {tutorTurn.interactionQuestion ? (
+            <SageLessonPanel
+              sections={
+                tutorTurn.structured?.teaching?.sections ||
+                tutorTurn.teaching_session?.sections ||
+                []
+              }
+            />
+            {!(
+              tutorTurn.structured?.teaching?.sections ||
+              tutorTurn.teaching_session?.sections
+            ) && tutorTurn.interactionQuestion ? (
               <p className="avatar-tutor-question">{tutorTurn.interactionQuestion}</p>
             ) : null}
             {tutorTurn.nextAction === 'INSUFFICIENT_KNOWLEDGE' ? (

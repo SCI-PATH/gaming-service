@@ -18,6 +18,7 @@ import {
   explainWhyWrong,
   explainCorrectIdea,
   scienceKeyIdea,
+  shortConceptLabel,
 } from './explainMisconception.js';
 
 export { explainWhyWrong, explainCorrectIdea, scienceKeyIdea } from './explainMisconception.js';
@@ -319,9 +320,14 @@ export function buildPersonalizedMindMap({
     const t = resolveTopicKey(a.topic) || a.topic || 'Science';
     topicsSeen.add(t);
     const cleanWrong =
-      friendlyWrongAnswer(a.studentAnswer, 80) || a.studentAnswer || 'no pick yet';
+      shortConceptLabel(a.studentAnswer, 48) ||
+      friendlyWrongAnswer(a.studentAnswer, 80) ||
+      a.studentAnswer ||
+      'no pick yet';
     const cleanRight =
-      safeScienceLine(a.correctAnswer, null) || 'see the lesson key idea';
+      shortConceptLabel(a.correctAnswer, 48) ||
+      safeScienceLine(a.correctAnswer, null) ||
+      'see the lesson key idea';
     const related = catalogRelated(t, cleanRight, usedRelated);
     const conceptual = {
       ...a,
@@ -346,10 +352,19 @@ export function buildPersonalizedMindMap({
         id: `m${i}-wrong`,
         kind: 'wrong',
         label: shortLabel(cleanWrong, 22) || 'Your pick',
-        title: 'Your pick',
+        title: 'Your answer',
         icon: '✗',
         body: why,
         meta: { studentAnswer: cleanWrong },
+      },
+      {
+        id: `m${i}-diff`,
+        kind: 'ask',
+        label: 'Difference',
+        title: "What's the difference?",
+        icon: '↔',
+        body: why,
+        meta: {},
       },
       {
         id: `m${i}-right`,
@@ -371,11 +386,11 @@ export function buildPersonalizedMindMap({
         label: shortLabel(clip(a.prompt, 26), 26) || 'The question',
         title: 'What was asked',
         icon: '❓',
-        body: `You missed this: “${clip(a.prompt, 220)}”`,
+        body: clip(a.prompt, 180),
         meta: { prompt: a.prompt },
       });
     }
-    if (complexity === 'broader' || complexity === 'focused') {
+    if (complexity === 'broader') {
       nodes.push({
         id: `m${i}-link`,
         kind: 'link',

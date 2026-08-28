@@ -2463,7 +2463,8 @@ body {
   font-weight: 600;
   color: #1a2418;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .science-quiz-type {
@@ -2492,7 +2493,9 @@ body {
   align-items: flex-start;
   gap: 10px;
   line-height: 1.4;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
 }
 
 .science-quiz-option-key {
@@ -4911,6 +4914,88 @@ body {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(46, 92, 62, 0.18);
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+}
+
+.sage-lesson {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.sage-lesson-block {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(46, 92, 62, 0.14);
+}
+
+.sage-lesson-title {
+  margin: 0 0 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4a6a52;
+}
+
+.sage-lesson-quote {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #1f3d2a;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+}
+
+.sage-lesson-body {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: #24362c;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+}
+
+.sage-lesson-diff {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.sage-lesson-diff li {
+  display: grid;
+  grid-template-columns: 7.2rem 1fr;
+  gap: 6px 8px;
+  align-items: start;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.sage-lesson-diff span {
+  font-weight: 800;
+  color: #5a6e60;
+}
+
+.sage-lesson-diff strong {
+  font-weight: 650;
+  color: #1f3d2a;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+}
+
+.sage-lesson-block.is-check {
+  border-color: rgba(46, 92, 62, 0.28);
+  background: #f4faf5;
 }
 
 .avatar-tutor-question {
@@ -5483,6 +5568,10 @@ body {
 /* Live word only â€” no long yellow trail of every match */
 .mm-sync {
   display: inline;
+  text-transform: none;
+  font-weight: inherit;
+  letter-spacing: normal;
+  opacity: 1;
 }
 
 .mm-w {
@@ -5598,7 +5687,7 @@ body {
   line-height: 1.25;
 }
 
-.mm-card-row span {
+.mm-card-row > span {
   display: block;
   font-size: 0.55rem;
   font-weight: 800;
@@ -5609,6 +5698,9 @@ body {
 
 .mm-card-row strong {
   font-weight: 700;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
 }
 
 .mm-card-row.is-bad {
@@ -6217,7 +6309,9 @@ body {
 
 .mm.is-compact .mm-card-row strong {
   display: block;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
 }
 
 .mm.is-compact .mm-card-key,

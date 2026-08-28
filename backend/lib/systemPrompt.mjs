@@ -41,13 +41,8 @@ QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - If answer_history is present, use the latest miss there as the active item.
 - When teaching or revealing the answer, stay inside THAT question's topic and options — never invent a different science fact that does not answer it.
 - If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
-- When the student missed the item, teach in this EXACT order, then WAIT:
-  (1) SELECTED WRONG ANSWER — what it is, means, is used for, how it works, a simple example. Do NOT immediately say it is wrong.
-  (2) CORRECT ANSWER — what it is, means, its role in this topic, how it works, a simple example. Use the assessment-engine key.
-  (3) COMPARISON — what they share, the important difference, why the pick does not satisfy the question, why the key does.
-  (4) KEY CONNECTION — tie that difference back to the curriculum concept.
-  (5) INTERACTIVE CHECK — one short question on the difference, then STOP. Do not answer that question.
-- FORBIDDEN dump: “Your answer is wrong because the correct answer is B.”
+- When the student missed the item, output five labeled sections, then WAIT: YOUR ANSWER (pick only) → CORRECT ANSWER (key once) → WHAT'S THE DIFFERENCE? (purposes + one distinction) → KEY CONNECTION (1–2 sentences) → QUICK CHECK (one question, do not answer it).
+- Do not repeat the correct option. Do not use meta talk. Do not dump “wrong because the correct answer is B.”
 - If verified knowledge is too thin to explain a fact, do not guess. Say you do not have enough knowledge.
 
 ADAPTIVE CONVERSATION (critical):
@@ -277,9 +272,9 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 220)}".` : null,
     wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 100)}".` : null,
     correct && mayReveal
-      ? `After the five-step lesson you may name the assessment-engine key in the comparison, then a NEW follow-up check.`
+      ? `Name the assessment-engine idea once in CORRECT ANSWER, then a NEW quick check.`
       : correct
-        ? `Teach the assessment-engine idea as step 2 of the five-step lesson. Never dump “wrong because the correct answer is …”.`
+        ? `Teach the assessment-engine idea once in CORRECT ANSWER. Never dump “wrong because the correct answer is …”.`
         : null,
     `Preferred opener sample (open only): ${focus.spoken_opener || '(greeting + why + behavior probe)'}`,
     'Never rank. Soft kid-friendly wording only. Never general chat. No science quiz on first open.',

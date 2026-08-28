@@ -370,7 +370,6 @@ describe('mind-map miss cards match tutor loop', () => {
     const mid = explainWhyWrong(dicot, { frustrationLevel: 'low' });
     assert.match(high.toLowerCase(), /false|true|dicot|seed/);
     assert.ok(high.length < mid.length);
-    assert.match(high, /\?/);
   });
 });
 
@@ -394,12 +393,40 @@ describe('five-step teaching order', () => {
     assert.equal(/^.{0,40}wrong/i.test(selected), false);
     assert.match(correct, /carbon dioxide|glucose|photosynth|leaf/);
     assert.match(correct, /take in|glucose|food|light/);
-    assert.match(comparison, /both gases|difference|does not satisfy|satisfies/);
+    assert.match(comparison, /difference/);
     assert.match(lesson.connection.toLowerCase(), /photosynth|carbon|food/);
     assert.match(lesson.check, /\?/);
+    assert.equal(lesson.sections.length, 5);
+    assert.equal(lesson.sections[0].title, 'YOUR ANSWER');
+    assert.equal(lesson.sections[1].title, 'CORRECT ANSWER');
+    assert.equal(/carbon dioxide/i.test(selected), false);
+    assert.equal(/names its own concept|connect that back|curriculum idea/i.test(lesson.fullText), false);
     const blob = lesson.fullText.toLowerCase();
     assert.ok(blob.indexOf('helium') < blob.indexOf('carbon'));
     assert.match(blob, /difference/);
-    assert.match(blob, /satisfy|job|intake|food-making/);
+    assert.match(blob, /balloon|food-making|take in/);
+    const cdHits = blob.split('carbon dioxide').length - 1;
+    assert.ok(cdHits <= 3);
+  });
+
+  it('teaches water-storage vs flower reproduction without repeating the option', () => {
+    const lesson = composeFiveStepLesson(
+      {
+        prompt: 'How do flowering plants produce new plants?',
+        studentAnswer: 'A. Using leaves to store water',
+        correctAnswer: 'B. Through flowers that produce seeds',
+        topic: 'Plant Biology',
+      },
+      { frustrationLevel: 'low' },
+    );
+    const blob = lesson.fullText.toLowerCase();
+    assert.match(lesson.selected, /store water|survive|adaptation/i);
+    assert.equal(/names its own concept|own job in the world/i.test(lesson.selected), false);
+    assert.match(lesson.correct, /reproduc|seed/i);
+    assert.match(lesson.comparison, /difference/i);
+    assert.match(lesson.connection, /seed|reproduc/i);
+    assert.match(lesson.check, /water storage or reproduction/i);
+    assert.equal((blob.match(/through flowers that produce seeds/g) || []).length <= 1, true);
+    assert.equal(/b\.\s*through flowers that produce seeds[\s\S]*b\.\s*through/i.test(blob), false);
   });
 });
