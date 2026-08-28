@@ -401,7 +401,7 @@ export function buildMissCardNarration(branch) {
   const text = [
     why
       ? clip(why, 400)
-      : `Exam lock, miss ${miss}. You chose ${clip(wrong, 80)}.`,
+      : `Let's look at miss ${miss}. You chose ${clip(wrong, 80)}.`,
   ]
     .filter(Boolean)
     .join(' ');

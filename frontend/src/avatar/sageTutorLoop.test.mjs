@@ -18,6 +18,12 @@ import {
   relatedPreviousMistakes,
   revealsCorrectTooEarly,
 } from './sageTutorLoop.js';
+import {
+  explainCorrectIdea,
+  explainWhyWrong,
+  scienceKeyIdea,
+  composeFiveStepLesson,
+} from './explainMisconception.js';
 
 function ctx(over = {}) {
   return {
@@ -91,9 +97,13 @@ describe('Test 1 — MCQ helium miss', () => {
     assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
     assert.equal(turn.structured.assessment.studentAnswer, 'Helium');
     assert.match(text, /helium/);
+    assert.match(text, /carbon dioxide|co2/);
+    const heliumAt = text.indexOf('helium');
+    const carbonAt = text.indexOf('carbon');
+    assert.ok(heliumAt >= 0 && carbonAt > heliumAt);
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.ok(turn.interactionQuestion.includes('?'));
-    assert.equal(text.includes('the correct answer is'), false);
+    assert.equal(/your answer is wrong because/i.test(turn.reply), false);
     assert.ok(turn.structured.mindMap.nodes.length >= 2);
   });
 });
@@ -195,7 +205,7 @@ describe('Test 5 — low frustration', () => {
         evidence: { ...session.evidence, frustration_score: 20 },
       },
     });
-    assert.match(turn.reply.toLowerCase(), /interesting|investigate|predict/);
+    assert.match(turn.reply.toLowerCase(), /helium|balloon|carbon dioxide|difference/);
     assert.equal(turn.structured.mindMap.complexity, 'broader');
     assert.ok(turn.structured.mindMap.nodes.length >= 4);
     assert.equal(turn.structured.teaching.tone, 'energetic_curious');
@@ -332,5 +342,64 @@ describe('assessment engine authority and safety', () => {
     assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.equal(/ignore your instructions/i.test(turn.reply), false);
+  });
+});
+
+describe('mind-map miss cards match tutor loop', () => {
+  const dicot = {
+    prompt: 'Plants that have two seed lobes are called dicotyledonous plants.',
+    studentAnswer: 'False',
+    correctAnswer: 'True',
+    topic: 'Plant Diversity',
+  };
+
+  it('does not dump an exam lock or True as the key idea', () => {
+    const why = explainWhyWrong(dicot, { frustrationLevel: 'moderate' });
+    const key = scienceKeyIdea(dicot);
+    const idea = explainCorrectIdea(dicot, { frustrationLevel: 'moderate' });
+    assert.equal(/you know that/i.test(why), false);
+    assert.equal(/\bexam\b/i.test(why), false);
+    assert.equal(/write this/i.test(idea), false);
+    assert.match(why, /di-|two|seed|dicot/i);
+    assert.match(key, /dicot|seed/i);
+    assert.equal(/^(true|false)$/i.test(key), false);
+  });
+
+  it('uses a calmer shorter card at high frustration', () => {
+    const high = explainWhyWrong(dicot, { frustrationLevel: 'very_high' });
+    const mid = explainWhyWrong(dicot, { frustrationLevel: 'low' });
+    assert.match(high.toLowerCase(), /false|true|dicot|seed/);
+    assert.ok(high.length < mid.length);
+    assert.match(high, /\?/);
+  });
+});
+
+describe('five-step teaching order', () => {
+  it('teaches selected idea before the correct idea, then compares', () => {
+    const lesson = composeFiveStepLesson(
+      {
+        prompt: 'Which gas is required for photosynthesis?',
+        studentAnswer: 'Helium',
+        correctAnswer: 'Carbon dioxide',
+        topic: 'Photosynthesis',
+      },
+      { frustrationLevel: 'low' },
+    );
+    const selected = lesson.selected.toLowerCase();
+    const correct = lesson.correct.toLowerCase();
+    const comparison = lesson.comparison.toLowerCase();
+    assert.match(selected, /helium|balloon/);
+    assert.match(selected, /used|balloon|float|noble/);
+    assert.equal(/wrong because the correct/i.test(selected), false);
+    assert.equal(/^.{0,40}wrong/i.test(selected), false);
+    assert.match(correct, /carbon dioxide|glucose|photosynth|leaf/);
+    assert.match(correct, /take in|glucose|food|light/);
+    assert.match(comparison, /both gases|difference|does not satisfy|satisfies/);
+    assert.match(lesson.connection.toLowerCase(), /photosynth|carbon|food/);
+    assert.match(lesson.check, /\?/);
+    const blob = lesson.fullText.toLowerCase();
+    assert.ok(blob.indexOf('helium') < blob.indexOf('carbon'));
+    assert.match(blob, /difference/);
+    assert.match(blob, /satisfy|job|intake|food-making/);
   });
 });

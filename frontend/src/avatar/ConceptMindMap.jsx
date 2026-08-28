@@ -600,7 +600,7 @@ export default function ConceptMindMap({
               </div>
               {b.keyConcept ? (
                 <p className="mm-card-key">
-                  <span>Key idea</span>{' '}
+                  <span className="mm-card-kicker">Key idea</span>{' '}
                   {speechOn ? (
                     <Sync fieldKey="key" text={b.keyConcept} on />
                   ) : (
@@ -610,7 +610,7 @@ export default function ConceptMindMap({
               ) : null}
               {compact && selected && (b.why || b.keyExplain) ? (
                 <p className="mm-card-why">
-                  <span>{b.why ? 'Exam' : 'Write this'}</span>{' '}
+                  <span className="mm-card-kicker">Let's look</span>{' '}
                   {speechOn ? (
                     <Sync
                       fieldKey={b.why ? 'why' : 'explain'}
@@ -642,7 +642,7 @@ export default function ConceptMindMap({
           </h4>
           {active.why ? (
             <p className="mm-focus-p">
-              <strong>Remember for the exam:</strong>{' '}
+              <strong>Let's look:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="why" text={active.why} on />
               ) : (
@@ -652,7 +652,7 @@ export default function ConceptMindMap({
           ) : null}
           {active.keyExplain ? (
             <p className="mm-focus-p">
-              <strong>Write this:</strong>{' '}
+              <strong>The idea:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="explain" text={active.keyExplain} on />
               ) : (

@@ -5630,7 +5630,7 @@ body {
   color: #3a3428;
 }
 
-.mm-card-key span {
+.mm-card-kicker {
   font-weight: 800;
   color: #5a4e38;
   text-transform: uppercase;
@@ -6233,10 +6233,12 @@ body {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(40, 50, 60, 0.12);
+  text-transform: none;
+  font-weight: 550;
 }
 
-.mm.is-compact .mm-card-why span,
-.mm.is-compact .mm-card-key span {
+.mm.is-compact .mm-card-why .mm-card-kicker,
+.mm.is-compact .mm-card-key .mm-card-kicker {
   display: inline;
   font-weight: 800;
   text-transform: uppercase;

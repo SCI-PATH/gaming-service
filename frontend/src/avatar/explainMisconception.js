@@ -1,10 +1,13 @@
 /**
- * Sage "why" = learn from the student's own idea.
+ * Sage "why" = teach both sides of a miss, then compare.
  *
- * Three beats, personalized by frustration / mind-map tone:
- *   1. Honour what they picked as a real-world idea (helium → balloons)
- *   2. Why the correct idea does THIS job (CO₂ for photosynthesis)
- *   3. Why their idea does not do that job
+ * Five steps, personalized by frustration / mind-map tone:
+ *   1. SELECTED pick — what it is, means, is used for, how it works, example
+ *      (do not open with “that is wrong”)
+ *   2. CORRECT idea from the assessment engine — same treatment
+ *   3. COMPARISON — common ground, difference, why pick fails, why key fits
+ *   4. KEY CONNECTION — back to the curriculum idea
+ *   5. INTERACTIVE CHECK — one short question on the difference
  *
  * Never recap the mark scheme. Never grade typing/placeholders.
  */
@@ -252,6 +255,11 @@ export function unpackScienceClaim(prompt, topic = '') {
 const STUDENT_WORLD_IDEAS = [
   {
     test: /helium/,
+    what: 'Helium is a very light gas.',
+    means: 'It is a noble gas, which means it barely reacts with other chemicals.',
+    usedFor: 'We normally use it to fill party balloons so they float.',
+    how: 'Because it is lighter than air and unreactive, a helium balloon stays up.',
+    example: 'A birthday balloon filled with helium floats to the ceiling.',
     meetShort: 'Helium is the light gas that makes party balloons float.',
     meet: 'Helium is a very light gas. We fill party balloons with it so they float.',
     meetRich:
@@ -261,6 +269,11 @@ const STUDENT_WORLD_IDEAS = [
   },
   {
     test: /\boxygen\b|\bo2\b/,
+    what: 'Oxygen is a gas in the air that living things use.',
+    means: 'It is the gas animals breathe in to release energy from food.',
+    usedFor: 'We use oxygen for breathing; green plants usually give it off in light.',
+    how: 'During photosynthesis the leaf builds sugar, then releases oxygen as a product.',
+    example: 'You breathe oxygen; a sunlit leaf is often giving oxygen off, not taking it in to make food.',
     meetShort: 'Oxygen is the gas we breathe, and plants usually give it off in light.',
     meet: 'Oxygen is the gas animals breathe. Green plants usually release it during photosynthesis.',
     meetRich:
@@ -270,6 +283,11 @@ const STUDENT_WORLD_IDEAS = [
   },
   {
     test: /nitrogen|\bn2\b/,
+    what: 'Nitrogen is a gas that makes up most of the air.',
+    means: 'It is a building-block element for proteins, not a balloon gas and not the leaf’s food-making intake.',
+    usedFor: 'Plants usually get nitrogen from soil or fertilizer to build proteins.',
+    how: 'Roots take in nitrogen compounds; the leaf does not take in nitrogen gas to make sugar.',
+    example: 'Fertilizer on a farm field is feeding nitrogen for proteins, not for the photosynthesis gas job.',
     meetShort: 'Nitrogen makes up a lot of the air, and plants need it for proteins.',
     meet: 'Nitrogen is a big part of air. Plants need nitrogen for proteins, often from soil or fertilizer.',
     meetRich:
@@ -279,6 +297,11 @@ const STUDENT_WORLD_IDEAS = [
   },
   {
     test: /hydrogen/,
+    what: 'Hydrogen is the lightest element, often met as a gas.',
+    means: 'In water it is the H in H₂O; as a free gas it is used in some fuels, not as the leaf’s intake gas.',
+    usedFor: 'We meet it in water and some energy discussions.',
+    how: 'In plants, hydrogen arrives as part of water, not as a gas the leaf “breathes in” to make food.',
+    example: 'A water molecule H₂O already contains hydrogen; that is not the same as taking in hydrogen gas.',
     meetShort: 'Hydrogen is a very light gas; water is H₂O.',
     meet: 'Hydrogen is a light gas we meet in water (H₂O) and some fuels.',
     meetRich:
@@ -531,11 +554,83 @@ export function lookupStudentIdea(wrong) {
   return STUDENT_WORLD_IDEAS.find((row) => row.test.test(t)) || null;
 }
 
+const CORRECT_WORLD_IDEAS = [
+  {
+    test: /carbon dioxide|co2|co₂/,
+    what: 'Carbon dioxide is a gas found in air.',
+    means: 'It is the gas that gives plants the carbon they pack into food.',
+    usedFor: 'Leaves take it in during photosynthesis.',
+    how: 'Together with water and light, carbon dioxide is used to build glucose.',
+    example: 'A green leaf in sunlight is taking in carbon dioxide from the air.',
+  },
+  {
+    test: /photosynthesis/,
+    what: 'Photosynthesis is how green plants make food.',
+    means: 'Light energy powers a reaction that builds sugar.',
+    usedFor: 'It is the plant’s food-making job in leaves.',
+    how: 'The leaf uses carbon dioxide, water, and light, and usually gives off oxygen.',
+    example: 'A crop leaf in the sun is running photosynthesis.',
+  },
+  {
+    test: /anther|stamen/,
+    what: 'The anther is the male part of a flower, on the stamen.',
+    means: 'It is the pollen-maker.',
+    usedFor: 'Flowers use it to produce pollen for reproduction.',
+    how: 'Pollen forms in the anther and can then be moved to a pistil.',
+    example: 'Dusty yellow anthers in a hibiscus are making pollen.',
+  },
+  {
+    test: /dicotyledon|dicot/,
+    what: 'Dicotyledonous plants (dicots) are a plant group named for two seed leaves.',
+    means: 'The prefix “di-” means two; cotyledons are seed leaves (seed lobes).',
+    usedFor: 'We use that name to group beans, tomato, and mango-type plants.',
+    how: 'A dicot seed typically opens with two seed lobes.',
+    example: 'A bean seed split into two halves is a simple dicot example.',
+  },
+  {
+    test: /monocot/,
+    what: 'Monocots are plants with one seed leaf.',
+    means: 'The prefix “mono-” means one; that seed leaf is a cotyledon.',
+    usedFor: 'We use that name for grasses, rice, and maize.',
+    how: 'A monocot seed has one cotyledon and often fibrous roots.',
+    example: 'A maize seedling with one seed leaf is a monocot.',
+  },
+  {
+    test: /\bglucose\b|sugar/,
+    what: 'Glucose is a sugar — the food plants build.',
+    means: 'It is the carbohydrate made during photosynthesis.',
+    usedFor: 'Plants use it as food energy and to build other materials.',
+    how: 'Leaves combine carbon dioxide and water using light to make glucose.',
+    example: 'The sugar stored in a leaf after a sunny day started as glucose.',
+  },
+];
+
+function lookupCorrectIdea(right, prompt = '', topic = '') {
+  const blob = lower(`${right} ${prompt} ${topic}`);
+  return CORRECT_WORLD_IDEAS.find((row) => row.test.test(blob)) || null;
+}
+
 function pickMeet(idea, band) {
   if (!idea) return '';
   if (band === 'micro' || band === 'simple') return idea.meetShort || idea.meet;
   if (band === 'rich') return idea.meetRich || idea.meet;
   return idea.meet || idea.meetShort;
+}
+
+function teachConceptParts(parts, band) {
+  if (!parts) return '';
+  const example = parts.example
+    ? band === 'micro' || band === 'simple'
+      ? parts.example
+      : `Example: ${parts.example}`
+    : '';
+  const bits = [parts.what, parts.means, parts.usedFor, parts.how, example]
+    .map(norm)
+    .filter(Boolean);
+  if (!bits.length) return '';
+  if (band === 'micro') return clip(bits.join(' '), 280);
+  if (band === 'simple') return clip(bits.join(' '), 360);
+  return bits.join(' ');
 }
 
 function findCatalogNode(catalog, text) {
@@ -645,6 +740,13 @@ export function questionJob(attempt = {}) {
       rightHow: hint || 'Leaves hold chlorophyll and capture most sunlight for photosynthesis.',
     };
   }
+  if (/dicotyledon|two seed|seed lobes?|cotyledon/.test(p)) {
+    return {
+      verbPhrase: 'name plants with two seed leaves',
+      rightHow:
+        'Dicotyledonous (dicot) plants have two cotyledons — seed leaves. The prefix “di-” means two.',
+    };
+  }
   if (claim?.fact) {
     return {
       verbPhrase: 'match the science idea in the sentence',
@@ -725,73 +827,249 @@ function composeThreeBeat({ meet, right, mismatch }, band) {
   return clip(parts.join(' '), bandClip(band));
 }
 
-function examLock(attempt) {
-  const job = questionJob(attempt);
-  if (job.examRemember) return job.examRemember;
-  const right = norm(attempt.correctAnswer);
-  if (right && !isTrueFalseToken(right)) return `the scoring idea is ${right}`;
-  return job.rightHow || 'name the process or part the stem is really asking for';
+function firstSentence(text) {
+  const s = norm(text);
+  if (!s) return '';
+  const bit = s.split(/(?<=[.!?])\s+/)[0] || s;
+  return clip(bit, 90);
 }
 
-function composeExamCoach(attempt, voice) {
-  const band = voiceBand(voice);
-  const wrong = norm(attempt.studentAnswer);
-  const right = norm(attempt.correctAnswer);
+function fiveStepClip(band) {
+  if (band === 'micro') return 880;
+  if (band === 'simple') return 1100;
+  if (band === 'rich') return 1600;
+  return 1300;
+}
+
+/** Short science idea for map "Key idea" — never just True/False. */
+export function scienceKeyIdea(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
+  const right = norm(attempt.correctAnswer);
+  const claim = unpackScienceClaim(prompt, attempt.topic);
+  if (claim?.fact) return firstSentence(claim.fact);
+  const job = questionJob(attempt);
+  if (job?.rightHow) return firstSentence(job.rightHow);
+  if (right && !isTrueFalseToken(right)) return clip(right, 48);
+  const correctIdea = lookupCorrectIdea(right, prompt, attempt.topic);
+  if (correctIdea?.what) return correctIdea.what;
+  return clip(attempt.topic || 'This science idea', 40);
+}
+
+function selectedConceptBlock(attempt, band) {
+  const wrong = norm(attempt.studentAnswer);
+  if (isTrueFalseToken(wrong)) {
+    if (isAffirmative(wrong)) {
+      return teachConceptParts(
+        {
+          what: 'True means you are accepting the whole sentence as a science fact.',
+          means: 'It says every important part of the claim actually holds.',
+          usedFor: 'We use True when the naming, the process, and the job in the sentence match.',
+          how: 'You check the sentence piece by piece: if all of it is real science, True is the judgment.',
+          example:
+            band === 'micro' || band === 'simple'
+              ? '“Roots take in water” can be True because that is a real root job.'
+              : '“Roots take in water” can be True because that is a real root job.',
+        },
+        band,
+      );
+    }
+    return teachConceptParts(
+      {
+        what: 'False means you are saying this sentence is not a real science fact.',
+        means: 'It is a judgment that something important in the claim does not hold.',
+        usedFor: 'We use False when a statement has a real mistake in it.',
+        how: 'You look for the part that does not match how the process actually works.',
+        example: '“Fish are mammals” is False because that naming does not hold.',
+      },
+      band,
+    );
+  }
+
   const idea = lookupStudentIdea(wrong);
   const extraMeet = norm(attempt.extraMeet || '');
-  const lock = examLock(attempt);
-  const know = `You know that ${lock}.`;
-
-  if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
-    return clip(`${know} Hold that line for the exam.`, bandClip(band));
+  const node = findCatalogNode(catalogForAttempt(attempt), wrong);
+  const taught = teachConceptParts(idea, band);
+  if (taught) {
+    return extraMeet && band !== 'micro' ? `${taught} ${extraMeet}` : taught;
   }
-
-  if (isTrueFalseToken(wrong) && isTrueFalseToken(right)) {
-    const claim = unpackScienceClaim(prompt, attempt.topic);
-    const fact = claim?.fact || lock;
-    const knowTf = isAffirmative(right)
-      ? `You know that this sentence is true. ${fact}`
-      : `You know that this sentence is false. ${fact}`;
-    const trap = isAffirmative(wrong)
-      ? 'True only scores if the science in the sentence is actually right.'
-      : claim?.rejectFalse || 'False would throw away a real definition — that loses the mark.';
-    return clip(`${knowTf} ${trap}`, bandClip(band));
+  if (band === 'micro' || band === 'simple') {
+    return (
+      extraMeet ||
+      pickMeet(idea, band) ||
+      (node ? `${node.label} is for ${String(node.role || 'another job').toLowerCase()}.` : '') ||
+      `“${clip(wrong, 40)}” is a real science word. Let’s name what it usually does in the world, before we match it to this question.`
+    );
   }
-
-  const cat = catalogForAttempt(attempt);
-  const wrongNode = findCatalogNode(cat, wrong);
-  const catalogMeet = wrongNode?.explanation
-    ? `${wrongNode.label}: ${wrongNode.explanation}`
-    : '';
-  const identity = pickMeet(idea, band) || extraMeet || catalogMeet;
-  const trap = idea?.mismatch
-    ? idea.mismatch
-    : wrongNode
-      ? `${wrongNode.label} is for ${String(wrongNode.role || 'another job').toLowerCase()}, so it will not score here.`
-      : `“${clip(wrong, 40)}” will not score — it does not ${questionJob(attempt).verbPhrase}.`;
-
-  if (band === 'micro') {
-    return clip(`${know} You chose ${clip(wrong, 36)}. ${trap}`, 240);
+  const what =
+    pickMeet(idea, band) ||
+    (node?.explanation ? `${node.label}: ${node.explanation}` : '');
+  if (what) {
+    return extraMeet ? `${what} ${extraMeet}` : what;
   }
-  if (band === 'simple') {
-    return clip(`${know} You chose ${clip(wrong, 40)}. ${trap}`, 300);
-  }
-  return clip(
-    `${know} You chose ${clip(wrong, 48)}. ${identity} ${trap}`.replace(/\s+/g, ' '),
-    bandClip(band),
+  return teachConceptParts(
+    {
+      what: `“${clip(wrong, 40)}” is a real science idea students meet in class.`,
+      means: 'It names its own concept, with its own job in the world.',
+      usedFor: 'People use that word when they are talking about that other job.',
+      how: 'It works in its own topic — we will compare that job with this question next.',
+      example: `You may have heard “${clip(wrong, 28)}” in a different lesson than this farm question.`,
+    },
+    band,
   );
 }
 
+function correctConceptBlock(attempt, band) {
+  const right = norm(attempt.correctAnswer);
+  const prompt = norm(attempt.prompt || attempt.question || '');
+  const claim = unpackScienceClaim(prompt, attempt.topic);
+  const job = questionJob(attempt);
+  const correctIdea = lookupCorrectIdea(right, prompt, attempt.topic);
+  const node = findCatalogNode(catalogForAttempt(attempt), right);
+
+  if (isTrueFalseToken(right)) {
+    const fact = claim?.fact || job.rightHow || scienceKeyIdea(attempt);
+    if (isAffirmative(right)) {
+      return band === 'micro' || band === 'simple'
+        ? `The science in the sentence holds. ${firstSentence(fact)}`
+        : `The quiz key for this statement is True because the science in it holds. ${fact} Example: a bean seed with two lobes fits that naming rule.`;
+    }
+    return band === 'micro' || band === 'simple'
+      ? `The science in the sentence does not hold. ${firstSentence(fact)}`
+      : `The quiz idea here is that the sentence is not how the process works. ${fact}`;
+  }
+
+  const taught = teachConceptParts(correctIdea, band);
+  if (taught) return taught;
+  if (node?.explanation) {
+    return band === 'micro' || band === 'simple'
+      ? `${node.label} is for ${String(node.role || 'this job').toLowerCase()}.`
+      : `${node.label}: ${node.explanation} In this topic, that is the job the question is asking about.`;
+  }
+  if (job.rightHow) return job.rightHow;
+  return `The quiz key for this item is ${clip(right, 48)}. That is the idea this question is asking you to use.`;
+}
+
+function comparisonBlock(attempt, band) {
+  const wrong = clip(norm(attempt.studentAnswer), 40);
+  const right = clip(norm(attempt.correctAnswer), 40);
+  const idea = lookupStudentIdea(attempt.studentAnswer);
+  const job = questionJob(attempt);
+  const prompt = lower(attempt.prompt || attempt.question || '');
+
+  if (isTrueFalseToken(wrong) && isTrueFalseToken(right)) {
+    const same = 'True and False are both judgments about the same sentence.';
+    const diff = isAffirmative(right)
+      ? 'The important difference is whether the naming or process in the sentence actually matches the science.'
+      : 'The important difference is that the sentence’s claim does not match the science.';
+    const whyWrong = isAffirmative(wrong)
+      ? 'True does not satisfy the question if any key part of the claim is not actually how the process works.'
+      : 'False does not satisfy the question when the sentence is stating a real definition or process correctly.';
+    const whyRight = isAffirmative(right)
+      ? 'True satisfies the question because the curriculum idea in the sentence holds.'
+      : 'False satisfies the question because the claim in the sentence is not how the process works.';
+    const blob = `${same} ${diff} ${whyWrong} ${whyRight}`;
+    if (band === 'micro') return clip(blob, 280);
+    if (band === 'simple') return clip(blob, 360);
+    return blob;
+  }
+
+  const same =
+    /gas/.test(prompt) || /helium|oxygen|nitrogen|carbon/.test(lower(`${wrong} ${right}`))
+      ? `${wrong} and ${right} are both gases we can meet in air or science class.`
+      : `${wrong} and ${right} are both science ideas that can show up in a plant or farm lesson.`;
+  const diff = idea?.mismatch
+    ? `The important difference is this: ${idea.mismatch}`
+    : `The important difference is the job: ${right} ${job.verbPhrase}, and ${wrong} does not.`;
+  const whyWrong = `${wrong} does not satisfy this question because it does not ${job.verbPhrase}.`;
+  const whyRight = `${right} satisfies this question because it does ${job.verbPhrase}.`;
+  const blob = `${same} ${diff} ${whyWrong} ${whyRight}`;
+  if (band === 'micro') return clip(blob, 280);
+  if (band === 'simple') return clip(blob, 360);
+  return blob;
+}
+
+function connectionBlock(attempt, band) {
+  const topic = clip(attempt.topic || 'this farm science idea', 40);
+  const key = scienceKeyIdea(attempt);
+  if (band === 'micro' || band === 'simple') {
+    return `So the learning idea is: ${key}`;
+  }
+  return `Connect that back to ${topic}: ${key} That is the curriculum idea this question is testing.`;
+}
+
+function checkQuestion(attempt) {
+  const wrong = clip(norm(attempt.studentAnswer), 36) || 'your pick';
+  const right = clip(norm(attempt.correctAnswer), 36);
+  const prompt = lower(attempt.prompt || attempt.question || '');
+  if (isTrueFalseToken(wrong) && isTrueFalseToken(right)) {
+    return 'What is the important difference between saying True and saying False for this sentence?';
+  }
+  if (/helium/.test(lower(wrong)) && /photosynth/.test(prompt)) {
+    return 'What is the important difference between helium and carbon dioxide in photosynthesis?';
+  }
+  if (/oxygen/.test(lower(wrong)) && /photosynth/.test(prompt)) {
+    return 'What is the important difference between the gas plants take in and the gas they give off in photosynthesis?';
+  }
+  if (right) {
+    return `What is the important difference between ${wrong} and ${right} for this question?`;
+  }
+  return 'What is the important difference between your pick and the idea this question is asking for?';
+}
+
+/**
+ * Wrong pick → correct idea → comparison → concept connection → check.
+ * Does not open with “your answer is wrong because the correct answer is …”.
+ */
+export function composeFiveStepLesson(attempt = {}, voice = {}) {
+  const band = voiceBand(voice);
+  const selected = selectedConceptBlock(attempt, band);
+  const correct = correctConceptBlock(attempt, band);
+  const comparison = comparisonBlock(attempt, band);
+  const connection = connectionBlock(attempt, band);
+  const check = checkQuestion(attempt);
+  const limit = fiveStepClip(band);
+  const joined = [selected, correct, comparison, connection].map(norm).filter(Boolean).join(' ');
+  let fullText = joined;
+  if (joined.length > limit) {
+    const s = clip(selected, Math.max(120, Math.floor(limit * 0.28)));
+    const c = clip(correct, Math.max(120, Math.floor(limit * 0.28)));
+    const m = clip(comparison, Math.max(120, Math.floor(limit * 0.28)));
+    const k = clip(connection, Math.max(80, Math.floor(limit * 0.14)));
+    fullText = [s, c, m, k].map(norm).filter(Boolean).join(' ');
+  }
+  return { selected, correct, comparison, connection, check, fullText, band };
+}
+
+function composeTutorMiss(attempt, voice) {
+  const band = voiceBand(voice);
+  const wrong = norm(attempt.studentAnswer);
+
+  if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
+    return clip(
+      band === 'micro'
+        ? `Let's look at the sentence itself. ${scienceKeyIdea(attempt)}`
+        : `No pick yet — start with the idea in the sentence. ${scienceKeyIdea(attempt)}`,
+      fiveStepClip(band),
+    );
+  }
+
+  const lesson = composeFiveStepLesson(attempt, voice);
+  const check = lesson.check || '';
+  const limit = fiveStepClip(band);
+  const combined = `${lesson.fullText} ${check}`.trim();
+  if (combined.length <= limit) return combined;
+  const room = Math.max(120, limit - check.length - 1);
+  return `${clip(lesson.fullText, room)} ${check}`.trim();
+}
+
 export function explainWhyWrong(attempt = {}, voice = {}) {
-  return composeExamCoach(attempt, voice);
+  return composeTutorMiss(attempt, voice);
 }
 
 export function explainCorrectIdea(attempt = {}, voice = {}) {
   const band = voiceBand(voice);
-  const lock = examLock(attempt);
-  const line = `Write this: ${lock.replace(/^the /, 'The ')}.`;
-  return clip(line, band === 'micro' ? 180 : 280);
+  const idea = scienceKeyIdea(attempt);
+  return clip(idea, band === 'micro' ? 160 : 260);
 }
 
 export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {

@@ -108,7 +108,7 @@ function buildMindMapSvg(map, branches) {
       { label: 'Correct', lines: correct, tone: 'ok' },
     ];
     if (b.keyConcept) blocks.push({ label: 'Key idea', lines: key });
-    if (b.why || b.keyExplain) blocks.push({ label: 'Why', lines: why });
+    if (b.why || b.keyExplain) blocks.push({ label: "Let's look", lines: why });
     let h = 52;
     blocks.forEach((block) => {
       h += 16 + block.lines.length * lineH + 10;

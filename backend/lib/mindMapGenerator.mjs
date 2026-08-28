@@ -7,7 +7,8 @@ import {
   explainWhyWrong,
   explainCorrectIdea,
   composeWhyWithOptionalAiMeet,
-} from './explainMisconception.mjs';
+  scienceKeyIdea,
+} from '../../frontend/src/avatar/explainMisconception.js';
 
 const TOPIC_ICONS = {
   photosynthesis: '☀️',
@@ -171,11 +172,11 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
       why_wrong: explainWhyWrong(conceptual, voice),
-      key_concept: clip(right || topic, 40) || 'Key idea',
+      key_concept: clip(scienceKeyIdea(conceptual), 48) || clip(right || topic, 40) || 'Key idea',
       key_concept_explain: explainCorrectIdea(conceptual, voice),
-      farm_link: right
-        ? `If this question comes back in the exam, circle ${clip(right, 48)}.`
-        : `Say the exam line out loud once, then try the next miss.`,
+      farm_link: scienceKeyIdea(conceptual)
+        ? `Hold this idea for the farm question: ${clip(scienceKeyIdea(conceptual), 80)}.`
+        : `Come back to this miss and try the farm question with one clear idea.`,
       color_index: i % 6,
     };
   });
@@ -270,9 +271,13 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
         studentIdea: hint.student_idea_in_the_world || hint.studentIdea,
         whyWrong: hint.why_wrong || hint.whyWrong,
       }),
-      key_concept:
-        String(hint.key_concept || hint.keyConcept || '').trim() ||
-        base.key_concept,
+      key_concept: (() => {
+        const hinted = String(hint.key_concept || hint.keyConcept || '').trim();
+        if (hinted && !/^(true|false|t|f|yes|no)$/i.test(hinted) && hinted.length > 4) {
+          return clip(hinted, 48);
+        }
+        return base.key_concept;
+      })(),
       key_concept_explain: base.key_concept_explain,
       farm_link: farmOk ? farm : base.farm_link,
       color_index: i % 6,

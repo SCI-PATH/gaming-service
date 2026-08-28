@@ -16,6 +16,7 @@ export {
   buildMissAttempt,
   explainWhyWrong,
   explainCorrectIdea,
+  scienceKeyIdea,
 } from './buildMindMap.js';
 export {
   QUESTION_FORMATS,

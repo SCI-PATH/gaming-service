@@ -17,9 +17,10 @@ import { safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
 import {
   explainWhyWrong,
   explainCorrectIdea,
+  scienceKeyIdea,
 } from './explainMisconception.js';
 
-export { explainWhyWrong, explainCorrectIdea } from './explainMisconception.js';
+export { explainWhyWrong, explainCorrectIdea, scienceKeyIdea } from './explainMisconception.js';
 
 const BRANCH_COLORS = [
   { key: 'rose', stroke: '#c45c5c', fill: '#fde8e8', accent: '#9a3030' },
@@ -322,30 +323,22 @@ export function buildPersonalizedMindMap({
     const cleanRight =
       safeScienceLine(a.correctAnswer, null) || 'see the lesson key idea';
     const related = catalogRelated(t, cleanRight, usedRelated);
-    const why = explainWhyWrong(
-      {
-        ...a,
-        studentAnswer: cleanWrong,
-        correctAnswer: cleanRight,
-      },
-      {
-        tone: profile.tone,
-        frustrationLevel: profile.frustrationLevel,
-        explainDepth: profile.explainDepth,
-      },
-    );
-    const rightExplain = explainCorrectIdea(
-      {
-        ...a,
-        studentAnswer: cleanWrong,
-        correctAnswer: cleanRight,
-      },
-      {
-        tone: profile.tone,
-        frustrationLevel: profile.frustrationLevel,
-        explainDepth: profile.explainDepth,
-      },
-    );
+    const conceptual = {
+      ...a,
+      studentAnswer: cleanWrong,
+      correctAnswer: cleanRight,
+    };
+    const why = explainWhyWrong(conceptual, {
+      tone: profile.tone,
+      frustrationLevel: profile.frustrationLevel,
+      explainDepth: profile.explainDepth,
+    });
+    const rightExplain = explainCorrectIdea(conceptual, {
+      tone: profile.tone,
+      frustrationLevel: profile.frustrationLevel,
+      explainDepth: profile.explainDepth,
+    });
+    const keyIdea = scienceKeyIdea(conceptual);
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
     let nodes = [
@@ -423,8 +416,8 @@ export function buildPersonalizedMindMap({
       why,
       why_wrong: why,
       rightExplain,
-      keyConcept: shortLabel(cleanRight, 32) || t,
-      key_concept: shortLabel(cleanRight, 32) || t,
+      keyConcept: shortLabel(keyIdea, 48) || t,
+      key_concept: shortLabel(keyIdea, 48) || t,
       keyExplain: rightExplain,
       key_concept_explain: rightExplain,
       farmLink: related.explanation,
