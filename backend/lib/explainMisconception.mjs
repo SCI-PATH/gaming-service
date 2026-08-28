@@ -194,6 +194,42 @@ export function unpackScienceClaim(prompt, topic = '') {
       rejectFalse: 'Fibrous roots belong with most monocots.',
     };
   }
+  if (/transpir/i.test(blob)) {
+    return {
+      fact: 'Transpiration is water leaving the plant through leaves into the air — like a plant version of sweating.',
+      rejectFalse: 'Precipitation is water falling from clouds, not leaving the leaf.',
+    };
+  }
+  if (/starch|carbohydrate/i.test(blob)) {
+    return {
+      fact: 'Corn and many crops store energy as carbohydrates (starch). That starch is food energy when we eat it.',
+      rejectFalse: 'Salt or vitamins are not the main energy store in corn kernels.',
+    };
+  }
+  if (/root/i.test(blob) && /water|underground/i.test(blob)) {
+    return {
+      fact: 'Roots usually grow underground and take in water and minerals from the soil.',
+      rejectFalse: 'Petals and anthers are flower parts, not the water-takers in the soil.',
+    };
+  }
+  if (/gravity/i.test(blob)) {
+    return {
+      fact: 'Gravity is the force that pulls objects toward Earth — it is why arrows and rain fall down.',
+      rejectFalse: 'Magnetism and sound do not pull everything toward the ground.',
+    };
+  }
+  if (/habitat/i.test(blob)) {
+    return {
+      fact: 'A habitat is the natural place where a plant or animal lives.',
+      rejectFalse: 'A molecule or fossil is not a home.',
+    };
+  }
+  if (/respirat/i.test(blob) && /photosynth/i.test(blob)) {
+    return {
+      fact: 'Photosynthesis makes food using light. Respiration releases energy from food. They are different jobs.',
+      rejectFalse: 'Calling food-making “respiration” mixes up two processes.',
+    };
+  }
   return null;
 }
 
@@ -282,6 +318,202 @@ const STUDENT_WORLD_IDEAS = [
       'A taproot has one dominant axis with laterals. That is the typical dicot pattern, not the monocot fibrous bunch.',
     mismatch: 'A taproot is not the usual monocot root system.',
   },
+  {
+    test: /respirat/,
+    meetShort: 'Respiration is how living things release energy from food.',
+    meet: 'Respiration is the process that releases energy from food inside living cells.',
+    meetRich:
+      'Respiration breaks down food to release usable energy. It is not the same as making new food with light.',
+    mismatch: 'Respiration does not make plant food from sunlight — that job is photosynthesis.',
+  },
+  {
+    test: /ferment/,
+    meetShort: 'Fermentation is a way some cells get energy without much oxygen.',
+    meet: 'Fermentation is an energy process used by some microbes (and in making yogurt or bread).',
+    meetRich:
+      'Fermentation releases energy without using oxygen the way respiration does. It is not how green leaves make sugar from light.',
+    mismatch: 'Fermentation is not how plants make food in sunlight.',
+  },
+  {
+    test: /digest/,
+    meetShort: 'Digestion is breaking food into smaller bits an animal can use.',
+    meet: 'Digestion happens in animals: food is broken down so the body can use it.',
+    meetRich:
+      'Digestion is an animal process for breaking food. Green plants make food; they do not digest a meal the way we do.',
+    mismatch: 'Digestion is not the leaf’s food-making process.',
+  },
+  {
+    test: /habitat/,
+    meetShort: 'A habitat is the natural home of a plant or animal.',
+    meet: 'A habitat is the place where an organism lives — forest, pond, soil.',
+    meetRich:
+      'Habitat means the living place with the food, water, and shelter that species need.',
+    mismatch: 'Habitat is a home, not a molecule, planet, or fossil.',
+  },
+  {
+    test: /molecule/,
+    meetShort: 'A molecule is a tiny group of atoms bonded together.',
+    meet: 'A molecule is a very small particle made of atoms joined together, like CO₂ or water.',
+    meetRich:
+      'Molecules are the tiny building pieces of substances. They are not a place an animal lives.',
+    mismatch: 'A molecule is not a habitat.',
+  },
+  {
+    test: /\bplanet\b/,
+    meetShort: 'A planet is a large world in space, like Earth.',
+    meet: 'A planet is a large body in space that orbits a star.',
+    meetRich: 'Planets are worlds in space. That is astronomy, not the home of a forest animal.',
+    mismatch: 'A planet is not the word for an organism’s living place.',
+  },
+  {
+    test: /fossil/,
+    meetShort: 'A fossil is a trace of ancient life in rock.',
+    meet: 'Fossils are remains or traces of living things from long ago, often in rock.',
+    meetRich: 'Fossils record past life. They are not the living home of today’s moles or trees.',
+    mismatch: 'A fossil is not a habitat.',
+  },
+  {
+    test: /magnet/,
+    meetShort: 'Magnetism is the push or pull between magnets and some metals.',
+    meet: 'Magnetism pulls some metals toward a magnet. It is not the force that makes everything fall.',
+    meetRich:
+      'Magnetic force acts on certain materials. Gravity, not magnetism, pulls arrows and rain toward Earth.',
+    mismatch: 'Magnetism is not the force that pulls everything toward the ground.',
+  },
+  {
+    test: /gravity/,
+    meetShort: 'Gravity pulls objects toward Earth.',
+    meet: 'Gravity is the force that pulls things down toward Earth.',
+    meetRich: 'Gravity acts on every mass near Earth, which is why thrown things eventually fall.',
+    mismatch: 'If the question is not about falling, gravity is the wrong job.',
+  },
+  {
+    test: /friction/,
+    meetShort: 'Friction is the rub between surfaces that can slow things down.',
+    meet: 'Friction resists sliding when two surfaces rub. It can slow a cart or an arrow, but it is not gravity.',
+    meetRich:
+      'Friction is a contact force. Gravity still pulls even when surfaces are not rubbing.',
+    mismatch: 'Friction is not the main force that pulls an arrow to the ground.',
+  },
+  {
+    test: /\bsound\b/,
+    meetShort: 'Sound is vibration travelling through air (or water) that we hear.',
+    meet: 'Sound is a wave we hear. It does not pull objects to the ground.',
+    meetRich: 'Sound is energy as vibration. It is not a downward pull like gravity.',
+    mismatch: 'Sound does not make arrows fall.',
+  },
+  {
+    test: /root hair/,
+    meetShort: 'Root hairs are tiny root extensions that help take in water.',
+    meet: 'Root hairs are tiny outgrowths on roots that increase water and mineral uptake.',
+    meetRich:
+      'Root hairs help absorption in soil. They are not the flower part that makes pollen.',
+    mismatch: 'Root hairs do not produce pollen.',
+  },
+  {
+    test: /leaf vein/,
+    meetShort: 'Leaf veins carry water and food through the leaf.',
+    meet: 'Leaf veins are the leaf’s transport lines for water and sugars.',
+    meetRich:
+      'Veins support the leaf and move materials. Making pollen happens in the flower, not in a vein.',
+    mismatch: 'Leaf veins do not produce pollen.',
+  },
+  {
+    test: /transpiration/,
+    meetShort: 'Transpiration is water leaving the plant through leaves.',
+    meet: 'Transpiration is water vapour leaving leaves into the air — a bit like plant sweating.',
+    meetRich:
+      'Transpiration moves water out through stomata. Precipitation is the opposite direction: water falling from clouds.',
+    mismatch: 'Transpiration is not rain falling from the sky.',
+  },
+  {
+    test: /precipitation/,
+    meetShort: 'Precipitation is water falling from clouds as rain, snow, or hail.',
+    meet: 'Precipitation is rain, snow, or hail falling from clouds.',
+    meetRich:
+      'Precipitation is the water-cycle step where water returns from sky to ground. It is not water leaving a leaf.',
+    mismatch: 'Precipitation is not water moving out of leaves.',
+  },
+  {
+    test: /freezing/,
+    meetShort: 'Freezing is liquid turning into ice when it gets cold enough.',
+    meet: 'Freezing is a change of state from liquid to solid.',
+    meetRich: 'Freezing is a physical change of water. It is not how leaves lose water into the air.',
+    mismatch: 'Freezing is not transpiration.',
+  },
+  {
+    test: /combustion|\bburn/,
+    meetShort: 'Combustion is burning — a chemical change that needs fuel and oxygen.',
+    meet: 'Combustion means burning. It is a chemical change, not water leaving a leaf.',
+    meetRich:
+      'Combustion releases energy by burning. That is not the quiet water-loss process in leaves.',
+    mismatch: 'Burning is not transpiration.',
+  },
+  {
+    test: /starch|carbohydrate/,
+    meetShort: 'Carbohydrates (starch) are the main energy-store nutrient in foods like corn.',
+    meet: 'Starch is a carbohydrate — a store of food energy in corn and many plants.',
+    meetRich:
+      'Plants pack extra sugar into starch. People then use that starch as food energy.',
+    mismatch: 'If the question asked for another nutrient, starch is the wrong label.',
+  },
+  {
+    test: /protein only|\bprotein\b/,
+    meetShort: 'Protein helps build body tissues; it is not corn’s main energy store.',
+    meet: 'Protein is a building nutrient for bodies. Corn stores most of its energy as starch, not protein.',
+    meetRich:
+      'Proteins are made of amino acids and build structures. Energy in corn kernels is stored mainly as carbohydrate.',
+    mismatch: 'Protein is not the main energy store in corn.',
+  },
+  {
+    test: /vitamin/,
+    meetShort: 'Vitamins are helper nutrients needed in small amounts.',
+    meet: 'Vitamins help body processes but are not the main energy store in corn.',
+    meetRich: 'Vitamins support health in tiny amounts. They are not the bulk energy in a kernel.',
+    mismatch: 'Vitamins are not corn’s main stored energy.',
+  },
+  {
+    test: /\bsalt\b/,
+    meetShort: 'Salt is a mineral flavouring, not a plant energy-store nutrient.',
+    meet: 'Table salt is a mineral. It is not how corn stores energy.',
+    meetRich: 'Salt is sodium chloride, not a carbohydrate energy reserve.',
+    mismatch: 'Salt is not the energy nutrient stored in corn.',
+  },
+  {
+    test: /making metal|metal ore|\bmetal\b/,
+    meetShort: 'Metal comes from rocks and industry, not from this plant process.',
+    meet: 'Metals are materials from ores and factories. Plants do not make metal as their main job here.',
+    meetRich: 'Metallurgy is not photosynthesis, pollination, or storing harvests.',
+    mismatch: 'Making metal is not the farm-science job in this question.',
+  },
+  {
+    test: /thunder|thundercloud/,
+    meetShort: 'Thunder is sound from a storm, not a plant or harvest job.',
+    meet: 'Thunder is the sound of lightning. It is not how farmers store crops or how plants make food.',
+    meetRich: 'Weather sounds are not a plant function or a farm storage reason.',
+    mismatch: 'Thunder is not the idea this farm question is testing.',
+  },
+  {
+    test: /cart wheels/,
+    meetShort: 'Cart wheels help move the harvest; they do not catch sunlight.',
+    meet: 'Cart wheels are for moving loads. Leaves, not wheels, capture sunlight for food-making.',
+    meetRich: 'Wheels are tools. Chlorophyll lives in leaves, which is where most photosynthesis happens.',
+    mismatch: 'Cart wheels do not capture sunlight for photosynthesis.',
+  },
+  {
+    test: /soil stones?/,
+    meetShort: 'Stones in soil are rock bits, not the green sunlight-catchers.',
+    meet: 'Soil stones are minerals. They do not do the leaf’s sunlight job.',
+    meetRich: 'Rocks do not hold chlorophyll. Leaves do.',
+    mismatch: 'Soil stones do not capture sunlight for food-making.',
+  },
+  {
+    test: /\borbit\b/,
+    meetShort: 'Orbit is the path a planet or moon takes in space.',
+    meet: 'Orbit is an astronomy path in space, not a plant food-making process.',
+    meetRich: 'Orbital motion is physics of space. Photosynthesis is chemistry in leaves.',
+    mismatch: 'Orbit is not photosynthesis.',
+  },
 ];
 
 function lookupStudentIdea(wrong) {
@@ -297,37 +529,148 @@ function pickMeet(idea, band) {
   return idea.meet || idea.meetShort;
 }
 
-function rightMechanism(attempt, band) {
-  const right = norm(attempt.correctAnswer);
+/** Job this question is testing — taken from the stem, not invented. */
+export function questionJob(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
+  const right = norm(attempt.correctAnswer);
   const hint = norm(attempt.hint || '');
-  const claim =
-    unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
-  const blob = `${prompt} ${right} ${attempt.topic || ''}`;
+  const p = lower(prompt);
+  const claim = unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
 
-  if (/carbon dioxide|co2/i.test(blob) && /photosynth|leaf|plant|gas/i.test(blob)) {
-    if (band === 'micro' || band === 'simple') {
-      return 'This question is about the gas a leaf uses to make food: carbon dioxide, with water and light.';
-    }
-    return 'This question is about photosynthesis: the leaf takes in carbon dioxide, plus water and light, to build sugar (food).';
+  if (/produces pollen|produce pollen|makes pollen|pollen/i.test(p) && /part|which|flower/.test(p)) {
+    return {
+      verbPhrase: 'produce pollen',
+      rightHow:
+        hint ||
+        claim?.fact ||
+        'The anther (on the stamen) is the male flower part that produces pollen.',
+    };
+  }
+  if (/gas/.test(p) && /photosynth|take in/.test(p)) {
+    return {
+      verbPhrase: 'get taken in by the leaf to make food',
+      rightHow:
+        hint ||
+        'This question is about the gas a leaf takes in to make food: carbon dioxide, with water and light.',
+    };
+  }
+  if (/photosynth/.test(p) && !/gas/.test(p)) {
+    return {
+      verbPhrase: 'name the process that makes plant food with light',
+      rightHow:
+        hint ||
+        claim?.fact ||
+        'Photosynthesis is how green plants make food from light, water, and carbon dioxide.',
+    };
+  }
+  if (/pollen from one flower|bees moving pollen|pollinat/.test(p)) {
+    return {
+      verbPhrase: 'move pollen so seeds can form',
+      rightHow: hint || claim?.fact || 'Pollination is moving pollen from anther toward a pistil.',
+    };
+  }
+  if (/need water for|mainly need water/.test(p)) {
+    return {
+      verbPhrase: 'say what plants use water for',
+      rightHow: hint || 'Plants need water for photosynthesis and to move nutrients.',
+    };
+  }
+  if (/load harvested|cart or barn/.test(p)) {
+    return {
+      verbPhrase: 'say why harvests are loaded and stored',
+      rightHow: hint || 'Farmers load crops to store and move the harvest safely.',
+    };
+  }
+  if (/underground|takes in water/.test(p) && /part/.test(p)) {
+    return {
+      verbPhrase: 'name the part that takes in water from soil',
+      rightHow: hint || claim?.fact || 'Roots grow underground and take in water and minerals.',
+    };
+  }
+  if (/stores energy|nutrient/.test(p) && /corn/.test(p)) {
+    return {
+      verbPhrase: 'name the main energy-store nutrient',
+      rightHow: hint || claim?.fact || 'Corn stores energy mainly as carbohydrates (starch).',
+    };
+  }
+  if (/water moving from plant leaves|transpiration|into the air/.test(p)) {
+    return {
+      verbPhrase: 'name water leaving leaves into the air',
+      rightHow: hint || claim?.fact || 'That process is transpiration.',
+    };
+  }
+  if (/captures most sunlight|food-making/.test(p)) {
+    return {
+      verbPhrase: 'name the part that captures sunlight for food-making',
+      rightHow: hint || 'Leaves hold chlorophyll and capture most sunlight for photosynthesis.',
+    };
   }
   if (claim?.fact) {
-    if (band === 'micro') return clip(claim.fact, 120);
-    return claim.fact;
+    return {
+      verbPhrase: 'match the science idea in the sentence',
+      rightHow: hint || claim.fact,
+    };
   }
-  if (hint) return hint;
-  if (right) return `${right} is the idea that does this farm-science job.`;
-  return stemIntent(prompt).asking;
+  if (hint && right) {
+    return {
+      verbPhrase: `match “${clip(right, 48)}”`,
+      rightHow: `${hint} That is why “${clip(right, 60)}” fits this question.`,
+    };
+  }
+  if (hint) {
+    return { verbPhrase: 'match the science job in the question', rightHow: hint };
+  }
+  if (right) {
+    return {
+      verbPhrase: `match “${clip(right, 48)}”`,
+      rightHow: `This question is asking for ${right}. ${clip(prompt, 110)}`,
+    };
+  }
+  return {
+    verbPhrase: 'answer this farm question',
+    rightHow: stemIntent(prompt).asking,
+  };
+}
+
+export function isUsableStudentIdea(sentence, attempt = {}) {
+  const s = norm(sentence);
+  const wrong = attempt.studentAnswer || attempt.student_answer || '';
+  const right = attempt.correctAnswer || attempt.correct_answer || '';
+  if (!s || s.length < 12 || s.length > 220) return false;
+  if (looksLikeGraderMeta(s)) return false;
+  if (looksLikeAnswerKeyRestatement(s, wrong, right)) return false;
+  if (!honorsStudentIdea(s, wrong)) return false;
+  const r = lower(right);
+  if (r.length >= 6 && lower(s).includes(r) && !lower(wrong).includes(r)) return false;
+  if (/as an ai|i think|maybe|might be|possibly|not sure|in some cases plants use/i.test(s)) {
+    return false;
+  }
+  if (/helium/.test(lower(wrong)) && /photosynth|make food|take in helium/.test(lower(s)) && !/not|cannot|does not/.test(lower(s))) {
+    return false;
+  }
+  return true;
+}
+
+function rightMechanism(attempt, band) {
+  const job = questionJob(attempt);
+  const text = job.rightHow;
+  if (band === 'micro') return clip(text, 140);
+  return text;
 }
 
 function genericMeet(wrong, band) {
-  const w = clip(wrong, 40);
+  const w = clip(wrong, 48);
   if (!w) return '';
-  if (band === 'micro') return `${w} is a real idea — just for a different job.`;
-  if (band === 'rich') {
-    return `${w} is something real in science or everyday life; it has its own job.`;
+  if (band === 'micro' || band === 'simple') {
+    return `You used “${w}”. That idea belongs to a different science job than this question.`;
   }
-  return `${w} is a real idea in the world — it just does a different job than this question.`;
+  return `You used “${w}”. Keep that word in mind — it is a real idea, but it does a different job than this farm question is asking.`;
+}
+
+function mismatchLine(wrong, attempt, idea) {
+  if (idea?.mismatch) return idea.mismatch;
+  const job = questionJob(attempt);
+  return `“${clip(wrong, 48)}” does not ${job.verbPhrase}.`;
 }
 
 function composeThreeBeat({ meet, right, mismatch }, band) {
@@ -342,6 +685,7 @@ export function explainWhyWrong(attempt = {}, voice = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const idea = lookupStudentIdea(wrong);
   const rightText = rightMechanism(attempt, band);
+  const extraMeet = norm(attempt.extraMeet || '');
 
   if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
     return clip(rightText, bandClip(band));
@@ -362,11 +706,9 @@ export function explainWhyWrong(attempt = {}, voice = {}) {
     );
   }
 
-  const meet = pickMeet(idea, band) || genericMeet(wrong, band);
-  const mismatch =
-    idea?.mismatch ||
-    `${clip(wrong, 40)} does not do that food-or-farm job here.`;
-
+  const meet =
+    pickMeet(idea, band) || extraMeet || genericMeet(wrong, band);
+  const mismatch = mismatchLine(wrong, attempt, idea);
   return composeThreeBeat({ meet, right: rightText, mismatch }, band);
 }
 
@@ -401,14 +743,19 @@ export function explainCorrectIdea(attempt = {}, voice = {}) {
   return clip(rightMechanism(attempt, band), bandClip(band));
 }
 
-export function preferConceptualText(aiText, localText, attempt = {}) {
-  const ai = norm(aiText);
-  const local = norm(localText);
-  if (!ai) return local;
-  const wrong = attempt.studentAnswer || attempt.student_answer || '';
-  const right = attempt.correctAnswer || attempt.correct_answer || '';
-  if (looksLikeAnswerKeyRestatement(ai, wrong, right)) return local || ai;
-  if (!honorsStudentIdea(ai, wrong)) return local || ai;
-  if (ai.length < 48 && !hasCausalLanguage(ai)) return local || ai;
-  return ai;
+/**
+ * Never paste a free-form model essay as the lesson.
+ * Optionally keep ONE validated everyday sentence about the student's word, then compose locally.
+ */
+export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {
+  const fromField = norm(ai.studentIdea || ai.student_idea_in_the_world || '');
+  const fromWhy = norm(String(ai.whyWrong || ai.why_wrong || '').split(/(?<=[.!?])\s+/)[0] || '');
+  let extraMeet = '';
+  if (isUsableStudentIdea(fromField, attempt)) extraMeet = fromField;
+  else if (isUsableStudentIdea(fromWhy, attempt)) extraMeet = fromWhy;
+  return explainWhyWrong({ ...attempt, extraMeet }, voice);
+}
+
+export function preferConceptualText(aiText, localText, attempt = {}, voice = {}) {
+  return composeWhyWithOptionalAiMeet(attempt, voice, { whyWrong: aiText }) || localText;
 }

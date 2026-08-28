@@ -6,7 +6,7 @@ import { chatCompletion, getLlamaConfig } from './llamaClient.mjs';
 import {
   explainWhyWrong,
   explainCorrectIdea,
-  preferConceptualText,
+  composeWhyWithOptionalAiMeet,
 } from './explainMisconception.mjs';
 
 const TOPIC_ICONS = {
@@ -234,6 +234,11 @@ function extractJson(text) {
 function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
   const local = buildLocalMindMap(attempts, adaptation);
   if (!ai || typeof ai !== 'object') return local;
+  const voice = {
+    tone: adaptation?.mindMap?.tone || 'practice',
+    frustrationLevel: adaptation?.level || 'moderate',
+    explainDepth: adaptation?.mindMap?.explainDepth || 'medium',
+  };
 
   const aiBranches = Array.isArray(ai.branches) ? ai.branches : [];
   const mergedBranches = local.branches.map((base, i) => {
@@ -241,39 +246,35 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
       aiBranches.find((b) => Number(b.miss_index) === i + 1) ||
       aiBranches[i] ||
       {};
+    const ground = {
+      topic: base.topic,
+      prompt: base.question,
+      question: base.question,
+      studentAnswer: base.student_answer,
+      correctAnswer: base.correct_answer,
+      hint: attempts[i]?.hint || null,
+    };
+    const farm = String(hint.farm_link || hint.farmLink || '').trim();
+    const farmOk =
+      farm.length >= 12 &&
+      farm.length <= 180 &&
+      !/placeholder|frustrat|you picked|the response fills/i.test(farm);
     return {
       ...base,
       topic: base.topic || hint.topic || 'Science',
       icon: hint.icon || base.icon,
-      // Ground truth Q/A never overridden by AI inventing different items
       question: base.question || hint.question || '',
       student_answer: base.student_answer || hint.student_answer || '',
       correct_answer: base.correct_answer || hint.correct_answer || '',
-      why_wrong: preferConceptualText(
-        hint.why_wrong || hint.whyWrong,
-        base.why_wrong,
-        {
-          studentAnswer: base.student_answer,
-          correctAnswer: base.correct_answer,
-          prompt: base.question,
-        },
-      ),
+      why_wrong: composeWhyWithOptionalAiMeet(ground, voice, {
+        studentIdea: hint.student_idea_in_the_world || hint.studentIdea,
+        whyWrong: hint.why_wrong || hint.whyWrong,
+      }),
       key_concept:
         String(hint.key_concept || hint.keyConcept || '').trim() ||
         base.key_concept,
-      key_concept_explain: preferConceptualText(
-        hint.key_concept_explain ||
-          hint.keyConceptExplain ||
-          hint.explanation,
-        base.key_concept_explain,
-        {
-          studentAnswer: base.student_answer,
-          correctAnswer: base.correct_answer,
-          prompt: base.question,
-        },
-      ),
-      farm_link:
-        String(hint.farm_link || hint.farmLink || '').trim() || base.farm_link,
+      key_concept_explain: base.key_concept_explain,
+      farm_link: farmOk ? farm : base.farm_link,
       color_index: i % 6,
       miss_index: i + 1,
     };
@@ -342,13 +343,13 @@ function buildPrompt(attempts, adaptation = null) {
 
   const depthGuide = {
     micro:
-      'why_wrong: 2–3 SHORT sentences in the 3-beat order (meet → correct job → why theirs fails). key_concept_explain: 1–2 short sentences on the correct idea only.',
+      'student_idea_in_the_world: at most 1 short everyday sentence, or empty. Server writes the science lesson.',
     simple:
-      'why_wrong: 3 short sentences, same 3-beat order, everyday words. key_concept_explain: 2 sentences on how the correct idea works.',
+      'student_idea_in_the_world: 1 everyday sentence if you know the term, else empty.',
     medium:
-      'why_wrong: 3–4 sentences, 3-beat order. key_concept_explain: 2–3 sentences teaching the correct mechanism.',
+      'student_idea_in_the_world: 1–2 everyday sentences if you know the term, else empty.',
     rich:
-      'why_wrong: fuller 3-beat (still Grade 6–9). Add one extra science detail when honouring their idea (e.g. helium barely reacts). key_concept_explain: richer mechanism.',
+      'student_idea_in_the_world: 1 richer everyday sentence if you know the term (e.g. helium barely reacts), else empty.',
   };
 
   const bandGuide = {
@@ -359,47 +360,34 @@ function buildPrompt(attempts, adaptation = null) {
       'Softest map. Tiny language. One step per branch. Reassure effort. Prefer the most important misses only.',
   };
 
-  return `You are Sage, a Grade 6–9 farm mentor. Students learn FROM THEIR MISTAKE. You are not a grader and not an answer key.
+  return `You are Sage's research helper. You do NOT write the science lesson. The server will compose a 3-beat why from ground truth (question, student answer, correct answer, hint). You only help name what the student's WRONG word means in everyday life — and only if you are certain.
 
-Create ONE mind map from EVERY incorrect answer below.
-Personalization (PRIVATE — never write score/level words on the map): frustration_level=${level}, mind_map_tone=${tone}, sage_voice=${tone}, explain_depth=${depth}.
+Create ONE mind map JSON from EVERY incorrect answer below.
+Personalization (PRIVATE — never write these words on the map): frustration_level=${level}, mind_map_tone=${tone}, sage_voice=${tone}, explain_depth=${depth}.
 Sage voice: ${sageHint}
 ${bandGuide[level] || bandGuide.moderate}
 ${depthGuide[depth] || depthGuide.medium}
 ${simplify ? 'Use very simple Grade-6 words.' : 'Use clear school language.'}
-This request is capped to ${attempts.length} miss(es) (maxBranches=${maxBranches}).
+Capped to ${attempts.length} miss(es).
 
-WHY_WRONG must follow this 3-beat lesson (this is the research contribution):
-1. MEET THE STUDENT'S IDEA as a real thing in the world. If they said helium, talk about helium (balloons, light gas) FIRST — not the mark scheme.
-2. Then jump to WHY THE CORRECT IDEA DOES THIS JOB (e.g. carbon dioxide is the gas the leaf takes in to make food).
-3. Then WHY THEIR IDEA FAILS THIS JOB (helium does not join the food-making reaction).
-Keep the three beats in that order. Personalize LENGTH and WARMTH to frustration_level / tone / explain_depth. Never mention frustration.
+student_idea_in_the_world rules:
+- ONE sentence about the student's wrong term as a real-world idea (helium → balloons; petal → colourful flower part).
+- If you are not 100% sure what that term is, output empty string "". Never guess.
+- Do NOT mention the correct_answer. Do NOT teach photosynthesis/the lesson in this field.
+- Do NOT talk about placeholders, blanks, or typing.
 
-key_concept_explain = mini-lesson on the CORRECT idea only (how it works in nature).
+The server writes why_wrong and key_concept_explain. You may leave them as "".
+Copy question, student_answer, and correct_answer exactly from input. Never invent a different correct answer.
 
-GOLDEN EXAMPLE — copy this shape, not the old grader shape:
-Q: Which gas do plants mainly take in for photosynthesis?
-Wrong: helium. Right: carbon dioxide.
-BAD: You selected helium, but the answer is carbon dioxide.
-BAD: The response fills the blanks with placeholder letters / categories / symbols.
-GOOD (tone=practice, moderate frustration): Helium is a very light gas. We fill party balloons with it so they float. This question is about the gas a leaf uses to make food: the leaf takes in carbon dioxide, plus water and light, to build sugar. Helium does not go into that food-making reaction, so it is the wrong gas here.
-GOOD (tone=support, high frustration): Helium is the light gas that makes balloons float. Leaves make food with carbon dioxide from the air, not helium. Helium is the wrong job for a leaf.
-GOOD (tone=challenge, low frustration): Helium is a light noble gas — it barely reacts, which is why balloons stay “helium” and float. Photosynthesis needs carbon dioxide as a reactant (CO₂ + water + light → sugar + oxygen). Helium is not a reactant in that equation.
+GOLDEN shape the SERVER will build (for your understanding only):
+Wrong helium / right carbon dioxide → Helium is the light balloon gas. Leaves take in carbon dioxide to make food. Helium does not join that reaction.
 
-FORBIDDEN:
-- “you picked X, but the answer is Y”
-- Talking about placeholders, letter N, blanks, symbols, “the response fills”
-- Shame words: frustrated, struggling, weak, dummy
-- Inventing a different correct_answer than the input
+FORBIDDEN: guessing facts, “you picked X but the answer is Y”, placeholder talk, shame words.
 
 Rules:
-1. Output ONLY valid JSON (no markdown).
+1. Output ONLY valid JSON.
 2. EXACTLY ${attempts.length} branches, miss_index 1..${attempts.length}.
 3. Do not drop or invent misses.
-4. Copy question / student_answer / correct_answer from input.
-5. Every why_wrong MUST mention the student's actual wrong idea (unless it is blank/timeout) as a real-world thing before teaching the correct job.
-6. summary / big_picture match tone ${tone}.
-7. If correct_answer looks like a grading error, explain from the question stem only.
 
 Incorrect answers:
 ${JSON.stringify(payload, null, 2)}
@@ -409,7 +397,7 @@ JSON schema:
   "title": "short map title",
   "central_idea": "what this whole map is about",
   "summary": "1–2 sentences matching tone ${tone}",
-  "big_picture": "how all misses connect in one story (2–3 sentences; shorter if high/very_high)",
+  "big_picture": "how misses connect (2–3 sentences; shorter if high/very_high)",
   "study_path": ["Miss 1: …", "Miss 2: …"],
   "branches": [
     {
@@ -419,10 +407,11 @@ JSON schema:
       "question": "copy from input",
       "student_answer": "copy from input",
       "correct_answer": "copy from input",
-      "why_wrong": "3-beat lesson: honour their idea → why the correct idea works here → why theirs does not",
+      "student_idea_in_the_world": "everyday sentence about the WRONG term, or empty",
+      "why_wrong": "",
       "key_concept": "short correct concept label",
-      "key_concept_explain": "mini-lesson on why the correct idea is true",
-      "farm_link": "how the correct mechanism shows up on a farm"
+      "key_concept_explain": "",
+      "farm_link": "one sentence how the CORRECT idea shows up on a farm"
     }
   ]
 }`;
@@ -476,7 +465,7 @@ export async function generateMindMapFromMistakes(body = {}) {
         {
           role: 'system',
           content:
-            'You design Sage mind maps so students learn from THEIR idea. why_wrong is a 3-beat lesson: honour the wrong idea as a real-world thing, then why the correct idea does this job, then why theirs does not. Never talk about placeholders or “you picked X, the answer is Y”. JSON only. One branch per miss. Never mention frustration scores.',
+            'You only name what the student’s wrong word means in everyday life if you are certain. Leave student_idea_in_the_world empty if unsure. Never invent science. The server writes the lesson. JSON only. One branch per miss. Never mention frustration.',
         },
         { role: 'user', content: buildPrompt(capped, adaptation) },
       ],
