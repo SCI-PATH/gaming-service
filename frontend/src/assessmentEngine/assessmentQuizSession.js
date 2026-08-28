@@ -10,6 +10,10 @@ import {
 } from './assessmentEngine.js';
 import { getCurrentStudent } from '../data/mockStudents.js';
 import { inferConceptFromText, resolveTopicKey } from '../avatar/conceptMaps.js';
+import {
+  chapterIdFromTopicId,
+  pickCanonicalTopicId,
+} from '../data/curriculumTopics.js';
 
 const FETCH_TIMEOUT_MS = 15000;
 const ANSWER_TIMEOUT_MS = 20000;
@@ -89,7 +93,8 @@ function normalizeGrade(student) {
 }
 
 /**
- * Real IAE catalog id only (e.g. G7_C2). Never invent G{n}_C8 —
+ * Canonical chapter id (e.g. G7_C2) from frontend-app skill IDs
+ * like G7_C1_PLA_DIVER. Never invent G{n}_C8 —
  * omitting chapter_id lets C2 resolve via C1 /progress.
  * @returns {string | null}
  */
@@ -101,9 +106,7 @@ function resolveChapterId(student) {
       student?.topic_id ||
       '',
   ).trim();
-  const match = raw.match(/^G([6-9])_C(\d+)$/i);
-  if (!match) return null;
-  return `G${match[1]}_C${match[2]}`;
+  return chapterIdFromTopicId(raw) || null;
 }
 
 /** Canonical Assessment Engine types: MCQ | TrueFalse | ShortAnswer | MultiBlank */
@@ -341,6 +344,18 @@ export function mapAssessmentQuestion(rawQuestion) {
   const subConcept =
     String(q.sub_concept || q.subConcept || payload.sub_concept || '').trim() ||
     null;
+  const topicId =
+    pickCanonicalTopicId(
+      q.topic_id,
+      q.topicId,
+      q.served_topic_id,
+      payload.topic_id,
+      payload.topicId,
+      q.topic,
+      payload.topic,
+      getCurrentStudent()?.topicId,
+      getCurrentStudent()?.topic_id,
+    ) || null;
 
   const mapped = {
     id,
@@ -351,7 +366,10 @@ export function mapAssessmentQuestion(rawQuestion) {
     optionLetters,
     questionType,
     blanks: questionType === 'MultiBlank' ? blanks : undefined,
+    topicId,
+    topic_id: topicId,
     topic:
+      topicId ||
       inferTopicFromStem(stem, {
         chapter_name: chapterName,
         skill,
@@ -617,7 +635,17 @@ async function fetchNextOnce() {
   }
 
   const rawQ = data.question || data;
-  const mapped = mapAssessmentQuestion(rawQ);
+  const mapped = mapAssessmentQuestion({
+    ...rawQ,
+    topic_id:
+      rawQ?.topic_id ||
+      rawQ?.topicId ||
+      data.target_topic_id ||
+      data.topic_id ||
+      data.served_topic_id,
+    served_topic_id:
+      rawQ?.served_topic_id || data.target_topic_id || data.served_topic_id,
+  });
   if (!isRenderableQuizQuestion(mapped)) {
     aeWarn('/next could not map question into quiz UI — skipping item', {
       id: rawQ?.id,
