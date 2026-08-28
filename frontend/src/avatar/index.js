@@ -73,6 +73,12 @@ export {
   GUIDANCE_LEVELS,
 } from './mentorConversationSession.js';
 export {
+  composeTutorTurn,
+  detectQuestionType,
+  frustrationDelivery,
+  NEXT_ACTIONS,
+} from './sageTutorLoop.js';
+export {
   loadMindMapHistory,
   recordIncorrectMindMap,
   clearMindMapHistory,

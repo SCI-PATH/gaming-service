@@ -4,7 +4,10 @@
  * Follow-ups MUST adapt to the student's actual words (never a fixed script).
  * Frustration score (private) drives HOW Sage speaks — never said out loud.
  * Science replies must stay grounded in the exact farm question the student saw.
+ * Assessment engine owns the correct answer. SAGE teaches from the miss and waits.
  */
+
+import { tutorLoopSystemAddon } from '../../frontend/src/avatar/sageTutorLoop.js';
 
 export const INTERVENTION_MODES = {
   SUPPORT_AND_SCAFFOLD: 'SUPPORT_AND_SCAFFOLD',
@@ -37,8 +40,10 @@ QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - Always anchor science help to current_question.question_text (the exact farm quiz item).
 - If answer_history is present, use the latest miss there as the active item.
 - When teaching or revealing the answer, stay inside THAT question's topic and options — never invent a different science fact that does not answer it.
-- If current_question.correct_answer is known and mentor_goals includes reveal_correct_answer_when_known, tell the student the correct idea clearly (letter + option text when MCQ), then one short why tied to the question stem.
-- Do NOT invent a "correct answer" that is unrelated to the farm question text.
+- If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
+- Do NOT open a miss with “Wrong. The correct answer is …”. Explore the student’s pick, contrast one relationship, ask a question, then WAIT.
+- Only state the quiz key when the dynamic addon says reveal is allowed (after progressive hints).
+- If verified knowledge is too thin to explain a fact, do not guess. Say you do not have enough knowledge.
 
 ADAPTIVE CONVERSATION (critical):
 - First turn after open is a BEHAVIOR probe: understand why the hang-up happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices.
@@ -249,13 +254,16 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
   const studentSaid = String(opts.studentMessage || '').trim();
   const { level: frLevel } = resolveFrustrationBand(context);
   const goals = Array.isArray(context.mentor_goals) ? context.mentor_goals : [];
-  const mayReveal = goals.includes('reveal_correct_answer_when_known');
+  const mayReveal =
+    goals.includes('reveal_correct_answer_when_known') ||
+    Boolean(context.teaching_session?.mayReveal);
 
   const lines = [
     `You are a personalized mentor for THIS performance intervention only.`,
     `Student first name: ${firstName}. Use name kindly (no ranks after it).`,
     frustrationSpeechBlock(context),
     questionGroundingBlock(context),
+    tutorLoopSystemAddon(context),
     `LOCKED open cause (behavior trigger): ${why}.`,
     `Conversation phase: ${focus.conversation_phase || focus.conversation_session?.phase || 'behavior_probe'}.`,
     `Student reason key (if known): ${focus.student_reason_key || focus.conversation_session?.student_reason_key || 'pending — ask A–D probe'}.`,
@@ -264,8 +272,10 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 220)}".` : null,
     wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 100)}".` : null,
     correct && mayReveal
-      ? `Reveal policy: when the student asks for help on the idea / mind map is open / reason is conceptual, state the correct answer for THIS question clearly, then one short why.`
-      : null,
+      ? `Reveal policy: the student has earned the quiz key. State the assessment-engine answer for THIS question clearly, then one short why, then a NEW follow-up that targets the same misconception.`
+      : correct
+        ? `Reveal policy: do NOT state the quiz key yet. Explore the student's pick, one contrast, one question, then WAIT.`
+        : null,
     `Preferred opener sample (open only): ${focus.spoken_opener || '(greeting + why + behavior probe)'}`,
     'Never rank. Soft kid-friendly wording only. Never general chat. No science quiz on first open.',
   ].filter(Boolean);
@@ -300,11 +310,11 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     lines.push(
       `STUDENT JUST SAID: "${studentSaid.slice(0, 280)}".`,
       'You MUST answer with AI coaching for THIS message (not a generic script).',
-      'If they picked A/B/C/D: name their hang-up in one short warm phrase, then give one concrete next step.',
+      'If they picked A/B/C/D: name their hang-up in one short warm phrase, then if a wrong farm answer is present, start the mistake-driven tutor (explore pick, contrast, ask, WAIT).',
       genMap || focus.require_mind_map || wrong || mayReveal
-        ? `When their reason is conceptual (mix-up, needs explain, concept gap) OR the mind map is open OR they ask for the answer: teach the correct idea for the Active farm question${correct ? ` (use: ${String(correct).slice(0, 120)})` : ''}, then one farm check.`
+        ? `When their reason is conceptual OR they ask to explain: teach from the student miss vs the assessment-engine key${correct ? ` (key, not to dump first: ${String(correct).slice(0, 80)})` : ''}. Ask a question and stop.`
         : 'Support process first; science only if they chose a concept gap or asked to explain — still keep it on the Active farm question.',
-      'Never ignore their words. Never invent ability ranks. Never mention frustration scores. Never invent an unrelated correct answer.',
+      'Never ignore their words. Never invent ability ranks. Never mention frustration scores. Never invent an unrelated correct answer. Never answer your own teaching question.',
     );
   } else {
     lines.push(

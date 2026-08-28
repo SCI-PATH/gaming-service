@@ -291,6 +291,7 @@ export default function AvatarAssistantModal({
   const [speechMapFocus, setSpeechMapFocus] = useState(null);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
+  const [tutorTurn, setTutorTurn] = useState(null);
   const subtitleCuesRef = useRef([]);
   const focusTermsRef = useRef([]);
   const spokenWordsRef = useRef([]);
@@ -696,7 +697,17 @@ export default function AvatarAssistantModal({
         quiz?.correctAnswer ||
         null;
     }
+    if (frozen?.evidence) {
+      frozen.evidence.frustration_score =
+        telemetry.frustrationScore ?? m.frustration_score ?? null;
+      frozen.evidence.question_type =
+        quiz?.questionType || quiz?.questionData?.questionType || null;
+      frozen.evidence.options =
+        quiz?.options || quiz?.questionData?.options || [];
+      frozen.evidence.hint = quiz?.hint || quiz?.questionData?.hint || null;
+    }
     performanceSessionRef.current = frozen;
+    setTutorTurn(null);
 
     const liveStem =
       frozen.evidence?.farm_question ||
@@ -1108,6 +1119,7 @@ export default function AvatarAssistantModal({
             mapForPayload ||
             performanceSessionRef.current?.require_mind_map,
         ),
+        teaching_session: performanceSessionRef.current?.teaching_session || null,
         scenario: resolvedScenario,
         non_wrong_scenario_code:
           performanceSessionRef.current?.code || nonWrongCode,
@@ -1150,6 +1162,8 @@ export default function AvatarAssistantModal({
           diagnostic_prompt:
             performanceSessionRef.current?.diagnostic_prompt || null,
           spoken_opener: performanceSessionRef.current?.spoken_opener || null,
+          teaching_session:
+            performanceSessionRef.current?.teaching_session || null,
         },
         require_mind_map: Boolean(
           performanceSessionRef.current?.require_mind_map ||
@@ -1209,6 +1223,7 @@ export default function AvatarAssistantModal({
       });
       if (resolved.session && !silentUser) {
         performanceSessionRef.current = resolved.session;
+        setTutorTurn(resolved.tutor_turn || resolved.session.last_tutor_turn || null);
         setBehaviorOptions(
           resolved.session.phase === 'behavior_probe' &&
             !resolved.session.student_reason_key
@@ -1574,6 +1589,45 @@ export default function AvatarAssistantModal({
           </div>
         ) : null}
 
+        {tutorTurn && !behaviorOptions.length ? (
+          <div className="avatar-tutor-panel" aria-live="polite">
+            {tutorTurn.interactionQuestion ? (
+              <p className="avatar-tutor-question">{tutorTurn.interactionQuestion}</p>
+            ) : null}
+            {tutorTurn.nextAction === 'INSUFFICIENT_KNOWLEDGE' ? (
+              <p className="avatar-tutor-fallback">
+                Sage will not guess a new science fact here. Re-read the farm
+                question, or try a different angle.
+              </p>
+            ) : null}
+            <div className="avatar-tutor-actions">
+              {tutorTurn.nextAction !== 'INSUFFICIENT_KNOWLEDGE' &&
+              tutorTurn.nextAction !== 'CONTINUE' ? (
+                <button
+                  type="button"
+                  className="avatar-tutor-chip"
+                  disabled={busy}
+                  onClick={() => {
+                    void sendMessage('I need a hint');
+                  }}
+                >
+                  Hint
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="avatar-tutor-chip"
+                disabled={busy}
+                onClick={() => {
+                  void sendMessage('I am ready to try the farm question again');
+                }}
+              >
+                Try the farm again
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="avatar-action-bar">
         <div className="avatar-socrates-row">
           <button
@@ -1746,7 +1800,7 @@ function bootstrapMessage(
     `Why opened: ${problem}. ` +
     `${focus?.mentor_brief || 'Help the student recover the science idea.'} ` +
     `Greet with the student's first name. Explain why you came. ` +
-    `If you know the correct quiz answer, tell it clearly right away (letter and full option text). ` +
+    `If you know the correct quiz answer, do not dump it on open. First understand the hang-up.` +
     `Do NOT open with another science quiz. Never rank the student.`
   );
 }
@@ -1775,14 +1829,6 @@ function greetingFor(
   }
   if (focus?.assistance_level === 'escalated') {
     return `I'm still with you on ${concept}. We'll take tiny steps. What part feels stickiest right now?`;
-  }
-  const correct =
-    focus?.correct_answer ||
-    mindMap?.correctAnswer ||
-    mindMap?.keyConcept ||
-    null;
-  if (correct) {
-    return `I came over because ${why}. The correct answer is: ${correct}. Let's lock that idea for ${concept}.`;
   }
   return `I came over because ${why}. Let's talk about ${concept}. What part still feels fuzzy?`;
 }

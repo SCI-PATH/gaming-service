@@ -143,6 +143,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
       tone: 'practice',
       studySteps: 3,
       simplifyLanguage: false,
+      complexity: 'focused',
       label: 'Practice map',
     },
     shop: {
@@ -187,6 +188,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
         tone: 'challenge',
         studySteps: 5,
         simplifyLanguage: false,
+        complexity: 'broader',
         label: 'Explore connections',
       },
       shop: {
@@ -230,6 +232,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
         tone: 'practice',
         studySteps: 3,
         simplifyLanguage: false,
+        complexity: 'focused',
         label: 'Repair practice',
       },
       shop: {
@@ -277,6 +280,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
         tone: 'support',
         studySteps: 2,
         simplifyLanguage: true,
+        complexity: 'simplified',
         label: 'Gentle repair',
       },
       shop: {
@@ -324,6 +328,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
       tone: 'support',
       studySteps: 1,
       simplifyLanguage: true,
+      complexity: 'micro',
       label: 'One step at a time',
     },
     shop: {

@@ -29,6 +29,10 @@ import {
   buildFrustrationAdaptation,
   calculateFrustrationScore,
 } from '../data/frustrationModel.js';
+import {
+  detectQuestionType,
+  relatedPreviousMistakes,
+} from './sageTutorLoop.js';
 
 /**
  * @param {object} input
@@ -139,6 +143,28 @@ export function buildContextPayload({
       null,
   );
 
+  const questionOptions =
+    quiz?.options ||
+    quiz?.questionData?.options ||
+    focusIn?.options ||
+    [];
+  const questionType = detectQuestionType({
+    questionType:
+      quiz?.questionType ||
+      quiz?.questionData?.questionType ||
+      quiz?.question_type ||
+      quiz?.mode,
+    options: questionOptions,
+    prompt: questionText,
+    studentAnswer: lastWrong,
+    correctAnswer: knownCorrect,
+  });
+  const teachingSession =
+    telemetry.teaching_session ||
+    focusIn?.conversation_session?.teaching_session ||
+    focusIn?.teaching_session ||
+    null;
+
   const answerHistory = (
     Array.isArray(telemetry.answerHistory)
       ? telemetry.answerHistory
@@ -199,6 +225,25 @@ export function buildContextPayload({
       lastWrongAnswer: lastWrong,
       metrics: { ...m, evaluated_tier },
     });
+
+  const previousMistakes = relatedPreviousMistakes(
+    [
+      ...conceptMisses.map((c) => ({
+        topic: c.topic,
+        mistake: (c.recent_wrong_answers || [])[0],
+        student_answer: (c.recent_wrong_answers || [])[0],
+        attempts: c.miss_count,
+        is_correct: false,
+        question: (c.sample_prompts || [])[0],
+      })),
+      ...answerHistory,
+    ],
+    {
+      topic: focus?.concept_topic,
+      studentAnswer: lastWrong,
+      questionText,
+    },
+  );
 
   const isNonWrongTrigger = Boolean(
     non_wrong_scenario_code ||
@@ -347,12 +392,15 @@ export function buildContextPayload({
     current_question: questionText
       ? {
           question_text: questionText,
+          question_type: questionType,
+          options: questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
             safeCorrect(mindMapSummary?.correctAnswer) ||
             null,
           mode: quiz?.mode || quiz?.questionData?.mode || null,
+          hint: quiz?.hint || quiz?.questionData?.hint || null,
           topic:
             focus?.concept_topic ||
             quiz?.topic ||
@@ -362,6 +410,8 @@ export function buildContextPayload({
         }
       : {
           question_text: asQuestionText(focus?.current_question, 280),
+          question_type: questionType,
+          options: questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
@@ -372,6 +422,8 @@ export function buildContextPayload({
           topic: focus?.concept_topic || mindMapSummary?.topic || null,
         },
     answer_history: answerHistory,
+    previous_mistakes: previousMistakes,
+    teaching_session: teachingSession,
     performance_snapshot: {
       correct_answers: correct,
       incorrect_answers: incorrect,
@@ -382,18 +434,23 @@ export function buildContextPayload({
       time_per_question_avg_sec: timePerQ,
       frustration_score: frustrationScore,
       frustration_level: frustrationLevel,
+      retry_count: m.level_retries_count ?? telemetry.consecutiveFails ?? 0,
+      hint_usage: m.hint_count ?? telemetry.hintCount ?? 0,
     },
     intervention_mode: mode,
     mentor_goals: [
       'focused_intervention_only',
       'trigger_reason_to_concept_lock',
       'ground_reply_in_active_farm_question',
-      'reveal_correct_answer_when_known',
+      'assessment_engine_is_authoritative',
+      'mistake_driven_tutor',
+      'wait_for_student_after_question',
+      teachingSession?.mayReveal ? 'reveal_correct_answer_when_known' : 'progressive_hints_no_early_reveal',
       'use_live_frustration_each_turn',
       'no_general_chatbot',
       'frustration_aware_tone_private',
       allowMindMap
-        ? 'concept_repair_via_mind_map'
+        ? 'misconception_mind_map'
         : 'targeted_dialogue_no_mind_map',
       focus?.assistance_level === 'escalated'
         ? 'escalated_scaffolding_same_difficulty'

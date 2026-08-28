@@ -525,7 +525,7 @@ const STUDENT_WORLD_IDEAS = [
   },
 ];
 
-function lookupStudentIdea(wrong) {
+export function lookupStudentIdea(wrong) {
   const t = lower(wrong);
   if (!t) return null;
   return STUDENT_WORLD_IDEAS.find((row) => row.test.test(t)) || null;

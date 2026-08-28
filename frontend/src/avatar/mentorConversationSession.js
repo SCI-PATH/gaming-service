@@ -67,6 +67,12 @@ import {
 } from './adaptiveMentorReply.js';
 
 import { CONCEPT_CATALOG, inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
+import {
+  composeTutorTurn,
+  compactTeachingState,
+  guardModelTutorReply,
+  shouldEnterTutorLoop,
+} from './sageTutorLoop.js';
 
 
 
@@ -84,12 +90,62 @@ export const GUIDANCE_LEVELS = {
 
 };
 
+function tutorContextFromSession(session = {}) {
+  const ev = session.evidence || {};
+  return (
+    session.tutor_context || {
+      current_question: {
+        question_text: ev.farm_question || '',
+        student_last_wrong_answer: ev.last_wrong || '',
+        correct_answer: ev.correct_answer || '',
+        topic: session.concept_topic || '',
+        question_type: ev.question_type || null,
+        options: ev.options || [],
+        hint: ev.hint || null,
+      },
+      intervention_focus: {
+        concept_topic: session.concept_topic,
+        last_wrong_answer: ev.last_wrong,
+        correct_answer: ev.correct_answer,
+        current_question: ev.farm_question,
+        conversation_session: {
+          teaching_session: session.teaching_session || null,
+          phase: session.phase,
+          student_reason_key: session.student_reason_key,
+        },
+      },
+      frustration_score: ev.frustration_score ?? session.frustration_score,
+      previous_mistakes: ev.previous_mistakes || [],
+      answer_history: ev.answer_history || [],
+      student_profile: { display_name: session.student_name },
+      teaching_session: session.teaching_session || null,
+      force_insufficient_knowledge: Boolean(ev.force_insufficient_knowledge),
+    }
+  );
+}
 
+function applyTutorIfReady(session, studentMessage) {
+  const context = tutorContextFromSession(session);
+  if (!shouldEnterTutorLoop(session, context, studentMessage)) return null;
+  const turn = composeTutorTurn({
+    studentMessage,
+    context,
+    session,
+  });
+  if (!turn?.reply) return null;
+  return {
+    reply: turn.reply,
+    understanding: turn.intent || 'tutor',
+    guidance_level: GUIDANCE_LEVELS.REPAIR,
+    phase: 'support',
+    teaching_session: turn.teaching_session,
+    tutor_turn: turn,
+    nextAction: turn.nextAction,
+  };
+}
 
 /**
-
  * Snapshot immutable intervention cause at the moment Sage opens.
-
  */
 
 export function freezeInterventionSession(focus = {}, extras = {}) {
@@ -187,6 +243,18 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
       extras.switchCount ??
 
       null,
+
+    frustration_score:
+      extras.frustrationScore ??
+      metrics.frustration_score ??
+      focus.frustration_score ??
+      null,
+
+    previous_mistakes: extras.previousMistakes || focus.previous_mistakes || [],
+
+    question_type: extras.questionType || focus.question_type || null,
+
+    options: extras.options || focus.options || [],
 
   };
 
@@ -301,11 +369,23 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
     // Mutable turn state
 
-    phase: focus.conversation_phase || 'behavior_probe',
+    phase:
+      extras.phase ||
+      focus.conversation_phase ||
+      focus.conversation_session?.phase ||
+      'behavior_probe',
 
-    student_reason_key: null,
+    student_reason_key:
+      extras.student_reason_key ||
+      focus.conversation_session?.student_reason_key ||
+      focus.student_reason_key ||
+      null,
 
-    student_reason_label: null,
+    student_reason_label:
+      extras.student_reason_label ||
+      focus.conversation_session?.student_reason_label ||
+      focus.student_reason_label ||
+      null,
 
     guidance_level:
 
@@ -322,6 +402,14 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
     last_student_message: null,
 
     last_mentor_message: focus.spoken_opener || null,
+
+    teaching_session:
+      extras.teaching_session ||
+      focus.conversation_session?.teaching_session ||
+      focus.teaching_session ||
+      null,
+
+    tutor_context: extras.tutor_context || focus.tutor_context || null,
 
   };
 
@@ -439,6 +527,12 @@ function processFollowUpAfterSupport(session, studentMessage = '') {
 
   ) {
 
+    const tutor = applyTutorIfReady(
+      { ...session, student_reason_key: REASON_KEYS.WANTS_EXPLAIN, phase: 'support' },
+      studentMessage,
+    );
+    if (tutor) return tutor;
+
     return {
 
       reply: sanitizeKidSpeech(
@@ -488,6 +582,14 @@ function processFollowUpAfterSupport(session, studentMessage = '') {
   // Light adaptive science eval only if prior reason was conceptual
 
   if (needsScienceSupport(reason, session.code)) {
+
+    const tutor = applyTutorIfReady(session, studentMessage);
+
+    if (tutor) {
+
+      return tutor;
+
+    }
 
     const evaluation = evaluateStudentAnswer(studentMessage, concept, {
 
@@ -613,14 +715,27 @@ export function buildSessionFollowUp(session, studentMessage = '') {
 
     ) {
 
+      const tutorOpen = applyTutorIfReady(
+        { ...session, student_reason_key: REASON_KEYS.WANTS_EXPLAIN, phase: 'support' },
+        raw,
+      );
+      if (tutorOpen) {
+        return finalizeTurn(session, raw, tutorOpen.reply, {
+          understanding: 'want_explainer',
+          reason_key: REASON_KEYS.WANTS_EXPLAIN,
+          reason_label: raw.slice(0, 80),
+          guidance_level: GUIDANCE_LEVELS.REPAIR,
+          phase: 'support',
+          show_options: false,
+          teaching_session: tutorOpen.teaching_session,
+          tutor_turn: tutorOpen.tutor_turn,
+        });
+      }
+
       const reply = sanitizeKidSpeech(
-
         `${name}, I came because ${why}. You asked for the science idea — I'll share it simply. ` +
-
           `${softConceptBite(concept)} ` +
-
           `If you also want help with reading, timing, or confidence, say so and we can cover that too.`,
-
       );
 
       return finalizeTurn(session, raw, reply, {
@@ -645,31 +760,30 @@ export function buildSessionFollowUp(session, studentMessage = '') {
 
     if (choice?.reason_key) {
 
+      const sessionWithReason = {
+        ...session,
+        student_reason_key: choice.reason_key,
+        phase: 'support',
+      };
+      const tutorOpen =
+        needsScienceSupport(choice.reason_key, session.code) &&
+        applyTutorIfReady(sessionWithReason, raw);
       const reply = sanitizeKidSpeech(
-
-        buildBehaviorSupportReply({
-
-          name,
-
-          why,
-
-          concept,
-
-          reasonKey: choice.reason_key,
-
-          choiceLabel: choice.label || raw,
-
-          code: session.code,
-
-          farmQuestion: session.evidence?.farm_question,
-
-        }),
-
+        tutorOpen?.reply ||
+          buildBehaviorSupportReply({
+            name,
+            why,
+            concept,
+            reasonKey: choice.reason_key,
+            choiceLabel: choice.label || raw,
+            code: session.code,
+            farmQuestion: session.evidence?.farm_question,
+          }),
       );
 
       return finalizeTurn(session, raw, reply, {
 
-        understanding: 'behavior_answered',
+        understanding: tutorOpen ? 'tutor' : 'behavior_answered',
 
         reason_key: choice.reason_key,
 
@@ -681,7 +795,7 @@ export function buildSessionFollowUp(session, studentMessage = '') {
 
           session.guidance_level,
 
-          'behavior_answered',
+          tutorOpen ? 'concept_gap' : 'behavior_answered',
 
         ),
 
@@ -690,6 +804,10 @@ export function buildSessionFollowUp(session, studentMessage = '') {
         show_options: false,
 
         offer_mind_map: reasonNeedsMindMap(choice.reason_key),
+
+        teaching_session: tutorOpen?.teaching_session || null,
+
+        tutor_turn: tutorOpen?.tutor_turn || null,
 
       });
 
@@ -747,6 +865,10 @@ export function buildSessionFollowUp(session, studentMessage = '') {
 
     evaluation: after.evaluation,
 
+    teaching_session: after.teaching_session || null,
+
+    tutor_turn: after.tutor_turn || null,
+
   });
 
 }
@@ -776,6 +898,10 @@ function finalizeTurn(session, studentMessage, reply, meta = {}) {
     show_options: meta.show_options !== false && meta.phase === 'behavior_probe',
 
     offer_mind_map: Boolean(meta.offer_mind_map || session.offer_mind_map),
+
+    teaching_session: meta.teaching_session || session.teaching_session || null,
+
+    last_tutor_turn: meta.tutor_turn || session.last_tutor_turn || null,
 
     evaluations: [
 
@@ -878,17 +1004,41 @@ export function resolvePerformanceReply({
     }) &&
     modelTouchesPerformance(model, studentMessage, adaptive.session || frozen);
 
+  const tutorSession = adaptive.session || frozen;
+  const tutorTurn =
+    shouldEnterTutorLoop(tutorSession, tutorContextFromSession(tutorSession), studentMessage)
+      ? composeTutorTurn({
+          studentMessage,
+          context: tutorContextFromSession(tutorSession),
+          session: tutorSession,
+        })
+      : adaptive.tutor_turn || null;
+
   if (modelOk) {
+    const guarded = tutorTurn
+      ? guardModelTutorReply(
+          model,
+          tutorTurn,
+          compactTeachingState(
+            tutorContextFromSession(tutorSession),
+            tutorSession,
+          ),
+        )
+      : model;
     return {
-      reply: model,
+      reply: guarded,
       session: {
         ...(adaptive.session || frozen),
-        last_mentor_message: model,
+        last_mentor_message: guarded,
         last_student_message: studentMessage,
+        teaching_session: tutorTurn?.teaching_session || adaptive.session?.teaching_session,
+        last_tutor_turn: tutorTurn || adaptive.session?.last_tutor_turn,
       },
       source: 'model',
       evaluation: adaptive.evaluation,
       pending_options: adaptive.pending_options,
+      tutor_turn: tutorTurn,
+      nextAction: tutorTurn?.nextAction || null,
     };
   }
 

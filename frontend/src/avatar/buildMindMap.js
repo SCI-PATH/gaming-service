@@ -188,6 +188,7 @@ function mindMapProfile({ mastery, band, frustrationScore, frustrationLevel } = 
       explainDepth: mm.explainDepth || 'medium',
       simplifyLanguage: Boolean(mm.simplifyLanguage),
       frustrationLevel: adapt.level,
+      complexity: mm.complexity || 'focused',
     };
   }
 
@@ -303,8 +304,12 @@ export function buildPersonalizedMindMap({
     return buildEmptyTopicMap(topic || 'Science', prompt, profile, masteryInfo);
   }
 
-  // Cap for layout — weaker mastery gets a shorter, more scaffolded map
-  const list = attempts.slice(0, profile.maxAttempts);
+  // Cap for layout — high frustration maps THIS miss only
+  const complexity = profile.complexity || 'focused';
+  const list =
+    complexity === 'micro' || complexity === 'simplified'
+      ? attempts.slice(-1)
+      : attempts.slice(0, profile.maxAttempts);
   const usedRelated = new Set();
   const topicsSeen = new Set();
 
@@ -343,7 +348,7 @@ export function buildPersonalizedMindMap({
     );
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
-    const nodes = [
+    let nodes = [
       {
         id: `m${i}-wrong`,
         kind: 'wrong',
@@ -365,7 +370,9 @@ export function buildPersonalizedMindMap({
           hint: a.hint,
         },
       },
-      {
+    ];
+    if (complexity !== 'micro') {
+      nodes.push({
         id: `m${i}-ask`,
         kind: 'ask',
         label: shortLabel(clip(a.prompt, 26), 26) || 'The question',
@@ -373,8 +380,10 @@ export function buildPersonalizedMindMap({
         icon: '❓',
         body: `You missed this: “${clip(a.prompt, 220)}”`,
         meta: { prompt: a.prompt },
-      },
-      {
+      });
+    }
+    if (complexity === 'broader' || complexity === 'focused') {
+      nodes.push({
         id: `m${i}-link`,
         kind: 'link',
         label: shortLabel(related.label, 22),
@@ -382,9 +391,9 @@ export function buildPersonalizedMindMap({
         icon: '🔗',
         body: related.explanation,
         meta: {},
-      },
-    ];
-    if (profile.extraLinks) {
+      });
+    }
+    if (profile.extraLinks && complexity === 'broader') {
       const extra = catalogRelated(t, cleanRight, usedRelated);
       nodes.push({
         id: `m${i}-link2`,
@@ -470,6 +479,7 @@ export function buildPersonalizedMindMap({
     focusIds: branches.map((b) => b.id),
     missCount: totalMisses,
     conceptCount,
+    complexity,
     sourceAttempts: list,
     primaryAttempt: list[0],
     samplePrompts: list.map((a) => a.prompt).filter(Boolean),
