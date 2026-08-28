@@ -294,12 +294,14 @@ export function buildMindMapNarration(map) {
     const branchId = b.id || `miss-${i}`;
 
     let line = `Miss ${miss}, about ${topic}.`;
-    if (q) line += ` The question asked: ${clip(q, 140)}.`;
-    line += ` You picked ${clip(wrong, 60)}. The correct idea is ${clip(right, 60)}.`;
-    if (why) line += ` Why that pick was weak: ${clip(why, 180)}.`;
-    if (key && key !== right) line += ` Correct idea: ${clip(key, 160)}.`;
+    if (q) line += ` The question was: ${clip(q, 140)}.`;
+    line += ` You picked ${clip(wrong, 60)}.`;
+    if (why) line += ` Here's why that mix-up happens: ${clip(why, 320)}.`;
+    if (key && key !== right && key !== why) {
+      line += ` Here's why the science is true: ${clip(key, 280)}.`;
+    }
     if (b.farmLink || b.farm_link) {
-      line += ` On the farm: ${clip(b.farmLink || b.farm_link, 100)}.`;
+      line += ` On the farm: ${clip(b.farmLink || b.farm_link, 140)}.`;
     }
 
     parts.push({
@@ -405,12 +407,12 @@ export function buildMissCardNarration(branch) {
   const farm = branch.farmLink || branch.farm_link || '';
   const text = [
     `Let's look at miss ${miss} on ${topic}.`,
-    `You chose ${clip(wrong, 80)}. The correct idea is ${clip(right, 80)}.`,
-    why ? `Why that pick was weak: ${clip(why, 180)}.` : '',
+    `You chose ${clip(wrong, 80)}.`,
+    why ? `Here's why that mix-up happens: ${clip(why, 320)}.` : '',
     branch.keyExplain || branch.key_concept_explain
-      ? `Correct idea: ${clip(branch.keyExplain || branch.key_concept_explain, 160)}.`
+      ? `Here's why the science is true: ${clip(branch.keyExplain || branch.key_concept_explain, 280)}.`
       : '',
-    farm ? `On the farm: ${clip(farm, 120)}.` : '',
+    farm ? `On the farm: ${clip(farm, 140)}.` : '',
   ]
     .filter(Boolean)
     .join(' ');

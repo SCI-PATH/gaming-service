@@ -3,6 +3,11 @@
  * Uses Groq/LLM when available; always merges ground-truth misses so none are dropped.
  */
 import { chatCompletion, getLlamaConfig } from './llamaClient.mjs';
+import {
+  explainWhyWrong,
+  explainCorrectIdea,
+  preferConceptualText,
+} from './explainMisconception.mjs';
 
 const TOPIC_ICONS = {
   photosynthesis: '☀️',
@@ -123,24 +128,15 @@ function cleanCorrectAnswer(raw) {
   return s;
 }
 
-function fallbackWhyWrong(a) {
-  const w = cleanStudentAnswer(a.studentAnswer);
-  const r = cleanCorrectAnswer(a.correctAnswer);
-  const q = clip(a.prompt || a.question, 110);
-  if (!w || w.startsWith('(')) {
-    if (r && q) return `For “${q}”, the better idea is “${r}”.`;
-    if (r) return `The key idea is: ${r}.`;
-    if (q) return `Re-read the farm question: “${q}”.`;
-    return 'Review the farm science lesson for this question.';
-  }
-  if (r) {
-    return q
-      ? `On “${q}”, you picked “${w}”, but the better idea is “${r}”.`
-      : `You picked “${w}”, but the better science idea is “${r}”.`;
-  }
-  return q
-    ? `“${w}” does not answer “${q}”. Look for the idea that fits the farm question.`
-    : `“${w}” does not fit this farm science question. Try the idea that matches the question stem.`;
+function conceptualAttempt(a) {
+  return {
+    topic: a.topic,
+    prompt: a.prompt || a.question || '',
+    question: a.prompt || a.question || '',
+    studentAnswer: cleanStudentAnswer(a.studentAnswer),
+    correctAnswer: cleanCorrectAnswer(a.correctAnswer),
+    hint: a.hint || null,
+  };
 }
 
 /**
@@ -168,17 +164,11 @@ export function buildLocalMindMap(attempts) {
       question: a.prompt || a.question || '',
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
-      why_wrong: fallbackWhyWrong(a),
+      why_wrong: explainWhyWrong(conceptualAttempt(a)),
       key_concept: clip(right || topic, 40) || 'Key idea',
-      key_concept_explain: right
-        ? q
-          ? `Correct for “${clip(q, 80)}”: ${right}.`
-          : `Correct idea: ${right}. Use it on your farm crop story.`
-        : q
-          ? `Study the question “${clip(q, 90)}” and name the science idea it asks for.`
-          : `Remember the ${topic} idea that fits this farm question.`,
+      key_concept_explain: explainCorrectIdea(conceptualAttempt(a)),
       farm_link: q
-        ? `On the farm, apply the answer to: “${clip(q, 70)}”.`
+        ? `On the farm, this idea shows up whenever the crop story needs: “${clip(q, 70)}”.`
         : `Use the ${topic} idea on your farm crop story.`,
       color_index: i % 6,
     };
@@ -253,18 +243,29 @@ function mergeAiOntoAttempts(attempts, ai) {
       question: base.question || hint.question || '',
       student_answer: base.student_answer || hint.student_answer || '',
       correct_answer: base.correct_answer || hint.correct_answer || '',
-      why_wrong:
-        String(hint.why_wrong || hint.whyWrong || '').trim() || base.why_wrong,
+      why_wrong: preferConceptualText(
+        hint.why_wrong || hint.whyWrong,
+        base.why_wrong,
+        {
+          studentAnswer: base.student_answer,
+          correctAnswer: base.correct_answer,
+          prompt: base.question,
+        },
+      ),
       key_concept:
         String(hint.key_concept || hint.keyConcept || '').trim() ||
         base.key_concept,
-      key_concept_explain:
-        String(
-          hint.key_concept_explain ||
-            hint.keyConceptExplain ||
-            hint.explanation ||
-            '',
-        ).trim() || base.key_concept_explain,
+      key_concept_explain: preferConceptualText(
+        hint.key_concept_explain ||
+          hint.keyConceptExplain ||
+          hint.explanation,
+        base.key_concept_explain,
+        {
+          studentAnswer: base.student_answer,
+          correctAnswer: base.correct_answer,
+          prompt: base.question,
+        },
+      ),
       farm_link:
         String(hint.farm_link || hint.farmLink || '').trim() || base.farm_link,
       color_index: i % 6,
@@ -323,13 +324,13 @@ function buildPrompt(attempts, adaptation = null) {
 
   const depthGuide = {
     micro:
-      'Each branch: one tiny why_wrong (≤12 words), one micro key_concept_explain (≤18 words), farm_link ≤12 words.',
+      'Each branch: why_wrong = 1–2 short cause sentences (about 25–40 words). key_concept_explain = 1–2 short mechanism sentences. farm_link one short sentence. Never shrink into “you picked X, answer is Y”.',
     simple:
-      'Each branch: short friendly why_wrong (≤20 words), simple key_concept_explain (≤30 words), farm_link ≤18 words.',
+      'Each branch: why_wrong = 2 short sentences that name the mix-up. key_concept_explain = 2 sentences on how the correct idea works. farm_link one sentence.',
     medium:
-      'Each branch: clear why_wrong (1 short sentence), key_concept_explain (1–2 short sentences), farm_link one sentence.',
+      'Each branch: why_wrong = 2–3 sentences (discriminating feature + why the wrong model fails). key_concept_explain = 2–3 sentences teaching the mechanism. farm_link one sentence.',
     rich:
-      'Each branch: rich but kid-friendly why_wrong, fuller key_concept_explain, and a creative farm_link that connects ideas.',
+      'Each branch: fuller misconception repair (still Grade 6–9 words). Teach cause, definition, or structure–function. farm_link connects the idea to a crop story.',
   };
 
   const bandGuide = {
@@ -340,25 +341,51 @@ function buildPrompt(attempts, adaptation = null) {
       'Softest map. Tiny language. One step per branch. Reassure effort. Prefer the most important misses only.',
   };
 
-  return `You are an expert educational mind-map designer for students in Grades 6–9.
+  return `You are Sage, a research mentor for Grades 6–9. Your job is misconception repair: help the student learn WHY an idea fails and WHY the science is true. You are not an answer key.
 
 Create ONE clear interactive mind map from EVERY incorrect answer below.
 Personalization band (PRIVATE — never write these words on the map): frustration_level=${level}, tone=${tone}, explain_depth=${depth}.
 ${bandGuide[level] || bandGuide.moderate}
 ${depthGuide[depth] || depthGuide.medium}
-${simplify ? 'Use very simple Grade-6 words. Avoid long clauses.' : 'Use clear school language.'}
+${simplify ? 'Use very simple Grade-6 words. Avoid long clauses. Still include a real because/how sentence.' : 'Use clear school language.'}
 This request is already capped to ${attempts.length} miss(es) for personalization (maxBranches=${maxBranches}).
+
+Pedagogy (this is the contribution — follow it strictly):
+- why_wrong MUST be a CONTRASTIVE EXPLANATION: name the scientific mix-up (what job the wrong idea actually does, or why it does not answer THIS stem) and the discriminating feature that separates it from the correct idea.
+- key_concept_explain MUST be a MINI-LESSON: how the correct idea works in nature (definition, cause, structure–function, or process). Teach why it is true.
+- For True/False: do NOT write “you selected False but the answer is True”. Unpack the claim (prefixes, definitions, processes) so the student can judge the sentence next time.
+- Use because / which means / is for / named for / happens when. Farm analogies are welcome when they teach the mechanism.
+
+FORBIDDEN in why_wrong and key_concept_explain (reject these patterns):
+- “you picked/chose/selected X, but the (better/correct) idea/answer is Y”
+- “On [question], you picked X, but …”
+- “Correct for [question]: [answer]”
+- Repeating the question plus both answers with no mechanism
+- Shame words: frustrated, struggling, weak, dummy, stupid
+
+GOOD example:
+Q: Plants that have two seed lobes are called dicotyledonous plants.
+Wrong: False. Right: True.
+BAD why_wrong: You selected False, but the answer is True.
+GOOD why_wrong: This question is checking a name. “Di-” means two, and cotyledons are seed leaves, so two seed lobes is exactly how dicots are defined. False would reject that naming rule, not catch a trick.
+GOOD key_concept_explain: Dicotyledonous (dicot) plants are named for two seed leaves. That definition is why the statement is true.
+
+GOOD example 2:
+Q: How do flowering plants primarily reproduce?
+Wrong: Using leaves to store water. Right: Through flowers that produce seeds.
+BAD why_wrong: You picked leaves storing water, but the better idea is flowers that produce seeds.
+GOOD why_wrong: Storing water in leaves is a survival job, not making offspring. Reproduction in flowering plants happens when flowers produce seeds (often after pollen moves).
+GOOD key_concept_explain: Flowering plants make the next generation in the flower, where pollen and ovules meet and seeds form.
 
 Rules:
 1. Output ONLY valid JSON (no markdown, no prose outside JSON).
 2. Include EXACTLY ${attempts.length} branches — one per miss, miss_index 1..${attempts.length}.
 3. Do NOT invent extra mistakes. Do NOT drop any miss.
-4. Keep language encouraging and age-appropriate. Never say frustrated/struggling/weak.
-5. Use farm / plants analogies when natural.
-6. Never invent a different correct answer than the one given — copy correct_answer from input when present.
-7. Every why_wrong / key_concept_explain / farm_link MUST answer THAT branch's question text — not a vague neighboring topic.
-8. summary and big_picture must match the LIVE personalization band (${tone}, frustration_level=${level}).
-9. If a correct_answer looks like an API/grading error, ignore it and explain from the question stem only.
+4. Keep language encouraging and age-appropriate.
+5. Never invent a different correct answer than the one given — copy correct_answer from input when present.
+6. Every why_wrong / key_concept_explain / farm_link MUST be about THAT branch's question — not a vague neighboring topic.
+7. summary and big_picture must match the LIVE personalization band (${tone}, frustration_level=${level}).
+8. If a correct_answer looks like an API/grading error, ignore it and explain from the question stem only.
 
 Incorrect answers (ground truth — each branch is one student miss):
 ${JSON.stringify(payload, null, 2)}
@@ -378,10 +405,10 @@ JSON schema:
       "question": "copy from input",
       "student_answer": "copy from input",
       "correct_answer": "copy from input",
-      "why_wrong": "friendly why their pick was weak",
+      "why_wrong": "contrastive explanation of the mix-up (mechanism, not score restatement)",
       "key_concept": "short correct concept label",
-      "key_concept_explain": "simple explanation",
-      "farm_link": "how it shows up on a farm"
+      "key_concept_explain": "why that science idea is true (mini-lesson)",
+      "farm_link": "how the mechanism shows up on a farm"
     }
   ]
 }`;
@@ -435,13 +462,13 @@ export async function generateMindMapFromMistakes(body = {}) {
         {
           role: 'system',
           content:
-            'You design personalized student mind maps. Reply with JSON only. Always include one branch per incorrect answer given. Never mention frustration scores to students.',
+            'You design personalized student mind maps for misconception repair. Reply with JSON only. why_wrong must explain the scientific mix-up; key_concept_explain must teach why the correct idea is true. Never restate “you picked X, the answer is Y”. Always include one branch per incorrect answer given. Never mention frustration scores to students.',
         },
         { role: 'user', content: buildPrompt(capped, adaptation) },
       ],
       maxTokens: Math.max(
-        900,
-        Number(process.env.MINDMAP_MAX_TOKENS || 1200) || 1200,
+        1400,
+        Number(process.env.MINDMAP_MAX_TOKENS || 1800) || 1800,
       ),
       temperature: adaptation.level === 'very_high' ? 0.25 : 0.35,
     });

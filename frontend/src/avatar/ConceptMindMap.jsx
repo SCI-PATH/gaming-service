@@ -12,6 +12,7 @@ import {
   resolveLiveSpeechIndex,
   tokenizeMapText,
 } from './speechSync.js';
+import { downloadMindMap } from './downloadMindMap.js';
 
 const COLORS = [
   { stroke: '#c45c5c', fill: '#fde8e8', bar: '#c45c5c' },
@@ -198,6 +199,7 @@ export default function ConceptMindMap({
   const [note, setNote] = useState('');
   const [activeId, setActiveId] = useState(null);
   const [explored, setExplored] = useState(() => new Set());
+  const [downloadState, setDownloadState] = useState('idle');
   const cardRefs = useRef({});
   const focusPaneRef = useRef(null);
 
@@ -282,6 +284,7 @@ export default function ConceptMindMap({
       next.add(id);
       return next;
     });
+    if (compact) return;
     const el = cardRefs.current[id];
     if (el && typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -292,7 +295,7 @@ export default function ConceptMindMap({
         block: 'nearest',
       });
     }, 200);
-  }, [speechFocus?.branchId]);
+  }, [speechFocus?.branchId, compact]);
 
   const map = liveMap || seedMap;
   const branches = toDisplayBranches(map);
@@ -375,6 +378,16 @@ export default function ConceptMindMap({
   };
 
   const n = branches.length;
+  const gridColumns =
+    n <= 1
+      ? '1fr'
+      : n === 2
+        ? '1fr 1fr'
+        : compact && n >= 5
+          ? '1fr 1fr 1fr'
+          : n === 3 && !compact
+            ? '1fr 1fr 1fr'
+            : '1fr 1fr';
   const speechBranchId = speechFocus?.branchId || null;
   const overviewOn =
     speechFocus?.kind === 'overview' || speechFocus?.kind === 'intro';
@@ -424,18 +437,20 @@ export default function ConceptMindMap({
             on={overviewOn}
           />
         </h3>
-        <p className="mm-lead">
-          <Sync
-            fieldKey="summary"
-            text={
-              map.summary ||
-              map.personalizedNote ||
-              `One card per wrong answer. All ${n} are shown together.`
-            }
-            on={overviewOn}
-          />
-        </p>
-        {map.bigPicture || map.centralIdea ? (
+        {compact ? null : (
+          <p className="mm-lead">
+            <Sync
+              fieldKey="summary"
+              text={
+                map.summary ||
+                map.personalizedNote ||
+                `One card per wrong answer. All ${n} are shown together.`
+              }
+              on={overviewOn}
+            />
+          </p>
+        )}
+        {!compact && (map.bigPicture || map.centralIdea) ? (
           <p
             className={`mm-big${speechFocus?.kind === 'overview' ? ' is-speech' : ''}`}
           >
@@ -453,9 +468,33 @@ export default function ConceptMindMap({
             Building AI mind map for every miss…
           </div>
         ) : null}
-        {note && status !== 'loading' && softProviderNote(note) ? (
+        {!compact && note && status !== 'loading' && softProviderNote(note) ? (
           <p className="mm-note">{softProviderNote(note)}</p>
         ) : null}
+        <button
+          type="button"
+          className={`mm-download${downloadState === 'done' ? ' is-done' : ''}`}
+          aria-label="Download mind map as an image"
+          disabled={!branches.length || downloadState === 'saving'}
+          onClick={() => {
+            if (downloadState === 'saving') return;
+            setDownloadState('saving');
+            void downloadMindMap(map, branches)
+              .then(() => {
+                setDownloadState('done');
+                window.setTimeout(() => setDownloadState('idle'), 1800);
+              })
+              .catch(() => {
+                setDownloadState('idle');
+              });
+          }}
+        >
+          {downloadState === 'saving'
+            ? 'Saving…'
+            : downloadState === 'done'
+              ? 'Saved'
+              : 'Download map'}
+        </button>
       </header>
 
       <div className="mm-hub-row" role="tablist" aria-label="All misses">
@@ -494,14 +533,11 @@ export default function ConceptMindMap({
       <div
         className="mm-grid"
         style={{
-          gridTemplateColumns:
-            n === 1
+          gridTemplateColumns: compact
+            ? n <= 1
               ? '1fr'
-              : n === 2
-                ? '1fr 1fr'
-                : n === 3
-                  ? '1fr 1fr 1fr'
-                  : '1fr 1fr',
+              : '1fr 1fr'
+            : gridColumns,
         }}
       >
         {branches.map((b) => {
@@ -572,12 +608,26 @@ export default function ConceptMindMap({
                   )}
                 </p>
               ) : null}
+              {compact && selected && (b.why || b.keyExplain) ? (
+                <p className="mm-card-why">
+                  <span>{b.why ? 'Why' : 'How it works'}</span>{' '}
+                  {speechOn ? (
+                    <Sync
+                      fieldKey={b.why ? 'why' : 'explain'}
+                      text={b.why || b.keyExplain}
+                      on
+                    />
+                  ) : (
+                    b.why || b.keyExplain
+                  )}
+                </p>
+              ) : null}
             </button>
           );
         })}
       </div>
 
-      {active ? (
+      {active && !compact ? (
         <article
           ref={focusPaneRef}
           className={`mm-focus${speechBranchId === active.id ? ' is-speech' : ''}`}
@@ -592,7 +642,7 @@ export default function ConceptMindMap({
           </h4>
           {active.why ? (
             <p className="mm-focus-p">
-              <strong>Why that pick was weak:</strong>{' '}
+              <strong>Why this mix-up happens:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="why" text={active.why} on />
               ) : (
@@ -602,7 +652,7 @@ export default function ConceptMindMap({
           ) : null}
           {active.keyExplain ? (
             <p className="mm-focus-p">
-              <strong>Correct idea:</strong>{' '}
+              <strong>Why the science is true:</strong>{' '}
               {speechBranchId === active.id ? (
                 <Sync fieldKey="explain" text={active.keyExplain} on />
               ) : (
@@ -631,7 +681,7 @@ export default function ConceptMindMap({
         </article>
       ) : null}
 
-      {Array.isArray(map.studyPath) && map.studyPath.length ? (
+      {!compact && Array.isArray(map.studyPath) && map.studyPath.length ? (
         <ol className="mm-path">
           {map.studyPath.map((step, i) => (
             <li key={`${step}-${i}`}>{step}</li>

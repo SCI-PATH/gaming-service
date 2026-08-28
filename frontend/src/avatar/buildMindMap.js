@@ -14,6 +14,12 @@ import {
   resolveTopicKey,
 } from './conceptMaps.js';
 import { safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
+import {
+  explainWhyWrong,
+  explainCorrectIdea,
+} from './explainMisconception.js';
+
+export { explainWhyWrong, explainCorrectIdea } from './explainMisconception.js';
 
 const BRANCH_COLORS = [
   { key: 'rose', stroke: '#c45c5c', fill: '#fde8e8', accent: '#9a3030' },
@@ -94,68 +100,6 @@ export function buildMissAttempt(questionData, selectedText = null) {
     grade: facts.grade,
     at: Date.now(),
   };
-}
-
-export function explainWhyWrong(attempt) {
-  const wrong =
-    friendlyWrongAnswer(attempt.studentAnswer, 80) ||
-    String(attempt.studentAnswer || '').trim();
-  const right = safeScienceLine(attempt.correctAnswer, '');
-  const q = String(attempt.prompt || attempt.question || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const qBit = q ? ` For “${q.length > 90 ? `${q.slice(0, 89)}…` : q}”` : '';
-
-  if (
-    !wrong ||
-    wrong.startsWith('(') ||
-    /ran out of time/i.test(wrong) ||
-    /^(id|guid|uuid)$/i.test(wrong)
-  ) {
-    return `You need the correct science idea${qBit}: ${right || 'see the lesson key idea'}.`;
-  }
-  if (right && wrong.toLowerCase() === right.toLowerCase()) {
-    return `That matches the correct idea (${right}).`;
-  }
-
-  const w = wrong.toLowerCase();
-  if (/petal|leaf tip|leaf vein/.test(w)) {
-    return `"${wrong}" is a plant part, but not the pollen-maker.`;
-  }
-  if (/oxygen|nitrogen|helium/.test(w) && /carbon dioxide|co2/i.test(right)) {
-    return `Plants mainly take in carbon dioxide for food-making—not "${wrong}".`;
-  }
-  if (/evaporation|erosion|condensation/.test(w)) {
-    return `"${wrong}" is a different Earth process—not pollen transfer.`;
-  }
-  if (/making metal|rocks|soil disappear|thunder/.test(w)) {
-    return `"${wrong}" is not a real job for this farm science idea.`;
-  }
-  if (right) {
-    return `You chose "${wrong}".${qBit} The correct idea is "${right}".`;
-  }
-  return `You chose "${wrong}".${qBit} Look for the science idea that answers the farm question.`;
-}
-
-export function explainCorrectIdea(attempt) {
-  const right = safeScienceLine(attempt.correctAnswer, null);
-  const hint = safeScienceLine(attempt.hint, null);
-  const topic = attempt.topic || 'Science';
-  const q = String(attempt.prompt || attempt.question || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (right && q) {
-    return `Correct for “${q.length > 70 ? `${q.slice(0, 69)}…` : q}”: ${right}.${hint ? ` ${hint}` : ''}`;
-  }
-  if (right && hint) {
-    return `Correct: ${right}. ${hint}`;
-  }
-  if (right) {
-    return `Correct: ${right}. Link it to ${topic} on the farm.`;
-  }
-  if (hint) return hint;
-  if (q) return `Re-read the farm question and name its key science idea: “${q.length > 90 ? `${q.slice(0, 89)}…` : q}”.`;
-  return `Re-read the key idea under ${topic}.`;
 }
 
 function collectAttempts({
