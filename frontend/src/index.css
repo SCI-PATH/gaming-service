@@ -4790,7 +4790,17 @@ body {
   overflow: visible;
   padding: 18px 4px 4px;
   flex: 1 1 auto;
-  align-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.avatar-solo-sage.is-voice-only .sage-lesson {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 38vh;
+  overflow-y: auto;
 }
 
 .avatar-letter-row {
@@ -5909,9 +5919,10 @@ body {
 /* Right pane â€” professional circular AI agent */
 .avatar-split-right.is-sage-only {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px 16px 28px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 12px 10px 12px;
   border: 1px solid rgba(80, 160, 200, 0.22);
   border-radius: 16px;
   background:
@@ -5920,11 +5931,20 @@ body {
   overflow: hidden;
 }
 
+.avatar-split-right.is-sage-only .sage-lesson {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding-right: 4px;
+}
+
 .avatar-split-right.is-sage-only .sage-avatar {
   width: 100%;
-  height: 100%;
+  height: auto;
   max-width: none;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  max-height: 42%;
   min-height: 0;
   display: flex;
   flex-direction: column;

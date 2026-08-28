@@ -172,7 +172,7 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
       why_wrong: explainWhyWrong(conceptual, voice),
-      key_concept: clip(scienceKeyIdea(conceptual), 48) || clip(right || topic, 40) || 'Key idea',
+      key_concept: clip(scienceKeyIdea(conceptual), 90) || clip(right || topic, 40) || 'Key idea',
       key_concept_explain: explainCorrectIdea(conceptual, voice),
       farm_link: scienceKeyIdea(conceptual)
         ? `Hold this idea for the farm question: ${clip(scienceKeyIdea(conceptual), 80)}.`

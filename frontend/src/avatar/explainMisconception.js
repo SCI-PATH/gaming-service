@@ -955,10 +955,13 @@ function conceptPurpose(text, attempt, side) {
 export function scienceKeyIdea(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const right = displayChoice(attempt.correctAnswer);
-  const idea = lookupCorrectIdea(right, prompt, attempt.topic);
+  const claim = unpackScienceClaim(prompt, attempt.topic);
+  if (isTrueFalseToken(right) && claim?.fact) return firstSentence(claim.fact);
+  const idea = isTrueFalseToken(right)
+    ? null
+    : lookupCorrectIdea(right, prompt, attempt.topic);
   if (idea?.label) return idea.label;
   if (idea?.what) return firstSentence(idea.what);
-  const claim = unpackScienceClaim(prompt, attempt.topic);
   if (claim?.fact) return firstSentence(claim.fact);
   const job = questionJob(attempt);
   if (job?.purpose) return job.purpose;
@@ -1046,15 +1049,15 @@ function comparisonBlock(attempt, band) {
       attempt.topic,
     );
     const fact = firstSentence(part?.fact || '');
-    const distinction = isAffirmative(attempt.correctAnswer)
-      ? fact || 'the sentence matches the science, so True fits'
-      : fact
-        ? `this part of the claim does not hold: ${fact}`
-        : 'a key part of the claim does not match the science';
-    if (band === 'micro' || band === 'simple') {
-      return `The important difference is ${distinction}.`;
+    const wrong = displayChoice(attempt.studentAnswer);
+    if (isAffirmative(attempt.correctAnswer)) {
+      return band === 'micro' || band === 'simple'
+        ? fact || 'The sentence is true.'
+        : `You chose ${wrong}, but the sentence is true. ${fact}`;
     }
-    return `Your answer → a True/False judgment. Correct answer → the science in the sentence. The important difference is ${distinction}.`;
+    return band === 'micro' || band === 'simple'
+      ? fact || 'The sentence is not true.'
+      : `You chose ${wrong}, but the sentence is not true. ${fact}`;
   }
 
   const body = `The important difference is ${distinction}.`;
@@ -1209,6 +1212,29 @@ export function explainCorrectIdea(attempt = {}, voice = {}) {
   const band = voiceBand(voice);
   const idea = scienceKeyIdea(attempt);
   return clip(idea, band === 'micro' ? 160 : 260);
+}
+
+/** Build the five SAGE teaching sections from a farm miss. */
+export function teachingLessonFromMiss(input = {}, voice = {}) {
+  const prompt = norm(input.prompt || input.question || input.questionText);
+  const studentAnswer = norm(
+    input.studentAnswer || input.lastWrong || input.student_last_wrong_answer,
+  );
+  const correctAnswer = norm(input.correctAnswer || input.correct_answer);
+  const topic = norm(input.topic || '');
+  if (!prompt || !studentAnswer || !correctAnswer) return null;
+  if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
+  return composeFiveStepLesson(
+    {
+      prompt,
+      question: prompt,
+      studentAnswer,
+      correctAnswer,
+      topic,
+      hint: input.hint,
+    },
+    voice,
+  );
 }
 
 export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {

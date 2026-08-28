@@ -24,6 +24,10 @@ import {
 import ConceptMindMap from './ConceptMindMap.jsx';
 import SageAvatar from './SageAvatar.jsx';
 import SageLessonPanel from './SageLessonPanel.jsx';
+import {
+  formatLessonSpeech,
+  teachingLessonFromMiss,
+} from './explainMisconception.js';
 import MindMapHistoryDrawer from './MindMapHistoryDrawer.jsx';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
 import {
@@ -323,6 +327,52 @@ export default function AvatarAssistantModal({
     misconceptions,
     mindMapProp,
     telemetry.mindMap,
+  ]);
+
+  const sageLesson = useMemo(() => {
+    const fromTurn =
+      tutorTurn?.structured?.teaching?.sections ||
+      tutorTurn?.teaching_session?.sections;
+    if (Array.isArray(fromTurn) && fromTurn.length) {
+      return { sections: fromTurn, check: tutorTurn.interactionQuestion };
+    }
+    const q = quiz?.questionData || quiz || {};
+    const b = mindMap?.branches?.[0] || {};
+    const ev = performanceSessionRef.current?.evidence || {};
+    return teachingLessonFromMiss(
+      {
+        prompt:
+          interventionFocus?.current_question ||
+          ev.farm_question ||
+          q.prompt ||
+          q.question ||
+          b.prompt ||
+          b.question,
+        studentAnswer:
+          interventionFocus?.last_wrong_answer ||
+          ev.last_wrong ||
+          b.studentAnswer ||
+          q.studentAnswer,
+        correctAnswer:
+          interventionFocus?.correct_answer ||
+          ev.correct_answer ||
+          b.correctAnswer ||
+          q.correctAnswer,
+        topic: interventionFocus?.concept_topic || q.topic || b.topic,
+        hint: q.hint || b.hint,
+      },
+      {
+        frustrationLevel:
+          telemetry.frustrationLevel || m.frustration_level || 'moderate',
+      },
+    );
+  }, [
+    tutorTurn,
+    quiz,
+    mindMap,
+    interventionFocus,
+    telemetry.frustrationLevel,
+    m.frustration_level,
   ]);
 
   // Keep latest input for stop-to-send (avoids stale React state on Mic release)
@@ -1242,6 +1292,12 @@ export default function AvatarAssistantModal({
         resolved.reply ||
           "I'm still with you. Say that idea again in one short sentence?",
       );
+      if (
+        sageLesson?.sections?.length &&
+        resolved.session?.phase === 'support'
+      ) {
+        reply = sanitizeKidSpeech(formatLessonSpeech(sageLesson));
+      }
 
       if (result.avatarMood) setMood(result.avatarMood);
 
@@ -1495,6 +1551,9 @@ export default function AvatarAssistantModal({
                 onStop={stopSpeaking}
                 size="hero"
               />
+              {sageLesson?.sections?.length ? (
+                <SageLessonPanel sections={sageLesson.sections} />
+              ) : null}
             </aside>
           </div>
         ) : (
@@ -1516,6 +1575,9 @@ export default function AvatarAssistantModal({
               onStop={stopSpeaking}
               size="lg"
             />
+            {sageLesson?.sections?.length ? (
+              <SageLessonPanel sections={sageLesson.sections} />
+            ) : null}
           </div>
         )}
 
@@ -1592,19 +1654,6 @@ export default function AvatarAssistantModal({
 
         {tutorTurn && !behaviorOptions.length ? (
           <div className="avatar-tutor-panel" aria-live="polite">
-            <SageLessonPanel
-              sections={
-                tutorTurn.structured?.teaching?.sections ||
-                tutorTurn.teaching_session?.sections ||
-                []
-              }
-            />
-            {!(
-              tutorTurn.structured?.teaching?.sections ||
-              tutorTurn.teaching_session?.sections
-            ) && tutorTurn.interactionQuestion ? (
-              <p className="avatar-tutor-question">{tutorTurn.interactionQuestion}</p>
-            ) : null}
             {tutorTurn.nextAction === 'INSUFFICIENT_KNOWLEDGE' ? (
               <p className="avatar-tutor-fallback">
                 Sage will not guess a new science fact here. Re-read the farm

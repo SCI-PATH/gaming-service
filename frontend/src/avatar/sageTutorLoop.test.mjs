@@ -360,9 +360,11 @@ describe('mind-map miss cards match tutor loop', () => {
     assert.equal(/you know that/i.test(why), false);
     assert.equal(/\bexam\b/i.test(why), false);
     assert.equal(/write this/i.test(idea), false);
-    assert.match(why, /di-|two|seed|dicot/i);
+    assert.equal(/true\/false judgment|science in the sentence/i.test(why), false);
+    assert.match(why, /chose false|sentence is true|two seed|dicot/i);
     assert.match(key, /dicot|seed/i);
     assert.equal(/^(true|false)$/i.test(key), false);
+    assert.equal(/plant grou/i.test(key), false);
   });
 
   it('uses a calmer shorter card at high frustration', () => {
