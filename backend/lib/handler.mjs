@@ -348,6 +348,7 @@ export async function handleAvatarChat(body = {}) {
       provider: result.provider,
       model: result.model,
       fallback: false,
+      knowledgeFallback: Boolean(result.knowledgeFallback),
       avatarMood: mood,
       intervention_mode: mode,
     };
@@ -453,24 +454,43 @@ export async function handleAvatarChatStream(body = {}, write) {
 
   const messages = buildMessages(body);
   let full = '';
+  let streamMeta = {
+    provider: cfg.provider,
+    model: cfg.model,
+    knowledgeFallback: false,
+  };
 
   try {
-    await streamChatCompletion({
+    const streamed = await streamChatCompletion({
       messages,
-      onMeta: (m) =>
+      onMeta: (m) => {
+        streamMeta = {
+          provider: m.provider || cfg.provider,
+          model: m.model || cfg.model,
+          knowledgeFallback: Boolean(m.knowledgeFallback || m.fallback),
+        };
         send({
           type: 'meta',
-          provider: m.provider,
-          model: m.model,
+          provider: streamMeta.provider,
+          model: streamMeta.model,
           fallback: false,
+          knowledgeFallback: streamMeta.knowledgeFallback,
           avatarMood: mood,
           intervention_mode: mode,
-        }),
+        });
+      },
       onToken: (t) => {
         full += t;
         send({ type: 'token', text: t });
       },
     });
+    if (streamed?.provider) {
+      streamMeta = {
+        provider: streamed.provider,
+        model: streamed.model || streamMeta.model,
+        knowledgeFallback: Boolean(streamed.knowledgeFallback),
+      };
+    }
     if (!full.trim()) {
       full = buildFallbackReply(context, studentMessage, history);
       send({ type: 'token', text: full });
@@ -502,9 +522,10 @@ export async function handleAvatarChatStream(body = {}, write) {
     send({
       type: 'done',
       reply: cleaned,
-      provider: cfg.provider,
-      model: cfg.model,
+      provider: streamMeta.provider,
+      model: streamMeta.model,
       fallback: false,
+      knowledgeFallback: streamMeta.knowledgeFallback,
       avatarMood: mood,
       intervention_mode: mode,
     });
