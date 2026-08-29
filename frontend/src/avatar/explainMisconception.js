@@ -313,7 +313,7 @@ const STUDENT_WORLD_IDEAS = [
       'Leaves do not take in hydrogen gas the way they take in carbon dioxide for photosynthesis.',
   },
   {
-    test: /store water|storing water|leaves to store|water in leaves|succulent|fleshy leaf/,
+    test: /store water|storing water|leaves that store|leaves to store|water in leaves|succulent|fleshy leaf/,
     label: 'leaves that store water',
     purpose: 'water storage and survival',
     bodyShort:
@@ -617,7 +617,7 @@ const CORRECT_WORLD_IDEAS = [
       'Flowers are reproductive structures in flowering plants. They are involved in reproduction that can lead to seed formation. A seed contains a developing embryo and can grow into a new plant under suitable conditions. This is related to plant reproduction and seed formation.',
   },
   {
-    test: /store water|storing water|leaves to store|succulent/,
+    test: /store water|storing water|leaves that store|leaves to store|succulent/,
     label: 'leaves that store water',
     purpose: 'water storage and survival',
     what: 'Some plants have leaves adapted to store water.',
@@ -944,21 +944,21 @@ export function shortConceptLabel(text, max = 42) {
 }
 
 function conceptPurpose(text, attempt, side) {
-  const idea =
-    side === 'correct'
-      ? lookupCorrectIdea(text, attempt.prompt || attempt.question, attempt.topic) ||
-        lookupStudentIdea(text)
-      : lookupStudentIdea(text) ||
-        lookupCorrectIdea(text, attempt.prompt || attempt.question, attempt.topic);
+  const idea = verifiedIdeaFor(text, attempt, side);
   if (idea?.purpose) return idea.purpose;
+  if (idea?.usedFor) return idea.usedFor;
   const job = questionJob(attempt);
   if (side === 'correct' && job?.purpose) return job.purpose;
   const t = lower(text);
-  if (/store water|storing water|succulent/.test(t)) return 'water storage and survival';
-  if (/flower|seed|reproduc/.test(t)) return 'reproduction';
-  if (/helium/.test(t)) return 'a light balloon gas';
+  if (/store water|storing water|leaves that store|succulent/.test(t)) {
+    return 'water storage and survival';
+  }
+  if (/flower|seed|reproduc/.test(t) && !/store water/.test(t)) {
+    return 'reproduction and seed formation';
+  }
+  if (/helium/.test(t)) return 'a light unreactive gas used in balloons';
   if (/carbon dioxide|co2|co₂/.test(t)) return 'the gas plants take in to make food';
-  if (/oxygen/.test(t)) return 'the gas we breathe / plants give off';
+  if (/oxygen/.test(t)) return 'the gas animals breathe; plants usually give it off in light';
   return '';
 }
 
@@ -1042,15 +1042,106 @@ export function canDescribeScientifically(text, attempt = {}, side = 'student') 
 }
 
 function descriptionCard(title, idea, body, band) {
-  const example =
-    band === 'micro' || band === 'simple' ? '' : norm(idea?.example || '');
+  const example = idea?.example || idea?.how || firstSentence(body);
   return {
     title,
     concept: idea?.label || firstSentence(idea?.what || body) || '',
     scientificDescription: body,
+    scientificDefinition: body,
     function: idea?.purpose || idea?.usedFor || '',
-    example,
+    example: example || firstSentence(body),
   };
+}
+
+const VAGUE_SCIENCE = /\b(one is about|the other is about|this thing|that concept|the former|the latter)\b/i;
+
+export function isVagueOrIncomplete(text) {
+  const s = norm(text);
+  if (!s) return true;
+  if (VAGUE_SCIENCE.test(s)) return true;
+  if (/this is a (science|plant|biological) (concept|function|idea)/i.test(s)) return true;
+  if (/related to plants\.?$/i.test(s) && s.length < 48) return true;
+  return false;
+}
+
+function completeConcept(text, attempt, side, band) {
+  const title = side === 'student' ? 'Your Answer' : 'Correct Answer';
+  if (isTrueFalseToken(text)) {
+    const science = statementScience(attempt, band);
+    const idea = science.idea;
+    const fact = firstSentence(science.text || idea?.what || '');
+    if (side === 'correct') {
+      const trueKey = isAffirmative(text);
+      const definition = trueKey
+        ? `The statement is scientifically true. The specific claim that holds is: ${fact}`
+        : `A key scientific claim in the sentence does not hold. The scientifically correct process is: ${science.text || fact}`;
+      const scientificFunction = trueKey
+        ? 'this sentence is a scientifically accurate claim'
+        : 'this sentence is not a scientifically accurate claim';
+      return {
+        title,
+        concept: idea?.label || scienceKeyIdea(attempt) || displayChoice(text),
+        scientificDefinition: definition,
+        scientificFunction,
+        example: idea?.example || idea?.how || fact,
+      };
+    }
+    const definition = science.text;
+    const scientificFunction =
+      idea?.purpose || idea?.usedFor || 'the science named in this sentence';
+    const example = idea?.example || idea?.how || firstSentence(definition);
+    return {
+      title,
+      concept: idea?.label || scienceKeyIdea(attempt) || displayChoice(text),
+      scientificDefinition: definition,
+      scientificFunction,
+      example: example || firstSentence(definition),
+    };
+  }
+  const idea = verifiedIdeaFor(text, attempt, side);
+  const definition = ideaBody(idea, band);
+  const scientificFunction =
+    idea?.purpose || idea?.usedFor || conceptPurpose(text, attempt, side);
+  const example = idea?.example || idea?.how || firstSentence(definition);
+  return {
+    title,
+    concept: idea?.label || shortConceptLabel(text, 72) || displayChoice(text),
+    scientificDefinition: definition,
+    scientificFunction,
+    example: example || firstSentence(definition),
+  };
+}
+
+export function validateStructuredLesson(lesson) {
+  if (!lesson || lesson.insufficientKnowledge) return false;
+  const student = lesson.studentAnswer;
+  const correct = lesson.correctAnswer;
+  const comparison = lesson.comparisonFields || lesson.scientificComparison;
+  if (!student || !correct || !comparison || typeof student === 'string') return false;
+  const why =
+    comparison.whyCorrectAnswerFitsQuestion || comparison.whyCorrectAnswerFits;
+  const required = [
+    student.scientificDefinition,
+    student.scientificFunction,
+    student.example,
+    student.concept,
+    correct.scientificDefinition,
+    correct.scientificFunction,
+    correct.example,
+    correct.concept,
+    comparison.studentConcept,
+    comparison.studentConceptFunction,
+    comparison.correctConcept,
+    comparison.correctConceptFunction,
+    comparison.keyScientificDifference,
+    why,
+  ];
+  if (required.some((v) => !norm(v))) return false;
+  if (required.some((v) => isVagueOrIncomplete(v))) return false;
+  if (student.scientificDefinition.length < 24 || correct.scientificDefinition.length < 24) {
+    return false;
+  }
+  return true;
 }
 
 function selectedConceptBlock(attempt, band) {
@@ -1086,7 +1177,7 @@ function correctConceptBlock(attempt, band) {
 
 function scientificSimilarity(studentIdea, correctIdea, attempt) {
   const blob = lower(
-    `${studentIdea?.label || ''} ${studentIdea?.purpose || ''} ${attempt.studentAnswer || ''} ${correctIdea?.label || ''} ${correctIdea?.purpose || ''} ${attempt.correctAnswer || ''} ${attempt.topic || ''}`,
+    `${studentIdea?.concept || studentIdea?.label || ''} ${studentIdea?.scientificFunction || studentIdea?.purpose || ''} ${correctIdea?.concept || correctIdea?.label || ''} ${correctIdea?.scientificFunction || correctIdea?.purpose || ''} ${attempt.topic || ''}`,
   );
   if (/helium|oxygen|nitrogen|hydrogen|carbon dioxide|co2|\bgas/.test(blob)) {
     return 'Both are real gases, but they perform different scientific jobs.';
@@ -1097,79 +1188,41 @@ function scientificSimilarity(studentIdea, correctIdea, attempt) {
   return 'Both are real science ideas, but they do different jobs.';
 }
 
-function buildComparison(attempt, band) {
-  const studentIdea = isTrueFalseToken(attempt.studentAnswer)
-    ? statementScience(attempt, band).idea
-    : verifiedIdeaFor(attempt.studentAnswer, attempt, 'student');
-  const correctIdea = isTrueFalseToken(attempt.correctAnswer)
-    ? statementScience(attempt, band).idea
-    : verifiedIdeaFor(attempt.correctAnswer, attempt, 'correct');
-  const studentPurpose =
-    conceptPurpose(attempt.studentAnswer, attempt, 'student') ||
-    studentIdea?.purpose ||
-    '';
-  const correctPurpose =
-    conceptPurpose(attempt.correctAnswer, attempt, 'correct') ||
-    correctIdea?.purpose ||
-    questionJob(attempt)?.purpose ||
-    '';
+function buildNamedComparison(student, correct, attempt) {
+  const studentConcept = student.concept;
+  const correctConcept = correct.concept;
+  const studentFn = student.scientificFunction;
+  const correctFn = correct.scientificFunction;
+  if (!studentConcept || !studentFn || !correctConcept || !correctFn) return null;
+  if (isVagueOrIncomplete(studentFn) || isVagueOrIncomplete(correctFn)) return null;
+
   const job = questionJob(attempt);
   const asking = job?.asking || scienceKeyIdea(attempt);
-  const claim = unpackScienceClaim(attempt.prompt || attempt.question, attempt.topic);
-
-  if (isTrueFalseToken(attempt.studentAnswer) && isTrueFalseToken(attempt.correctAnswer)) {
-    const fact = firstSentence(claim?.fact || '');
-    const similarity = 'The sentence is a scientific claim. True and False judge whether that claim holds.';
-    let difference = '';
-    let whyCorrectAnswerFits = '';
-    if (isAffirmative(attempt.correctAnswer)) {
-      difference =
-        claim?.rejectFalse ||
-        `The specific claim that makes the sentence true is: ${fact}`;
-      whyCorrectAnswerFits = `The question asks whether this science sentence holds, and that naming/process is accurate.`;
-    } else {
-      difference = `The specific claim that does not hold is the part that disagrees with: ${fact}`;
-      whyCorrectAnswerFits = `The question asks whether this science sentence holds, and that claim does not.`;
-    }
-    const body =
-      band === 'micro' || band === 'simple'
-        ? difference
-        : `${similarity} ${difference}`;
-    return {
-      similarity,
-      difference,
-      wrongConcept: isAffirmative(attempt.studentAnswer)
-        ? 'judging the sentence true'
-        : 'judging the sentence false',
-      correctConcept: isAffirmative(attempt.correctAnswer)
-        ? 'the sentence is scientifically true'
-        : 'the sentence is scientifically false',
-      whyCorrectAnswerFits,
-      body,
-    };
-  }
-
-  const similarity = scientificSimilarity(studentIdea, correctIdea, attempt);
-  const difference =
-    studentIdea?.mismatch ||
-    `one is about ${studentPurpose}, while the other is about ${correctPurpose}`;
-  const whyCorrectAnswerFits = `Because the question asks about ${asking}, ${correctPurpose} is the relevant concept.`;
-  const arrows =
-    studentPurpose && correctPurpose
-      ? `${shortConceptLabel(attempt.studentAnswer, 36) || 'Your answer'} → ${studentPurpose}. ${shortConceptLabel(attempt.correctAnswer, 36) || 'Correct answer'} → ${correctPurpose}.`
-      : '';
-  const body =
-    band === 'micro'
-      ? `The scientific difference is ${difference}.`
-      : `${similarity} ${arrows} So the scientific difference is ${difference}.`.replace(/\s+/g, ' ').trim();
+  const keyScientificDifference =
+    `${studentConcept} is primarily associated with ${studentFn}. ${correctConcept} is primarily associated with ${correctFn}.`;
+  const whyCorrectAnswerFitsQuestion =
+    `The question asks about ${asking}. ${correctConcept} satisfies this because it is ${correctFn}. ${studentConcept} does not satisfy this because it is ${studentFn}.`;
+  const body = [
+    `${studentConcept} ${studentFn}.`,
+    `${correctConcept} ${correctFn}.`,
+    `The key scientific difference is: ${studentConcept} → ${studentFn}. ${correctConcept} → ${correctFn}.`,
+  ].join(' ');
   return {
-    similarity,
-    difference,
-    wrongConcept: studentPurpose,
-    correctConcept: correctPurpose,
-    whyCorrectAnswerFits,
+    studentConcept,
+    studentConceptFunction: studentFn,
+    correctConcept,
+    correctConceptFunction: correctFn,
+    keyScientificDifference,
+    whyCorrectAnswerFitsQuestion,
+    similarity: scientificSimilarity(student, correct, attempt),
     body,
   };
+}
+
+function buildComparison(attempt, band) {
+  const student = completeConcept(attempt.studentAnswer, attempt, 'student', band);
+  const correct = completeConcept(attempt.correctAnswer, attempt, 'correct', band);
+  return buildNamedComparison(student, correct, attempt);
 }
 
 function connectionBlock(attempt, band, comparison) {
@@ -1236,6 +1289,22 @@ export function formatLessonSpeech(lesson) {
   if (!lesson?.sections?.length) return lesson?.fullText || '';
   return lesson.sections
     .map((s) => {
+      if (s.id === 'your_answer' || s.id === 'correct_answer') {
+        const quote = s.quote ? `${s.quote}. ` : '';
+        const def = s.scientificDefinition || s.body || '';
+        const fn = s.scientificFunction ? ` Function: ${s.scientificFunction}.` : '';
+        return `${s.title}. ${quote}Scientifically: ${def}${fn}`.replace(/\s+/g, ' ').trim();
+      }
+      if (s.id === 'difference') {
+        const a = s.studentConcept
+          ? `${s.studentConcept} → ${s.studentConceptFunction || ''}. `
+          : '';
+        const b = s.correctConcept
+          ? `${s.correctConcept} → ${s.correctConceptFunction || ''}. `
+          : '';
+        const diff = s.keyScientificDifference || s.body || '';
+        return `${s.title}. ${a}${b}The key scientific difference is: ${diff}`.replace(/\s+/g, ' ').trim();
+      }
       const quote = s.quote ? `${s.quote}. ` : '';
       return `${s.title}. ${quote}${s.body}`.replace(/\s+/g, ' ').trim();
     })
@@ -1243,71 +1312,120 @@ export function formatLessonSpeech(lesson) {
 }
 
 /**
- * Five labeled sections. Describe both answers as science first, then compare.
+ * Define both answers scientifically, then compare. Never emit incomplete comparison.
  */
 export function composeFiveStepLesson(attempt = {}, voice = {}) {
   const band = voiceBand(voice);
-  const selected = selectedConceptBlock(attempt, band);
-  const correct = correctConceptBlock(attempt, band);
-  const comparison = buildComparison(attempt, band);
-  const connection = connectionBlock(attempt, band, comparison);
-  const check = checkQuestion(attempt);
-  const studentQuote = isTrueFalseToken(attempt.studentAnswer)
-    ? displayChoice(attempt.studentAnswer)
-    : shortConceptLabel(attempt.studentAnswer, 72);
-  const correctQuote = isTrueFalseToken(attempt.correctAnswer)
-    ? displayChoice(attempt.correctAnswer)
-    : shortConceptLabel(attempt.correctAnswer, 72);
-  const studentIdea = isTrueFalseToken(attempt.studentAnswer)
-    ? statementScience(attempt, band).idea
-    : verifiedIdeaFor(attempt.studentAnswer, attempt, 'student');
-  const correctIdea = isTrueFalseToken(attempt.correctAnswer)
-    ? statementScience(attempt, band).idea
-    : verifiedIdeaFor(attempt.correctAnswer, attempt, 'correct');
+  const student = completeConcept(attempt.studentAnswer, attempt, 'student', band);
+  const correctObj = completeConcept(attempt.correctAnswer, attempt, 'correct', band);
+  if (
+    isVagueOrIncomplete(student.scientificDefinition) ||
+    isVagueOrIncomplete(correctObj.scientificDefinition) ||
+    !norm(student.scientificDefinition) ||
+    !norm(correctObj.scientificDefinition) ||
+    !norm(student.scientificFunction) ||
+    !norm(correctObj.scientificFunction)
+  ) {
+    return {
+      insufficientKnowledge: true,
+      sections: [],
+      selected: '',
+      correct: '',
+      comparison: '',
+      connection: '',
+      check: '',
+      fullText: '',
+      studentAnswer: null,
+      correctAnswer: null,
+    };
+  }
 
-  const wrongAnswerDescription = descriptionCard('Your Answer', studentIdea, selected, band);
-  const correctAnswerDescription = descriptionCard(
-    'Correct Answer',
-    correctIdea,
-    correct,
-    band,
-  );
+  const comparison = buildNamedComparison(student, correctObj, attempt);
+  if (!comparison || isVagueOrIncomplete(comparison.keyScientificDifference)) {
+    return {
+      insufficientKnowledge: true,
+      sections: [],
+      selected: '',
+      correct: '',
+      comparison: '',
+      connection: '',
+      check: '',
+      fullText: '',
+      studentAnswer: null,
+      correctAnswer: null,
+    };
+  }
+
+  const selected = student.scientificDefinition;
+  const correct = correctObj.scientificDefinition;
+  const connection = comparison.whyCorrectAnswerFitsQuestion;
+  const check = checkQuestion(attempt);
+
+  const wrongAnswerDescription = {
+    title: student.title,
+    concept: student.concept,
+    scientificDescription: student.scientificDefinition,
+    scientificDefinition: student.scientificDefinition,
+    function: student.scientificFunction,
+    example: student.example,
+  };
+  const correctAnswerDescription = {
+    title: correctObj.title,
+    concept: correctObj.concept,
+    scientificDescription: correctObj.scientificDefinition,
+    scientificDefinition: correctObj.scientificDefinition,
+    function: correctObj.scientificFunction,
+    example: correctObj.example,
+  };
   const scientificComparison = {
     title: 'Scientific Comparison',
-    similarity: comparison.similarity,
-    difference: comparison.difference,
-    wrongConcept: comparison.wrongConcept,
+    studentConcept: comparison.studentConcept,
+    studentConceptFunction: comparison.studentConceptFunction,
     correctConcept: comparison.correctConcept,
-    whyCorrectAnswerFits: comparison.whyCorrectAnswerFits,
+    correctConceptFunction: comparison.correctConceptFunction,
+    keyScientificDifference: comparison.keyScientificDifference,
+    whyCorrectAnswerFits: comparison.whyCorrectAnswerFitsQuestion,
+    similarity: comparison.similarity,
+    difference: comparison.keyScientificDifference,
+    wrongConcept: comparison.studentConcept,
   };
 
   const sections = [
     {
       id: 'your_answer',
       title: 'YOUR ANSWER',
-      quote: studentQuote,
-      body: selected,
-      concept: wrongAnswerDescription.concept,
-      function: wrongAnswerDescription.function,
-      example: wrongAnswerDescription.example,
+      quote: student.concept,
+      scientificDefinition: student.scientificDefinition,
+      scientificFunction: student.scientificFunction,
+      example: student.example,
+      body: student.scientificDefinition,
+      concept: student.concept,
+      function: student.scientificFunction,
     },
     {
       id: 'correct_answer',
       title: 'CORRECT ANSWER',
-      quote: correctQuote,
-      body: correct,
-      concept: correctAnswerDescription.concept,
-      function: correctAnswerDescription.function,
-      example: correctAnswerDescription.example,
+      quote: correctObj.concept,
+      scientificDefinition: correctObj.scientificDefinition,
+      scientificFunction: correctObj.scientificFunction,
+      example: correctObj.example,
+      body: correctObj.scientificDefinition,
+      concept: correctObj.concept,
+      function: correctObj.scientificFunction,
     },
     {
       id: 'difference',
       title: 'SCIENTIFIC COMPARISON',
-      similarity: comparison.similarity,
-      wrongConcept: comparison.wrongConcept,
+      studentConcept: comparison.studentConcept,
+      studentConceptFunction: comparison.studentConceptFunction,
       correctConcept: comparison.correctConcept,
-      studentPurpose: comparison.wrongConcept,
-      correctPurpose: comparison.correctConcept,
+      correctConceptFunction: comparison.correctConceptFunction,
+      keyScientificDifference: comparison.keyScientificDifference,
+      similarity: comparison.similarity,
+      difference: comparison.keyScientificDifference,
+      wrongConcept: comparison.studentConcept,
+      studentPurpose: comparison.studentConceptFunction,
+      correctPurpose: comparison.correctConceptFunction,
       body: comparison.body,
     },
     {
@@ -1322,7 +1440,7 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
     },
   ];
 
-  let packed = {
+  const packed = {
     selected,
     correct,
     comparison: comparison.body,
@@ -1330,18 +1448,30 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
     check,
     sections,
     band,
+    insufficientKnowledge: false,
+    studentAnswer: student,
+    correctAnswer: correctObj,
     wrongAnswerDescription,
     correctAnswerDescription,
     scientificComparison,
+    comparisonFields: comparison,
     questionConnection: connection,
     interactiveCheck: check,
   };
   packed.fullText = formatLessonSpeech(packed);
-  const rightRaw = displayChoice(attempt.correctAnswer);
-  if (rightRaw && rightRaw.length >= 12 && countPhrase(packed.fullText, rightRaw) > 2) {
-    sections[1].quote = shortConceptLabel(rightRaw, 40);
-    packed = { ...packed, sections };
-    packed.fullText = formatLessonSpeech(packed);
+  if (!validateStructuredLesson(packed) || isVagueOrIncomplete(packed.fullText)) {
+    return {
+      insufficientKnowledge: true,
+      sections: [],
+      selected: '',
+      correct: '',
+      comparison: '',
+      connection: '',
+      check: '',
+      fullText: '',
+      studentAnswer: null,
+      correctAnswer: null,
+    };
   }
   return packed;
 }
@@ -1360,7 +1490,8 @@ function composeTutorMiss(attempt, voice) {
   }
 
   const lesson = composeFiveStepLesson(attempt, voice);
-  return lesson.sections.find((s) => s.id === 'difference')?.body || lesson.comparison;
+  if (!validateStructuredLesson(lesson)) return '';
+  return '';
 }
 
 export function explainWhyWrong(attempt = {}, voice = {}) {
@@ -1397,7 +1528,9 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
   ) {
     return null;
   }
-  return composeFiveStepLesson(attempt, voice);
+  const lesson = composeFiveStepLesson(attempt, voice);
+  if (!validateStructuredLesson(lesson)) return null;
+  return lesson;
 }
 
 export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {

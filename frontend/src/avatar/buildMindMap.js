@@ -19,6 +19,8 @@ import {
   explainCorrectIdea,
   scienceKeyIdea,
   shortConceptLabel,
+  composeFiveStepLesson,
+  validateStructuredLesson,
 } from './explainMisconception.js';
 
 export { explainWhyWrong, explainCorrectIdea, scienceKeyIdea } from './explainMisconception.js';
@@ -331,20 +333,26 @@ export function buildPersonalizedMindMap({
     const related = catalogRelated(t, cleanRight, usedRelated);
     const conceptual = {
       ...a,
-      studentAnswer: cleanWrong,
-      correctAnswer: cleanRight,
+      studentAnswer: a.studentAnswer,
+      correctAnswer: a.correctAnswer,
     };
-    const why = explainWhyWrong(conceptual, {
+    const lesson = composeFiveStepLesson(conceptual, {
       tone: profile.tone,
       frustrationLevel: profile.frustrationLevel,
       explainDepth: profile.explainDepth,
     });
-    const rightExplain = explainCorrectIdea(conceptual, {
-      tone: profile.tone,
-      frustrationLevel: profile.frustrationLevel,
-      explainDepth: profile.explainDepth,
-    });
-    const keyIdea = scienceKeyIdea(conceptual);
+    const lessonOk = validateStructuredLesson(lesson);
+    const why = '';
+    const rightExplain = lessonOk
+      ? lesson.correctAnswer.scientificDefinition
+      : explainCorrectIdea(conceptual, {
+          tone: profile.tone,
+          frustrationLevel: profile.frustrationLevel,
+          explainDepth: profile.explainDepth,
+        });
+    const keyIdea = lessonOk
+      ? lesson.studentAnswer.concept
+      : scienceKeyIdea(conceptual);
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
     let nodes = [
@@ -435,6 +443,7 @@ export function buildPersonalizedMindMap({
       key_concept: clip(keyIdea, 90) || t,
       keyExplain: rightExplain,
       key_concept_explain: rightExplain,
+      lesson: lessonOk ? lesson : null,
       farmLink: related.explanation,
       farm_link: related.explanation,
       summary:

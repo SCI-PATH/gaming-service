@@ -4,10 +4,10 @@
  */
 import { chatCompletion, getLlamaConfig } from './llamaClient.mjs';
 import {
-  explainWhyWrong,
   explainCorrectIdea,
-  composeWhyWithOptionalAiMeet,
   scienceKeyIdea,
+  composeFiveStepLesson,
+  validateStructuredLesson,
 } from '../../frontend/src/avatar/explainMisconception.js';
 
 const TOPIC_ICONS = {
@@ -164,6 +164,8 @@ export function buildLocalMindMap(attempts, adaptation = null) {
     const right = a.correctAnswer;
     const q = clip(a.prompt || a.question, 140);
     const conceptual = conceptualAttempt(a);
+    const lesson = composeFiveStepLesson(conceptual, voice);
+    const lessonOk = validateStructuredLesson(lesson);
     return {
       miss_index: i + 1,
       topic,
@@ -171,9 +173,14 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       question: a.prompt || a.question || '',
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
-      why_wrong: explainWhyWrong(conceptual, voice),
-      key_concept: clip(scienceKeyIdea(conceptual), 90) || clip(right || topic, 40) || 'Key idea',
-      key_concept_explain: explainCorrectIdea(conceptual, voice),
+      why_wrong: '',
+      key_concept: lessonOk
+        ? clip(lesson.studentAnswer.concept, 90)
+        : clip(scienceKeyIdea(conceptual), 90) || clip(right || topic, 40) || 'Key idea',
+      key_concept_explain: lessonOk
+        ? lesson.correctAnswer.scientificDefinition
+        : explainCorrectIdea(conceptual, voice),
+      lesson: lessonOk ? lesson : null,
       farm_link: scienceKeyIdea(conceptual)
         ? `Hold this idea for the farm question: ${clip(scienceKeyIdea(conceptual), 80)}.`
         : `Come back to this miss and try the farm question with one clear idea.`,
@@ -267,10 +274,8 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
       question: base.question || hint.question || '',
       student_answer: base.student_answer || hint.student_answer || '',
       correct_answer: base.correct_answer || hint.correct_answer || '',
-      why_wrong: composeWhyWithOptionalAiMeet(ground, voice, {
-        studentIdea: hint.student_idea_in_the_world || hint.studentIdea,
-        whyWrong: hint.why_wrong || hint.whyWrong,
-      }),
+      why_wrong: '',
+      lesson: base.lesson || null,
       key_concept: (() => {
         const hinted = String(hint.key_concept || hint.keyConcept || '').trim();
         if (hinted && !/^(true|false|t|f|yes|no)$/i.test(hinted) && hinted.length > 4) {
@@ -588,6 +593,7 @@ export function toClientShape(map) {
     keyExplain: b.key_concept_explain,
     farmLink: b.farm_link,
     summary: b.key_concept_explain,
+    lesson: b.lesson || null,
   }));
 
   return {

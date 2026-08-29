@@ -1,36 +1,54 @@
 /**
- * One card per teaching job: describe the student's science, describe the
- * correct science, then compare. Do not dump a single repetitive paragraph.
+ * Structured SAGE teaching: define both answers, then compare by name.
  */
-export default function SageLessonPanel({ sections = [] }) {
-  if (!Array.isArray(sections) || sections.length === 0) return null;
+export default function SageLessonPanel({ sections = [], lesson = null }) {
+  const list = Array.isArray(sections) && sections.length
+    ? sections
+    : Array.isArray(lesson?.sections)
+      ? lesson.sections
+      : [];
+  if (!list.length) return null;
+
   return (
     <ol className="sage-lesson" aria-label="Sage teaching steps">
-      {sections.map((s) => (
+      {list.map((s) => (
         <li key={s.id || s.title} className={`sage-lesson-block is-${s.id || 'part'}`}>
           <h3 className="sage-lesson-title">{s.title}</h3>
           {s.quote ? <p className="sage-lesson-quote">{s.quote}</p> : null}
-          {s.id === 'difference' ? (
+          {s.id === 'your_answer' || s.id === 'correct_answer' ? (
             <>
-              {s.similarity ? <p className="sage-lesson-body">{s.similarity}</p> : null}
-              {s.wrongConcept || s.correctConcept || s.studentPurpose || s.correctPurpose ? (
-                <ul className="sage-lesson-diff">
-                  {s.wrongConcept || s.studentPurpose ? (
-                    <li>
-                      <span>Your answer</span>
-                      <strong>{s.wrongConcept || s.studentPurpose}</strong>
-                    </li>
-                  ) : null}
-                  {s.correctConcept || s.correctPurpose ? (
-                    <li>
-                      <span>Correct answer</span>
-                      <strong>{s.correctConcept || s.correctPurpose}</strong>
-                    </li>
-                  ) : null}
-                </ul>
+              {s.scientificDefinition || s.body ? (
+                <>
+                  <p className="sage-lesson-kicker">Scientifically</p>
+                  <p className="sage-lesson-body">{s.scientificDefinition || s.body}</p>
+                </>
               ) : null}
+              {s.scientificFunction || s.function ? (
+                <>
+                  <p className="sage-lesson-kicker">Function</p>
+                  <p className="sage-lesson-body">{s.scientificFunction || s.function}</p>
+                </>
+              ) : null}
+            </>
+          ) : s.id === 'difference' ? (
+            <>
+              <ul className="sage-lesson-diff">
+                {s.studentConcept ? (
+                  <li>
+                    <span>{s.studentConcept}</span>
+                    <strong>→ {s.studentConceptFunction || s.studentPurpose}</strong>
+                  </li>
+                ) : null}
+                {s.correctConcept ? (
+                  <li>
+                    <span>{s.correctConcept}</span>
+                    <strong>→ {s.correctConceptFunction || s.correctPurpose}</strong>
+                  </li>
+                ) : null}
+              </ul>
+              <p className="sage-lesson-kicker">Key difference</p>
               <p className="sage-lesson-body">
-                {s.difference ? `So the scientific difference is ${s.difference}` : s.body}
+                {s.keyScientificDifference || s.difference || s.body}
               </p>
             </>
           ) : (

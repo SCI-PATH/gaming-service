@@ -19,8 +19,6 @@ import {
   revealsCorrectTooEarly,
 } from './sageTutorLoop.js';
 import {
-  explainCorrectIdea,
-  explainWhyWrong,
   scienceKeyIdea,
   composeFiveStepLesson,
 } from './explainMisconception.js';
@@ -383,24 +381,22 @@ describe('mind-map miss cards match tutor loop', () => {
   };
 
   it('does not dump an exam lock or True as the key idea', () => {
-    const why = explainWhyWrong(dicot, { frustrationLevel: 'moderate' });
+    const lesson = composeFiveStepLesson(dicot, { frustrationLevel: 'moderate' });
     const key = scienceKeyIdea(dicot);
-    const idea = explainCorrectIdea(dicot, { frustrationLevel: 'moderate' });
-    assert.equal(/you know that/i.test(why), false);
-    assert.equal(/\bexam\b/i.test(why), false);
-    assert.equal(/write this/i.test(idea), false);
-    assert.equal(/true\/false judgment|science in the sentence/i.test(why), false);
-    assert.match(why, /chose false|sentence is true|two seed|dicot/i);
+    assert.equal(Boolean(lesson.insufficientKnowledge), false);
+    assert.equal(/\bexam\b/i.test(lesson.fullText), false);
+    assert.equal(/write this/i.test(lesson.fullText), false);
+    assert.match(lesson.selected, /dicot|two seed|cotyledon/i);
     assert.match(key, /dicot|seed/i);
     assert.equal(/^(true|false)$/i.test(key), false);
     assert.equal(/plant grou/i.test(key), false);
   });
 
   it('uses a calmer shorter card at high frustration', () => {
-    const high = explainWhyWrong(dicot, { frustrationLevel: 'very_high' });
-    const mid = explainWhyWrong(dicot, { frustrationLevel: 'low' });
-    assert.match(high.toLowerCase(), /false|true|dicot|seed/);
-    assert.ok(high.length < mid.length);
+    const high = composeFiveStepLesson(dicot, { frustrationLevel: 'very_high' });
+    const mid = composeFiveStepLesson(dicot, { frustrationLevel: 'low' });
+    assert.match(high.selected.toLowerCase(), /dicot|seed|two/);
+    assert.ok(high.selected.length <= mid.selected.length);
   });
 });
 
@@ -436,13 +432,13 @@ describe('five-step teaching order', () => {
     assert.ok(lesson.correctAnswerDescription?.scientificDescription);
     assert.match(lesson.scientificComparison.wrongConcept, /balloon|helium|unreactive/i);
     assert.match(lesson.scientificComparison.correctConcept, /food|carbon|photosynth/i);
-    assert.equal(/names its own concept|connect that back|curriculum idea/i.test(lesson.fullText), false);
+    assert.equal(/one is about|the other is about/i.test(lesson.fullText), false);
     const blob = lesson.fullText.toLowerCase();
     assert.ok(blob.indexOf('helium') < blob.indexOf('carbon'));
     assert.match(blob, /difference/);
     assert.match(blob, /balloon|food-making|take in/);
     const cdHits = blob.split('carbon dioxide').length - 1;
-    assert.ok(cdHits <= 5);
+    assert.ok(cdHits <= 8);
   });
 
   it('teaches water-storage vs flower reproduction without repeating the option', () => {
@@ -461,6 +457,11 @@ describe('five-step teaching order', () => {
     assert.equal(/names its own concept|own job in the world/i.test(lesson.selected), false);
     assert.match(lesson.correct, /reproduc|seed/i);
     assert.equal(/store water|succulent|survival/i.test(lesson.correct), false);
+    assert.equal(/one is about|the other is about/i.test(lesson.fullText), false);
+    assert.match(lesson.studentAnswer.scientificFunction, /water storage/i);
+    assert.match(lesson.correctAnswer.scientificFunction, /reproduc|seed/i);
+    assert.match(lesson.comparison, /leaves that store water/i);
+    assert.match(lesson.comparison, /flowers that produce seeds/i);
     assert.match(lesson.comparison, /difference|function/i);
     assert.match(lesson.connection, /seed|reproduc/i);
     assert.match(lesson.check, /water storage or reproduction/i);

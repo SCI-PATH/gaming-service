@@ -15,6 +15,7 @@ import {
   formatLessonSpeech,
   shortConceptLabel,
   canDescribeScientifically,
+  validateStructuredLesson,
 } from './explainMisconception.js';
 import { friendlyStudentName, sanitizeKidSpeech } from './kidFriendlySpeech.js';
 
@@ -201,9 +202,14 @@ export function hasSufficientKnowledge(state = {}) {
   if (!student) {
     return canDescribeScientifically(correct, attempt, 'correct');
   }
-  return (
-    canDescribeScientifically(student, attempt, 'student') &&
-    canDescribeScientifically(correct, attempt, 'correct')
+  if (
+    !canDescribeScientifically(student, attempt, 'student') ||
+    !canDescribeScientifically(correct, attempt, 'correct')
+  ) {
+    return false;
+  }
+  return validateStructuredLesson(
+    composeFiveStepLesson(attempt, { frustrationLevel: 'moderate' }),
   );
 }
 
@@ -556,15 +562,16 @@ export function buildMisconceptionMindMap(state = {}, delivery = null) {
     },
     { frustrationLevel: d.level },
   );
-  const studentPurpose =
-    lesson.sections.find((s) => s.id === 'difference')?.studentPurpose || wrong;
-  const correctPurpose =
-    lesson.sections.find((s) => s.id === 'difference')?.correctPurpose || right;
-  const distinction = clip(
-    lesson.comparison.replace(/^Your answer →[^.]*\.\s*Correct answer →[^.]*\.\s*/i, '') ||
-      `one is about ${studentPurpose}, the other is about ${correctPurpose}`,
-    48,
-  );
+  if (!validateStructuredLesson(lesson)) {
+    return {
+      enabled: false,
+      complexity,
+      rootConcept: topic,
+      nodes: [],
+      relationships: [],
+    };
+  }
+  const distinction = clip(lesson.comparisonFields.keyScientificDifference, 90);
 
   const nodes = [];
   const relationships = [];

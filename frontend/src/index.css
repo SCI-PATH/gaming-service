@@ -4973,9 +4973,18 @@ body {
   white-space: normal;
 }
 
-.sage-lesson-block .sage-lesson-body + .sage-lesson-diff,
-.sage-lesson-block .sage-lesson-diff + .sage-lesson-body {
-  margin-top: 6px;
+.sage-lesson-kicker {
+  margin: 8px 0 2px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6a8070;
+}
+
+.sage-lesson-quote + .sage-lesson-kicker,
+.sage-lesson-body + .sage-lesson-kicker {
+  margin-top: 8px;
 }
 
 .sage-lesson-diff {

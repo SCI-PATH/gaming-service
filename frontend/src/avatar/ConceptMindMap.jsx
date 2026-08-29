@@ -13,6 +13,7 @@ import {
   tokenizeMapText,
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
+import SageLessonPanel from './SageLessonPanel.jsx';
 
 const COLORS = [
   { stroke: '#c45c5c', fill: '#fde8e8', bar: '#c45c5c' },
@@ -99,6 +100,7 @@ function toDisplayBranches(map) {
         ) || '',
       farmLink: b.farmLink || b.farm_link || '',
       colorIndex: b.colorIndex ?? b.color_index ?? i % 6,
+      lesson: b.lesson || null,
     }));
   }
   return [];
@@ -598,30 +600,38 @@ export default function ConceptMindMap({
                   )}
                 </strong>
               </div>
-              {b.keyConcept ? (
-                <p className="mm-card-key">
-                  <span className="mm-card-kicker">Key idea</span>{' '}
-                  {speechOn ? (
-                    <Sync fieldKey="key" text={b.keyConcept} on />
-                  ) : (
-                    b.keyConcept
-                  )}
-                </p>
-              ) : null}
-              {compact && selected && (b.why || b.keyExplain) ? (
-                <p className="mm-card-why">
-                  <span className="mm-card-kicker">Let's look</span>{' '}
-                  {speechOn ? (
-                    <Sync
-                      fieldKey={b.why ? 'why' : 'explain'}
-                      text={b.why || b.keyExplain}
-                      on
-                    />
-                  ) : (
-                    b.why || b.keyExplain
-                  )}
-                </p>
-              ) : null}
+              {b.lesson?.sections?.length ? (
+                compact && selected ? (
+                  <SageLessonPanel sections={b.lesson.sections} lesson={b.lesson} />
+                ) : null
+              ) : (
+                <>
+                  {b.keyConcept ? (
+                    <p className="mm-card-key">
+                      <span className="mm-card-kicker">Key idea</span>{' '}
+                      {speechOn ? (
+                        <Sync fieldKey="key" text={b.keyConcept} on />
+                      ) : (
+                        b.keyConcept
+                      )}
+                    </p>
+                  ) : null}
+                  {compact && selected && (b.why || b.keyExplain) && !/one is about/i.test(b.why || '') ? (
+                    <p className="mm-card-why">
+                      <span className="mm-card-kicker">Let's look</span>{' '}
+                      {speechOn ? (
+                        <Sync
+                          fieldKey={b.why ? 'why' : 'explain'}
+                          text={b.why || b.keyExplain}
+                          on
+                        />
+                      ) : (
+                        b.why || b.keyExplain
+                      )}
+                    </p>
+                  ) : null}
+                </>
+              )}
             </button>
           );
         })}
@@ -638,27 +648,10 @@ export default function ConceptMindMap({
           </p>
           <h4>
             {active.icon}{' '}
-            {active.keyConcept || active.correctAnswer || active.topic}
+            {active.studentAnswer || active.keyConcept || active.topic}
           </h4>
-          {active.why ? (
-            <p className="mm-focus-p">
-              <strong>Let's look:</strong>{' '}
-              {speechBranchId === active.id ? (
-                <Sync fieldKey="why" text={active.why} on />
-              ) : (
-                active.why
-              )}
-            </p>
-          ) : null}
-          {active.keyExplain ? (
-            <p className="mm-focus-p">
-              <strong>The idea:</strong>{' '}
-              {speechBranchId === active.id ? (
-                <Sync fieldKey="explain" text={active.keyExplain} on />
-              ) : (
-                active.keyExplain
-              )}
-            </p>
+          {active.lesson?.sections?.length ? (
+            <SageLessonPanel sections={active.lesson.sections} lesson={active.lesson} />
           ) : null}
           {active.farmLink ? (
             <p className="mm-focus-p is-farm">
