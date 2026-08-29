@@ -4808,9 +4808,82 @@ body {
   grid-template-columns: 1fr;
   gap: 6px;
   flex-shrink: 0;
-  max-height: min(280px, 42vh);
+  max-height: min(360px, 48vh);
   overflow: auto;
   padding: 0 2px;
+}
+
+.avatar-active-miss {
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(46, 92, 62, 0.16);
+}
+
+.avatar-active-miss-kicker {
+  margin: 0 0 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4a6a52;
+}
+
+.avatar-active-miss-q {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #1f3d2a;
+}
+
+.avatar-active-miss-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.avatar-active-miss-choices li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: start;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f6faf7;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #24362c;
+}
+
+.avatar-active-miss-choices li.is-yours {
+  background: #fdecea;
+}
+
+.avatar-active-miss-choices li.is-ok {
+  background: #e7f6ec;
+}
+
+.avatar-active-miss-letter {
+  font-weight: 800;
+  color: #5a6e60;
+}
+
+.avatar-active-miss-text {
+  overflow-wrap: break-word;
+}
+
+.avatar-active-miss-choices em {
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #5a6e60;
+  white-space: nowrap;
 }
 
 .avatar-focus-question {

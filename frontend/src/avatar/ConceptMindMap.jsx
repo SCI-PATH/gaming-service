@@ -101,6 +101,9 @@ function toDisplayBranches(map) {
       farmLink: b.farmLink || b.farm_link || '',
       colorIndex: b.colorIndex ?? b.color_index ?? i % 6,
       lesson: b.lesson || null,
+      options: b.options || b.attempt?.options || [],
+      hint: b.hint || null,
+      prompt: b.prompt || b.question || '',
     }));
   }
   return [];

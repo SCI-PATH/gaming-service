@@ -102,3 +102,14 @@ export function applyRemoteFarmProgress(remote = {}) {
   }
   return saveFarmProgress({ currentLevelId, highestCompletedLevel, cash });
 }
+
+/** Learning Path launch: play this chapter's farm level, even if local cursor is ahead. */
+export function applyChapterFarmLevel(levelId, cash = null) {
+  const currentLevelId = Math.max(1, Number(levelId) || 1);
+  const prev = loadFarmProgress();
+  return saveFarmProgress({
+    currentLevelId,
+    highestCompletedLevel: Math.max(0, prev.highestCompletedLevel, currentLevelId - 1),
+    cash: cash != null ? cash : prev.cash,
+  });
+}

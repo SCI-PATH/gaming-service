@@ -33,6 +33,10 @@ import {
   detectQuestionType,
   relatedPreviousMistakes,
 } from './sageTutorLoop.js';
+import {
+  isFillInQuestionType,
+  normalizeSageMindMapInput,
+} from './normalizeSageMindMapInput.js';
 
 /**
  * @param {object} input
@@ -119,30 +123,6 @@ export function buildContextPayload({
     280,
   );
 
-  const lastWrong = friendlyWrongAnswer(
-    telemetry.lastWrongAnswer ||
-      quiz?.studentLastWrongAnswer ||
-      quiz?.selectedText ||
-      null,
-  );
-
-  const safeCorrect = (raw) => {
-    const s = asQuestionText(raw, 200);
-    if (!s) return null;
-    if (/grading failed|model_not_found|error code|does not exist/i.test(s)) {
-      return null;
-    }
-    return s;
-  };
-
-  const knownCorrect = safeCorrect(
-    quiz?.correctAnswer ||
-      quiz?.questionData?.correctAnswer ||
-      focusIn?.correct_answer ||
-      telemetry.lastCorrectAnswer ||
-      null,
-  );
-
   const questionOptions =
     quiz?.options ||
     quiz?.questionData?.options ||
@@ -156,9 +136,94 @@ export function buildContextPayload({
       quiz?.mode,
     options: questionOptions,
     prompt: questionText,
-    studentAnswer: lastWrong,
-    correctAnswer: knownCorrect,
+    studentAnswer:
+      telemetry.lastWrongAnswer ||
+      quiz?.studentAnswer ||
+      quiz?.studentLastWrongAnswer ||
+      quiz?.selectedText ||
+      null,
+    correctAnswer:
+      quiz?.correctAnswer ||
+      quiz?.questionData?.correctAnswer ||
+      focusIn?.correct_answer ||
+      telemetry.lastCorrectAnswer ||
+      null,
   });
+  const sageInput = normalizeSageMindMapInput({
+    questionData: quiz?.questionData || quiz,
+    questionType:
+      quiz?.questionType ||
+      quiz?.questionData?.questionType ||
+      quiz?.question_type ||
+      questionType,
+    prompt: questionText,
+    question: questionText,
+    selectedText:
+      telemetry.lastWrongAnswer ||
+      quiz?.studentLastWrongAnswer ||
+      quiz?.selectedText ||
+      null,
+    studentAnswer:
+      quiz?.studentAnswer ||
+      telemetry.lastWrongAnswer ||
+      quiz?.studentLastWrongAnswer ||
+      quiz?.selectedText ||
+      null,
+    correctAnswer:
+      quiz?.correctAnswer ||
+      quiz?.questionData?.correctAnswer ||
+      focusIn?.correct_answer ||
+      telemetry.lastCorrectAnswer ||
+      null,
+    acceptedAnswers:
+      quiz?.acceptedAnswers || quiz?.questionData?.acceptedAnswers,
+    grade: quiz?.grade || quiz?.questionData?.grade,
+    isCorrect: false,
+    topic: quiz?.topic || quiz?.questionData?.topic,
+    frustrationScore: telemetry.frustrationScore,
+  });
+  const fillIn =
+    isFillInQuestionType(sageInput.questionType) ||
+    isFillInQuestionType(questionType);
+  const lastWrong = fillIn
+    ? sageInput.studentAnswer ||
+      telemetry.lastWrongAnswer ||
+      quiz?.studentLastWrongAnswer ||
+      quiz?.selectedText ||
+      null
+    : friendlyWrongAnswer(
+        telemetry.lastWrongAnswer ||
+          quiz?.studentLastWrongAnswer ||
+          quiz?.selectedText ||
+          null,
+      );
+
+  const safeCorrect = (raw) => {
+    const s = asQuestionText(raw, 200);
+    if (!s) return null;
+    if (/grading failed|model_not_found|error code|does not exist/i.test(s)) {
+      return null;
+    }
+    return s;
+  };
+
+  const knownCorrect = fillIn
+    ? sageInput.correctAnswer ||
+      sageInput.canonicalCorrectAnswer ||
+      safeCorrect(
+        quiz?.correctAnswer ||
+          quiz?.questionData?.correctAnswer ||
+          focusIn?.correct_answer ||
+          telemetry.lastCorrectAnswer ||
+          null,
+      )
+    : safeCorrect(
+        quiz?.correctAnswer ||
+          quiz?.questionData?.correctAnswer ||
+          focusIn?.correct_answer ||
+          telemetry.lastCorrectAnswer ||
+          null,
+      );
   const teachingSession =
     telemetry.teaching_session ||
     focusIn?.conversation_session?.teaching_session ||
@@ -393,7 +458,7 @@ export function buildContextPayload({
       ? {
           question_text: questionText,
           question_type: questionType,
-          options: questionOptions,
+          options: fillIn ? [] : questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
@@ -411,7 +476,7 @@ export function buildContextPayload({
       : {
           question_text: asQuestionText(focus?.current_question, 280),
           question_type: questionType,
-          options: questionOptions,
+          options: fillIn ? [] : questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||

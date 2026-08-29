@@ -25,6 +25,10 @@ import {
   extractLearningPreferences,
 } from './learningPreferences.js';
 import { buildPersonalizedMindMap, buildMissAttempt } from './buildMindMap.js';
+import {
+  isFillInQuestionType,
+  normalizeSageMindMapInput,
+} from './normalizeSageMindMapInput.js';
 import { recordIncorrectMindMap } from './mindMapHistoryStore.js';
 import { classifyPerformanceTier } from './performanceTier.js';
 import {
@@ -146,7 +150,28 @@ export function useBehavioralTelemetry({
 
   const recordMisconception = useCallback(
     (questionData, selectedText) => {
-      const attempt = buildMissAttempt(questionData, selectedText);
+      const normalized = normalizeSageMindMapInput({
+        questionData,
+        selectedText,
+        studentAnswer: questionData?.studentAnswer ?? selectedText,
+        correctAnswer: questionData?.correctAnswer,
+        acceptedAnswers: questionData?.acceptedAnswers,
+        grade: questionData?.grade || questionData?.gradePayload,
+        isCorrect: false,
+      });
+      const fillIn = isFillInQuestionType(normalized.questionType);
+      const attempt = buildMissAttempt(
+        fillIn
+          ? {
+              ...questionData,
+              questionType: normalized.questionType,
+              studentAnswer: normalized.studentAnswer,
+              correctAnswer: normalized.correctAnswer,
+              acceptedAnswers: normalized.acceptedAnswers,
+            }
+          : questionData,
+        fillIn ? normalized.studentAnswer || selectedText : selectedText,
+      );
       const topic =
         pickCanonicalTopicId(
           questionData?.topicId,
@@ -806,10 +831,11 @@ export function useBehavioralTelemetry({
     }
   }, [levelId, runEvaluation, syncMetrics, thresholds.rapidLevelSec]);
 
-  const recordAnswer = useCallback(
+      const recordAnswer = useCallback(
     ({
       isCorrect,
       selectedText = null,
+      studentAnswer = null,
       questionData = null,
       responseTimeMs = null,
       correctAnswer = null,
@@ -972,20 +998,45 @@ export function useBehavioralTelemetry({
       consecutiveFailsRef.current += 1;
       levelRetriesRef.current += 1;
       firstAttemptCorrectStreakRef.current = 0;
-      if (selectedText) lastWrongRef.current = selectedText;
-      const resolvedCorrect =
-        correctAnswer ||
-        questionData?.correctAnswer ||
-        (typeof questionData?.correctIndex === 'number' &&
-        Array.isArray(questionData?.options)
-          ? questionData.options[questionData.correctIndex]
-          : null) ||
-        null;
+      const sageInput = normalizeSageMindMapInput({
+        questionData,
+        selectedText,
+        studentAnswer: studentAnswer ?? selectedText,
+        correctAnswer:
+          correctAnswer || questionData?.correctAnswer || null,
+        acceptedAnswers: questionData?.acceptedAnswers,
+        grade: questionData?.grade || questionData?.gradePayload,
+        isCorrect: false,
+      });
+      const fillIn = isFillInQuestionType(sageInput.questionType);
+      const analysisStudent = fillIn
+        ? sageInput.studentAnswer || selectedText
+        : selectedText;
+      if (analysisStudent) lastWrongRef.current = analysisStudent;
+      const resolvedCorrect = fillIn
+        ? sageInput.correctAnswer ||
+          correctAnswer ||
+          questionData?.correctAnswer ||
+          null
+        : correctAnswer ||
+          questionData?.correctAnswer ||
+          (typeof questionData?.correctIndex === 'number' &&
+          Array.isArray(questionData?.options)
+            ? questionData.options[questionData.correctIndex]
+            : null) ||
+          null;
       if (resolvedCorrect) lastCorrectRef.current = resolvedCorrect;
       const enrichedQuestion = questionData
         ? {
             ...questionData,
+            questionType: sageInput.questionType || questionData.questionType,
+            studentAnswer: fillIn
+              ? analysisStudent
+              : questionData.studentAnswer,
             correctAnswer: resolvedCorrect || questionData.correctAnswer || null,
+            acceptedAnswers: fillIn
+              ? sageInput.acceptedAnswers
+              : questionData.acceptedAnswers,
             gradeFeedback: gradeFeedback || questionData.gradeFeedback || null,
           }
         : questionData;
@@ -1001,8 +1052,11 @@ export function useBehavioralTelemetry({
       let mindMap = null;
       let conceptEntry = null;
       try {
-        if (enrichedQuestion || selectedText) {
-          const recorded = recordMisconception(enrichedQuestion, selectedText);
+        if (enrichedQuestion || analysisStudent) {
+          const recorded = recordMisconception(
+            enrichedQuestion,
+            analysisStudent,
+          );
           mindMap = recorded.mindMap;
           conceptEntry = recorded.entry;
         }

@@ -6,6 +6,10 @@ import {
   serializeStudentAnswer,
   submitAssessmentAnswer,
 } from '../assessmentEngine/assessmentQuizSession.js';
+import {
+  isFillInQuestionType,
+  normalizeSageMindMapInput,
+} from '../avatar/normalizeSageMindMapInput.js';
 
 const TYPE_LABELS = {
   MCQ: 'Multiple choice',
@@ -334,6 +338,22 @@ export default function ScienceQuizModal({
           graded?.data?.grade && typeof graded.data.grade === 'object'
             ? graded.data.grade
             : graded?.data || null;
+        const sageInput = normalizeSageMindMapInput({
+          questionData: { ...questionData, questionType },
+          selectedText,
+          studentAnswer,
+          selectedIndex,
+          correctAnswer: engineCorrect || questionData.correctAnswer,
+          isCorrect,
+          grade: gradePayload,
+        });
+        const fillIn = isFillInQuestionType(questionType) || isFillInQuestionType(questionData);
+        const sageStudent = fillIn
+          ? sageInput.studentAnswer || serializeStudentAnswer(studentAnswer)
+          : selectedText;
+        const sageCorrect = fillIn
+          ? sageInput.correctAnswer || engineCorrect || null
+          : engineCorrect || null;
         const rawFeedback = gradePayload?.feedback || null;
         const safeFeedback = isGradeStatusFeedback(rawFeedback)
           ? null
@@ -341,26 +361,32 @@ export default function ScienceQuizModal({
         onAnswerAttemptRef.current?.({
           isCorrect,
           selectedIndex,
-          selectedText,
+          selectedText: sageStudent,
+          studentAnswer: fillIn ? sageStudent : studentAnswer,
           responseTimeMs,
           questionData: {
             ...questionData,
-            correctAnswer: engineCorrect || questionData.correctAnswer || null,
+            questionType,
+            correctAnswer:
+              sageCorrect || questionData.correctAnswer || null,
+            acceptedAnswers: fillIn ? sageInput.acceptedAnswers : undefined,
+            studentAnswer: fillIn ? sageStudent : questionData.studentAnswer,
             gradeFeedback: safeFeedback,
+            grade: gradePayload,
           },
           mode,
           timedOut: Boolean(timedOut),
           gradeFeedback: safeFeedback,
-          correctAnswer: engineCorrect || null,
+          correctAnswer: sageCorrect,
         });
         setResult({
           isCorrect,
           selectedIndex,
-          selectedText,
+          selectedText: sageStudent,
           responseTimeMs,
           timedOut: Boolean(timedOut),
           correctAnswer:
-            engineCorrect || (isCorrect ? selectedText : null),
+            sageCorrect || (isCorrect ? sageStudent : null),
         });
         if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = window.setTimeout(() => {
@@ -384,14 +410,40 @@ export default function ScienceQuizModal({
       isCorrect = false;
     }
 
+    const fallbackFillIn =
+      isFillInQuestionType(questionType) || isFillInQuestionType(questionData);
+    const fallbackSage = normalizeSageMindMapInput({
+      questionData: { ...questionData, questionType },
+      selectedText,
+      studentAnswer,
+      selectedIndex,
+      correctAnswer: questionData?.correctAnswer,
+      isCorrect,
+    });
+    const fallbackStudent = fallbackFillIn
+      ? fallbackSage.studentAnswer || serializeStudentAnswer(studentAnswer) || selectedText
+      : selectedText;
     onAnswerAttemptRef.current?.({
       isCorrect,
       selectedIndex,
-      selectedText,
+      selectedText: fallbackStudent,
+      studentAnswer: fallbackFillIn ? fallbackStudent : studentAnswer,
       responseTimeMs,
-      questionData,
+      questionData: fallbackFillIn
+        ? {
+            ...questionData,
+            questionType,
+            studentAnswer: fallbackStudent,
+            correctAnswer:
+              fallbackSage.correctAnswer || questionData?.correctAnswer || null,
+            acceptedAnswers: fallbackSage.acceptedAnswers,
+          }
+        : questionData,
       mode,
       timedOut: Boolean(timedOut),
+      correctAnswer: fallbackFillIn
+        ? fallbackSage.correctAnswer || null
+        : undefined,
     });
     setResult({
       isCorrect,

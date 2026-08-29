@@ -38,6 +38,7 @@ import {
   saveLevelPerformance,
 } from '../../data/masteryModel';
 import { loadFarmProgress, saveFarmProgress } from '../../data/farmProgress.js';
+import { isLearningPathLinked } from '../../data/chapterPath.js';
 import {
   applyFrustrationToGameplaySettings,
   consumePendingGameplayBonus,
@@ -55,8 +56,7 @@ import {
   advanceChallengeProgress,
   getChallengeProgress,
   shopBandFromPerformance,
-  UNLOCK_WORLD_SLOTS,
-  UNLOCK_BUILDING_SLOTS,
+  pickUnlockWorldSlot,
 } from '../../data/unlockShop.js';
 import {
   buildActiveChallenges,
@@ -2281,7 +2281,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.farmLevel = {
       ...this.farmLevel,
-      goalText: `Level complete!${timeNote}${bonusNote} Unlock shop is open — bought items stay on your farm.`,
+      goalText: `Level complete!${timeNote}${bonusNote} Unlock shop is open — then return to your learning path.`,
     };
 
     const shopPerf = this.buildShopPerformance();
@@ -2599,13 +2599,17 @@ export default class GameScene extends Phaser.Scene {
     }
     this.unlockSprites?.clear?.();
     this.placedUnlockIds?.clear?.();
+    this.unlockSlotUsed = [];
   }
 
-  /** Owned shop items appear starting the level after purchase (no quests). */
+  /** Owned shop items appear starting the level after purchase; LPE rewards can appear now. */
   shouldShowOwnedUnlock(itemId) {
     if (!itemId || SKIP_UNLOCK_ITEMS.has(itemId)) return false;
     const levelId = Math.max(1, Number(this.levelId) || 1);
-    const purchasedAt = Number(getUnlockMeta(itemId)?.purchasedAtLevel) || 0;
+    const meta = getUnlockMeta(itemId) || {};
+    const availableAt = Number(meta.availableAtLevel) || 0;
+    if (availableAt > 0) return levelId >= availableAt;
+    const purchasedAt = Number(meta.purchasedAtLevel) || 0;
     if (purchasedAt > 0 && levelId <= purchasedAt) return false;
     return true;
   }
@@ -2613,6 +2617,7 @@ export default class GameScene extends Phaser.Scene {
   placeOwnedUnlocks() {
     if (!this.placedUnlockIds) this.placedUnlockIds = new Set();
     if (!this.unlockSprites) this.unlockSprites = new Map();
+    this.unlockSlotUsed = [];
     for (const id of getOwnedUnlockIds()) {
       if (!this.shouldShowOwnedUnlock(id)) continue;
       this.placeUnlockSprite(id);
@@ -2982,21 +2987,16 @@ export default class GameScene extends Phaser.Scene {
     const item = getUnlockItem(itemId);
     if (!item) return null;
 
-    const owned = getOwnedUnlockIds();
-    const buildings = owned.filter((id) => {
-      const it = getUnlockItem(id);
-      return it?.category === 'building';
+    if (!this.unlockSlotUsed) this.unlockSlotUsed = [];
+    const slot = pickUnlockWorldSlot(item, this.unlockSlotUsed, {
+      minTileGap: item.category === 'building' ? 5 : 3,
+      collidesAt: (gridX, gridY) => {
+        const colTile = this.colLayer?.getTileAt(gridX, gridY);
+        return Boolean(colTile && colTile.collides);
+      },
     });
-    const others = owned.filter((id) => !buildings.includes(id));
-
-    let slot;
-    if (item.category === 'building') {
-      const bi = Math.max(0, buildings.indexOf(itemId));
-      slot = UNLOCK_BUILDING_SLOTS[bi % UNLOCK_BUILDING_SLOTS.length];
-    } else {
-      const oi = Math.max(0, others.indexOf(itemId));
-      slot = UNLOCK_WORLD_SLOTS[oi % UNLOCK_WORLD_SLOTS.length];
-    }
+    if (!slot) return null;
+    this.unlockSlotUsed.push(slot);
 
     const x = slot.tileX * TILE_SIZE + TILE_SIZE / 2;
     const y = slot.tileY * TILE_SIZE + TILE_SIZE / 2;
@@ -3007,24 +3007,31 @@ export default class GameScene extends Phaser.Scene {
         ? this.add.sprite(x, y, item.textureKey, 0)
         : this.add.image(x, y, item.textureKey);
       const src = this.textures.get(item.textureKey)?.getSourceImage?.();
-      const scale = resolveUnlockDisplayScale(
+      let scale = resolveUnlockDisplayScale(
         item,
         src?.width || sprite.width || item.frameWidth,
         src?.height || sprite.height || item.frameHeight,
         TILE_SIZE,
       );
+      const maxH = TILE_SIZE * (item.category === 'building' ? 4.2 : 2.4);
+      const maxW = TILE_SIZE * (item.category === 'building' ? 4.2 : 2.8);
+      const h = (src?.height || sprite.height || 16) * scale;
+      const w = (src?.width || sprite.width || 16) * scale;
+      if (h > maxH) scale *= maxH / h;
+      if (w * (h > maxH ? maxH / h : 1) > maxW) {
+        scale *= maxW / ((src?.width || sprite.width || 16) * scale);
+      }
       sprite.setScale(scale);
     } else {
-      // Texture missing â€” still show a marker so unlocks are never "invisible"
       sprite = this.add.rectangle(x, y, 40, 40, 0x3d6b45, 0.95);
       sprite.setStrokeStyle(2, 0xd4a017);
     }
 
-    sprite.setDepth(item.category === 'building' ? 6 : 5);
+    sprite.setOrigin(0.5, 0.92);
+    sprite.setDepth(3 + y / 10000);
     sprite.setData('unlockId', itemId);
 
-    const labelY =
-      y - Math.max(28, (sprite.displayHeight || 48) / 2 + 10);
+    const labelY = y - Math.max(22, (sprite.displayHeight || 48) * 0.92 + 8);
     const baseName = item.name || itemId;
     const label = this.add
       .text(x, labelY, baseName, {
@@ -3035,25 +3042,23 @@ export default class GameScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5)
-      .setDepth(7);
+      .setDepth(4 + y / 10000);
 
-    // Invisible click zone. Scaled building PNGs often miss Phaser sprite hit-tests.
-    const hitW = Math.max(
-      TILE_SIZE * 4,
-      (Number(sprite.displayWidth) || 40) + TILE_SIZE,
+    const hitW = Math.min(
+      TILE_SIZE * 3.2,
+      Math.max(TILE_SIZE * 1.6, (Number(sprite.displayWidth) || 40) * 0.7),
     );
-    const hitH = Math.max(
-      TILE_SIZE * 4,
-      (Number(sprite.displayHeight) || 40) + TILE_SIZE,
+    const hitH = Math.min(
+      TILE_SIZE * 3.2,
+      Math.max(TILE_SIZE * 1.6, (Number(sprite.displayHeight) || 40) * 0.7),
     );
     const hit = this.add
-      .rectangle(x, y, hitW, hitH, 0x000000, 0.001)
-      .setDepth(9);
+      .rectangle(x, y - hitH * 0.2, hitW, hitH, 0x000000, 0.001)
+      .setDepth(4 + y / 10000);
     hit.setData('unlockId', itemId);
     hit.setData('label', label);
     hit.setData('baseLabel', baseName);
     hit.setData('visual', sprite);
-    // Shop unlocks are decorative — no item quests
 
     this.unlockSprites?.set(itemId, hit);
     this.placedUnlockIds.add(itemId);
@@ -5465,6 +5470,14 @@ export default class GameScene extends Phaser.Scene {
   onForestGateEnter() {
     if (!this.forestUnlocked) return;
     this.clearAllCrops({ silent: true });
+    if (isLearningPathLinked()) {
+      ForestGameBridge.emit(FARM_EVENTS.CHAPTER_GAME_COMPLETE, {
+        levelId: this.levelId || 1,
+        startingMoney: this.currentMoney || 0,
+        currentMoney: this.currentMoney || 0,
+      });
+      return;
+    }
     const nextLevelId = (this.levelId || 1) + 1;
     saveFarmProgress({
       currentLevelId: nextLevelId,

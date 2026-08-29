@@ -64,6 +64,8 @@ export const FARM_EVENTS = {
   FARM_SHOP_TELEMETRY: 'FARM_SHOP_TELEMETRY',
   /** Start / restart GameScene at a farm level id */
   START_FARM_LEVEL: 'START_FARM_LEVEL',
+  /** Phaser/React: chapter farm finished — return to Learning Path Engine */
+  CHAPTER_GAME_COMPLETE: 'CHAPTER_GAME_COMPLETE',
   /** React → Phaser: remember next playable level before the lobby starts */
   SET_FARM_RESUME: 'SET_FARM_RESUME',
   /** Active unlock-item challenges for this level */

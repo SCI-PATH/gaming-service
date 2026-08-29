@@ -22,6 +22,11 @@ import {
   composeFiveStepLesson,
   validateStructuredLesson,
 } from './explainMisconception.js';
+import {
+  isFillInQuestionType,
+  normalizeSageMindMapInput,
+  SAGE_QUESTION_TYPES,
+} from './normalizeSageMindMapInput.js';
 
 export { explainWhyWrong, explainCorrectIdea, scienceKeyIdea } from './explainMisconception.js';
 
@@ -36,27 +41,40 @@ const BRANCH_COLORS = [
 
 export function extractQuestionFacts(questionData) {
   if (!questionData) return null;
-  const options = (questionData.options || []).map((opt, idx) => {
-    if (typeof opt === 'string') {
-      return {
-        text: opt,
-        isCorrect: idx === questionData.correctIndex,
-      };
-    }
-    return {
-      text: opt.text || String(opt),
-      isCorrect:
-        Boolean(opt.isCorrect) || idx === questionData.correctIndex,
-    };
-  });
-  const correctIndex =
-    typeof questionData.correctIndex === 'number'
+  const fillIn = isFillInQuestionType(questionData);
+  const options = fillIn
+    ? []
+    : (questionData.options || []).map((opt, idx) => {
+        if (typeof opt === 'string') {
+          return {
+            text: opt,
+            isCorrect: idx === questionData.correctIndex,
+          };
+        }
+        return {
+          text: opt.text || String(opt),
+          isCorrect:
+            Boolean(opt.isCorrect) || idx === questionData.correctIndex,
+        };
+      });
+  const correctIndex = fillIn
+    ? -1
+    : typeof questionData.correctIndex === 'number'
       ? questionData.correctIndex
       : options.findIndex((o) => o.isCorrect);
-  const correct =
-    (correctIndex >= 0 ? options[correctIndex] : null) ||
-    options.find((o) => o.isCorrect) ||
-    null;
+  const correct = fillIn
+    ? null
+    : (correctIndex >= 0 ? options[correctIndex] : null) ||
+      options.find((o) => o.isCorrect) ||
+      null;
+  const normalized = normalizeSageMindMapInput({
+    questionData,
+    studentAnswer: questionData.studentAnswer,
+    selectedText: questionData.selectedText,
+    correctAnswer: questionData.correctAnswer,
+    acceptedAnswers: questionData.acceptedAnswers,
+    grade: questionData.grade || questionData.gradePayload,
+  });
 
   return {
     id: questionData.id || null,
@@ -69,25 +87,56 @@ export function extractQuestionFacts(questionData) {
     prompt: questionData.prompt || questionData.question || '',
     hint: questionData.hint || null,
     grade: questionData.grade || null,
-    options: options.map((o) => o.text),
+    questionType: normalized.questionType,
+    options: fillIn ? [] : options.map((o) => o.text),
     correctIndex,
-    correctAnswer:
-      questionData.correctAnswer ||
-      correct?.text ||
-      null,
+    correctAnswer: fillIn
+      ? normalized.correctAnswer || questionData.correctAnswer || null
+      : questionData.correctAnswer || correct?.text || null,
+    acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
+    studentAnswer: fillIn ? normalized.studentAnswer || null : undefined,
   };
 }
 
 export function buildMissAttempt(questionData, selectedText = null) {
+  const normalized = normalizeSageMindMapInput({
+    questionData,
+    selectedText,
+    studentAnswer:
+      questionData?.studentAnswer ??
+      questionData?.blanks ??
+      selectedText,
+    correctAnswer: questionData?.correctAnswer,
+    acceptedAnswers: questionData?.acceptedAnswers,
+    grade: questionData?.grade || questionData?.gradePayload,
+    isCorrect: false,
+  });
   const facts = extractQuestionFacts(questionData);
+  const fillIn =
+    normalized.questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK ||
+    normalized.questionType === SAGE_QUESTION_TYPES.ShortAnswer;
+  const studentAnswer = fillIn
+    ? normalized.studentAnswer ||
+      (typeof selectedText === 'string' ? selectedText.trim() : '') ||
+      '(timed out / no selection)'
+    : selectedText || '(timed out / no selection)';
+  const correctAnswer = fillIn
+    ? normalized.correctAnswer || null
+    : safeScienceLine(facts?.correctAnswer, null);
+
   if (!facts || !facts.prompt) {
     return {
       questionId: questionData?.id || null,
-      topic: questionData?.topic || 'Science',
-      prompt: questionData?.prompt || 'a science challenge',
-      options: [],
-      correctAnswer: null,
-      studentAnswer: selectedText || '(no selection)',
+      topic: normalized.topic || questionData?.topic || 'Science',
+      prompt: normalized.question || questionData?.prompt || 'a science challenge',
+      questionType: normalized.questionType,
+      options: fillIn ? [] : [],
+      correctAnswer: correctAnswer,
+      canonicalCorrectAnswer: normalized.canonicalCorrectAnswer || correctAnswer,
+      acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
+      studentAnswer: fillIn
+        ? normalized.studentAnswer || selectedText || '(no selection)'
+        : selectedText || '(no selection)',
       hint: questionData?.hint || null,
       at: Date.now(),
     };
@@ -96,10 +145,15 @@ export function buildMissAttempt(questionData, selectedText = null) {
     questionId: facts.id,
     topic: facts.topic,
     prompt: facts.prompt,
-    options: facts.options,
-    correctIndex: facts.correctIndex,
-    correctAnswer: safeScienceLine(facts.correctAnswer, null),
-    studentAnswer: selectedText || '(timed out / no selection)',
+    questionType: normalized.questionType || facts.questionType,
+    options: fillIn ? [] : facts.options,
+    correctIndex: fillIn ? -1 : facts.correctIndex,
+    correctAnswer,
+    canonicalCorrectAnswer: fillIn
+      ? normalized.canonicalCorrectAnswer || correctAnswer
+      : correctAnswer,
+    acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
+    studentAnswer,
     hint: facts.hint,
     grade: facts.grade,
     at: Date.now(),
@@ -435,6 +489,7 @@ export function buildPersonalizedMindMap({
       question: a.prompt,
       studentAnswer: cleanWrong,
       correctAnswer: cleanRight,
+      options: Array.isArray(a.options) ? a.options : [],
       hint: a.hint,
       why,
       why_wrong: why,

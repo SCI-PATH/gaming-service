@@ -156,10 +156,15 @@ export function getBehaviorProbe(code, evidence = {}) {
   }
 
   if (c === C.REPEATED_WRONG) {
+    const farmQ = String(evidence.farm_question || evidence.questionText || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     return {
-      prompt: hasWrongEvidence
-        ? `A few answers about ${concept} were not quite right${wrong ? ` — you tried "${wrong}"` : ''}. What feels most true?`
-        : 'A few answers were not quite right. What feels most true?',
+      prompt: farmQ
+        ? `What feels most true about this farm question${wrong ? ` (your pick: "${wrong}")` : ''}?`
+        : hasWrongEvidence
+          ? `A few answers about ${concept} were not quite right${wrong ? ` — you tried "${wrong}"` : ''}. What feels most true?`
+          : 'A few answers were not quite right. What feels most true?',
       options: [
         opt('A', `I still need help understanding ${concept}`, REASON_KEYS.CONCEPT_GAP),
         opt('B', mixLabel, REASON_KEYS.MIXES_IDEAS),
@@ -170,8 +175,13 @@ export function getBehaviorProbe(code, evidence = {}) {
   }
 
   if (c === C.SAME_CONCEPT_STRUGGLE) {
+    const farmQ = String(evidence.farm_question || evidence.questionText || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     return {
-      prompt: `This idea about ${concept} still feels sticky${wrong ? ` (last try: "${wrong}")` : ''}. What is hardest right now?`,
+      prompt: farmQ
+        ? `What is hardest about this question${wrong ? ` (your pick: "${wrong}")` : ''}?`
+        : `This idea about ${concept} still feels sticky${wrong ? ` (last try: "${wrong}")` : ''}. What is hardest right now?`,
       options: [
         opt('A', `Explain ${concept} simply for me`, REASON_KEYS.WANTS_EXPLAIN),
         opt('B', mixLabel, REASON_KEYS.MIXES_IDEAS),

@@ -1500,6 +1500,22 @@ body {
   color: #c8d4ef;
 }
 
+.game-lobby-chapter {
+  margin: 8px auto 16px;
+  max-width: 28rem;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(112, 224, 0, 0.28);
+  background: rgba(8, 28, 18, 0.55);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: #d7f5c8;
+}
+
+.game-lobby-chapter strong {
+  color: #f4ffe8;
+}
+
 .game-lobby-guide-list {
   margin: 12px auto 20px;
   padding: 0;

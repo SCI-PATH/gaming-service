@@ -41,6 +41,10 @@ export default function GameLobbyOverlay({
   onLeaderboard,
   onToggleMusic,
   onOpenProgress,
+  chapterTitle = '',
+  nextChapterTitle = '',
+  pathLinked = false,
+  unlockedLabels = [],
 }) {
   const isGuide = mode === 'guide';
   const progress = lobbyProgress || {};
@@ -104,6 +108,26 @@ export default function GameLobbyOverlay({
         <section className="game-lobby-hero">
           <p className="game-lobby-kicker">{isGuide ? 'Briefing' : GAME_PLATFORM}</p>
           <h2 className="game-lobby-title">{isGuide ? 'How to Play' : GAME_NAME}</h2>
+          {!isGuide && pathLinked && chapterTitle ? (
+            <p className="game-lobby-chapter">
+              Chapter farm · <strong>{chapterTitle}</strong> · Level{' '}
+              {progress.levelId ?? farm.levelId ?? 1}
+              {unlockedLabels.length ? (
+                <>
+                  <br />
+                  On this farm:{' '}
+                  {unlockedLabels.slice(0, 6).join(', ')}
+                  {unlockedLabels.length > 6 ? '…' : ''}
+                </>
+              ) : null}
+              {nextChapterTitle ? (
+                <>
+                  <br />
+                  After you finish, you return to unlock {nextChapterTitle}.
+                </>
+              ) : null}
+            </p>
+          ) : null}
           {!isGuide ? (
             <p className="game-lobby-tagline">{GAME_TAGLINE.replace(/\n/g, ' ')}</p>
           ) : (

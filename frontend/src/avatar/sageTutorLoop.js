@@ -17,6 +17,10 @@ import {
   canDescribeScientifically,
   validateStructuredLesson,
 } from './explainMisconception.js';
+import {
+  isFillInQuestionType,
+  normalizeSageMindMapInput,
+} from './normalizeSageMindMapInput.js';
 import { friendlyStudentName, sanitizeKidSpeech } from './kidFriendlySpeech.js';
 
 export const NEXT_ACTIONS = Object.freeze({
@@ -668,6 +672,25 @@ export function compactTeachingState(context = {}, session = {}) {
     studentAnswer,
     correctAnswer,
   });
+  const sageInput = normalizeSageMindMapInput({
+    questionType: cq.question_type || cq.mode || quiz.questionType || questionType,
+    prompt: questionText,
+    question: questionText,
+    studentAnswer,
+    selectedText: studentAnswer,
+    correctAnswer,
+    acceptedAnswers: cq.accepted_answers || cq.acceptedAnswers || quiz.acceptedAnswers,
+    options,
+    topic,
+    grade: cq.grade || quiz.grade,
+  });
+  const fillIn = isFillInQuestionType(sageInput.questionType) || isFillInQuestionType(questionType);
+  const normalizedStudent = fillIn
+    ? sageInput.studentAnswer || studentAnswer
+    : studentAnswer;
+  const normalizedCorrect = fillIn
+    ? sageInput.correctAnswer || correctAnswer
+    : correctAnswer;
   const snapshot = context.performance_snapshot || context.metrics || {};
   const frustrationScore = Number(
     context.frustration_score ??
@@ -677,13 +700,13 @@ export function compactTeachingState(context = {}, session = {}) {
   );
   const previousMistakes = relatedPreviousMistakes(
     context.previous_mistakes || context.answer_history || [],
-    { topic, studentAnswer, questionText },
+    { topic, studentAnswer: normalizedStudent, questionText },
   );
   return {
     questionText,
-    studentAnswer,
-    correctAnswer,
-    options,
+    studentAnswer: normalizedStudent,
+    correctAnswer: normalizedCorrect,
+    options: fillIn ? [] : options,
     topic,
     questionType,
     hint: cq.hint || quiz.hint || prior.hint || null,

@@ -19,6 +19,13 @@ export {
   scienceKeyIdea,
 } from './buildMindMap.js';
 export {
+  normalizeSageMindMapInput,
+  extractFillInStudentAnswer,
+  extractFillInCorrectAnswer,
+  isFillInQuestionType,
+  SAGE_QUESTION_TYPES,
+} from './normalizeSageMindMapInput.js';
+export {
   QUESTION_FORMATS,
   extractLearningPreferences,
   formatPreferencesForPayload,

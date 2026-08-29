@@ -67,6 +67,15 @@ import {
   loadFarmRun,
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
+import {
+  getChapterLaunch,
+  isLearningPathLinked,
+  newlyUnlockedLabels,
+  ownedUnlockLabels,
+  openLearningPathHome,
+  parkFarmProgressAtCompletedLevel,
+  returnToLearningPath,
+} from './data/chapterPath.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
@@ -480,6 +489,7 @@ export default function App() {
       recordAvatarAnswer({
         isCorrect: Boolean(attempt.isCorrect),
         selectedText: attempt.selectedText || null,
+        studentAnswer: attempt.studentAnswer || attempt.selectedText || null,
         questionData: attempt.questionData || null,
         responseTimeMs: attempt.responseTimeMs ?? null,
         correctAnswer: attempt.correctAnswer || null,
@@ -945,7 +955,7 @@ export default function App() {
             }).`
           : '';
       setBanner(
-        `Level complete!${beatNote}${bonusNote} A motivational story is ready — then spend cash on unlocks.`,
+        `Level complete!${beatNote}${bonusNote} Spend cash on unlocks, then return to your learning path.`,
       );
     } else {
       setBanner('Level complete! Proceed to the Forest Entrance!');
@@ -1297,7 +1307,47 @@ export default function App() {
     setQuizPayload(null);
   }, []);
 
+  const handleReturnToLearningPath = useCallback(
+    (payload = {}) => {
+      const levelId = Math.max(
+        1,
+        Number(payload.levelId ?? farm.levelId) || 1,
+      );
+      const cash = Math.max(
+        0,
+        Number(
+          payload.currentMoney ??
+            payload.startingMoney ??
+            farm.earnings ??
+            farm.currentMoney,
+        ) || 0,
+      );
+      parkFarmProgressAtCompletedLevel(levelId, cash);
+      setShopOpen(false);
+      emitUnlockShopClose();
+      const launch = getChapterLaunch();
+      returnToLearningPath({
+        lessonId: launch.lessonId,
+        levelId,
+        chapterTitle: launch.chapterTitle,
+        nextLessonId: launch.nextLessonId,
+        nextChapterTitle: launch.nextChapterTitle,
+        unlockedLabels: newlyUnlockedLabels(levelId).length
+          ? newlyUnlockedLabels(levelId)
+          : ownedUnlockLabels(),
+      });
+    },
+    [farm.levelId, farm.earnings, farm.currentMoney],
+  );
+
   const handleShopClose = useCallback(() => {
+    if (isLearningPathLinked()) {
+      handleReturnToLearningPath({
+        levelId: farm.levelId,
+        currentMoney: farm.earnings ?? farm.currentMoney,
+      });
+      return;
+    }
     const nextLevelId = Math.max(1, (farm.levelId || 1) + 1);
     const cash = Math.max(
       0,
@@ -1334,7 +1384,26 @@ export default function App() {
         startingMoney: cash,
       });
     }, 80);
-  }, [farm.levelId, farm.earnings, farm.currentMoney, refreshChallenges]);
+  }, [
+    farm.levelId,
+    farm.earnings,
+    farm.currentMoney,
+    refreshChallenges,
+    handleReturnToLearningPath,
+  ]);
+
+  useEffect(() => {
+    const onChapterGameComplete = (payload = {}) => {
+      if (isLearningPathLinked()) handleReturnToLearningPath(payload);
+    };
+    ForestGameBridge.on(FARM_EVENTS.CHAPTER_GAME_COMPLETE, onChapterGameComplete);
+    return () => {
+      ForestGameBridge.off(FARM_EVENTS.CHAPTER_GAME_COMPLETE, onChapterGameComplete);
+    };
+  }, [handleReturnToLearningPath]);
+
+  const chapterLaunch = getChapterLaunch();
+  const pathLinked = isLearningPathLinked();
 
   if (!student) {
     return <StudentLogin onLogin={handleLogin} />;
@@ -1353,6 +1422,9 @@ export default function App() {
         student={student}
         farm={farm}
         gameReady={gameReady}
+        chapterTitle={chapterLaunch.chapterTitle}
+        chapterLevel={pathLinked ? farm.levelId : null}
+        onOpenLearningPath={pathLinked ? openLearningPathHome : null}
         onOpenDashboard={handleOpenResearchDashboard}
         onBackToFarm={handleBackToFarm}
         onLogout={handleLogout}
@@ -1403,6 +1475,10 @@ export default function App() {
               onLeaderboard={handleLobbyLeaderboard}
               onToggleMusic={handleLobbyToggleMusic}
               onOpenProgress={handleOpenResearchDashboard}
+              chapterTitle={chapterLaunch.chapterTitle}
+              nextChapterTitle={chapterLaunch.nextChapterTitle}
+              pathLinked={pathLinked}
+              unlockedLabels={ownedUnlockLabels()}
             />
           )}
 
@@ -1503,6 +1579,9 @@ export default function App() {
             cash={farm.earnings}
             performance={shopPerformance}
             onClose={handleShopClose}
+            returnToLearningPath={pathLinked}
+            chapterTitle={chapterLaunch.chapterTitle}
+            nextChapterTitle={chapterLaunch.nextChapterTitle}
           />
 
           <MotivationalVideoModal

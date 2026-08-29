@@ -1,5 +1,6 @@
 /**
  * Save the current science mind map as a PNG (SVG fallback).
+ * Includes the full miss: question, choices, and SAGE's scientific teaching.
  */
 
 const COLORS = [
@@ -19,36 +20,58 @@ function esc(value) {
     .replace(/"/g, '&quot;');
 }
 
-function wrapLines(text, maxChars, maxLines = 6) {
-  const words = String(text || '')
+function norm(text) {
+  return String(text || '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean);
-  if (!words.length) return ['—'];
+    .trim();
+}
+
+function wrapLines(text, maxChars, maxLines = 80) {
+  const words = norm(text).split(' ').filter(Boolean);
+  if (!words.length) return [];
   const lines = [];
   let cur = '';
-  for (const word of words) {
+  let i = 0;
+  while (i < words.length && lines.length < maxLines) {
+    const word = words[i];
     const next = cur ? `${cur} ${word}` : word;
     if (next.length > maxChars && cur) {
       lines.push(cur);
       cur = word;
-      if (lines.length >= maxLines) {
-        cur = '';
-        break;
-      }
+      i += 1;
+    } else if (word.length > maxChars && !cur) {
+      lines.push(word.slice(0, maxChars - 1));
+      words[i] = word.slice(maxChars - 1);
     } else {
       cur = next;
+      i += 1;
     }
   }
   if (cur && lines.length < maxLines) lines.push(cur);
-  const full = words.join(' ');
-  const shown = lines.join(' ');
-  if (full.length > shown.length && lines.length) {
+  if (i < words.length && lines.length) {
     const last = lines[lines.length - 1];
-    lines[lines.length - 1] = `${last.replace(/\s+\S+$/, last).slice(0, Math.max(1, maxChars - 1))}…`;
+    lines[lines.length - 1] = `${last.slice(0, Math.max(1, maxChars - 1))}…`;
   }
   return lines;
+}
+
+function choiceText(opt) {
+  if (opt == null) return '';
+  if (typeof opt === 'string') return norm(opt);
+  return norm(opt.text || opt.label || opt.value || opt.option || '');
+}
+
+function sameChoice(a, b) {
+  const x = choiceText(a)
+    .replace(/^\(?[A-Da-d]\)?[.)]\s+/, '')
+    .toLowerCase();
+  const y = choiceText(b)
+    .replace(/^\(?[A-Da-d]\)?[.)]\s+/, '')
+    .toLowerCase();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.length >= 8 && y.length >= 8 && (x.includes(y) || y.includes(x))) return true;
+  return false;
 }
 
 function stampName(title) {
@@ -72,14 +95,98 @@ function triggerDownload(blob, name) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function pushBlock(blocks, label, text, tone, maxChars) {
+  const lines = wrapLines(text, maxChars);
+  if (!lines.length) return;
+  blocks.push({ label, lines, tone: tone || '' });
+}
+
+function cardBlocks(b, maxChars) {
+  const blocks = [];
+  const lesson = b.lesson || {};
+  const student = lesson.studentAnswer || {};
+  const correct = lesson.correctAnswer || {};
+  const cmp = lesson.comparisonFields || lesson.scientificComparison || {};
+
+  pushBlock(blocks, 'Question', b.question || b.prompt || '—', '', maxChars);
+
+  const options = Array.isArray(b.options) ? b.options.map(choiceText).filter(Boolean) : [];
+  if (options.length) {
+    const lines = [];
+    options.forEach((text, i) => {
+      const letter = String.fromCharCode(65 + i);
+      const yours = sameChoice(text, b.studentAnswer) ? '  · your pick' : '';
+      const ok = sameChoice(text, b.correctAnswer) ? '  · correct' : '';
+      wrapLines(`${letter}. ${text}${yours}${ok}`, maxChars).forEach((line) => lines.push(line));
+    });
+    if (lines.length) blocks.push({ label: 'Choices', lines, tone: '' });
+  } else {
+    pushBlock(blocks, 'Your pick', b.studentAnswer || '—', 'bad', maxChars);
+    pushBlock(blocks, 'Correct', b.correctAnswer || '—', 'ok', maxChars);
+  }
+
+  if (student.scientificDefinition || student.scientificFunction) {
+    const head = student.concept ? `${student.concept}. ` : '';
+    pushBlock(
+      blocks,
+      'Your answer — scientifically',
+      `${head}${student.scientificDefinition || ''}`,
+      'bad',
+      maxChars,
+    );
+    pushBlock(blocks, 'Your answer — function', student.scientificFunction, '', maxChars);
+    pushBlock(blocks, 'Your answer — example', student.example, '', maxChars);
+  }
+
+  if (correct.scientificDefinition || correct.scientificFunction) {
+    const head = correct.concept ? `${correct.concept}. ` : '';
+    pushBlock(
+      blocks,
+      'Correct answer — scientifically',
+      `${head}${correct.scientificDefinition || ''}`,
+      'ok',
+      maxChars,
+    );
+    pushBlock(blocks, 'Correct answer — function', correct.scientificFunction, '', maxChars);
+    pushBlock(blocks, 'Correct answer — example', correct.example, '', maxChars);
+  }
+
+  if (cmp.studentConcept && cmp.correctConcept) {
+    pushBlock(
+      blocks,
+      'Scientific comparison',
+      `${cmp.studentConcept} → ${cmp.studentConceptFunction || ''}. ${cmp.correctConcept} → ${cmp.correctConceptFunction || ''}. ${cmp.keyScientificDifference || ''}`,
+      '',
+      maxChars,
+    );
+  }
+
+  const connection =
+    lesson.questionConnection ||
+    cmp.whyCorrectAnswerFitsQuestion ||
+    cmp.whyCorrectAnswerFits ||
+    '';
+  pushBlock(blocks, 'Question connection', connection, '', maxChars);
+
+  if (!student.scientificDefinition) {
+    if (b.keyConcept) pushBlock(blocks, 'Key idea', b.keyConcept, '', maxChars);
+    const why = b.why || b.keyExplain || '';
+    if (why && !/one is about/i.test(why)) {
+      pushBlock(blocks, 'Look closer', why, '', maxChars);
+    }
+  }
+
+  return blocks;
+}
+
 function buildMindMapSvg(map, branches) {
-  const cols = branches.length <= 1 ? 1 : 2;
-  const pageW = cols === 1 ? 760 : 1100;
+  const pageW = 920;
   const margin = 28;
-  const gap = 16;
+  const gap = 18;
   const innerW = pageW - margin * 2;
-  const cardW = cols === 1 ? innerW : (innerW - gap) / 2;
-  const lineH = 18;
+  const cardW = innerW;
+  const lineH = 17;
+  const maxChars = 78;
   const title = map?.root || map?.title || map?.topic || 'Your Science Gaps';
   const summary =
     map?.summary ||
@@ -88,44 +195,23 @@ function buildMindMapSvg(map, branches) {
       branches.length === 1 ? '' : 'es'
     }`;
 
-  const titleLines = wrapLines(title, 42, 2);
-  const summaryLines = wrapLines(summary, 88, 3);
-  let y = margin;
-  y += 22;
-  y += titleLines.length * 28 + 8;
-  y += summaryLines.length * 18 + 18;
+  const titleLines = wrapLines(title, 48, 3);
+  const summaryLines = wrapLines(summary, 92, 4);
 
   const cards = branches.map((b) => {
-    const color = COLORS[b.colorIndex % COLORS.length] || COLORS[0];
-    const question = wrapLines(b.question || '—', 46, 5);
-    const pick = wrapLines(b.studentAnswer || '—', 46, 3);
-    const correct = wrapLines(b.correctAnswer || '—', 46, 3);
-    const key = wrapLines(b.keyConcept || '', 46, 3);
-    const why = wrapLines(b.why || b.keyExplain || '', 46, 4);
-    const blocks = [
-      { label: 'Question', lines: question },
-      { label: 'Your pick', lines: pick, tone: 'bad' },
-      { label: 'Correct', lines: correct, tone: 'ok' },
-    ];
-    if (b.keyConcept) blocks.push({ label: 'Key idea', lines: key });
-    if (b.why || b.keyExplain) blocks.push({ label: "Let's look", lines: why });
-    let h = 52;
+    const color = COLORS[(b.colorIndex || 0) % COLORS.length] || COLORS[0];
+    const blocks = cardBlocks(b, maxChars);
+    let h = 56;
     blocks.forEach((block) => {
-      h += 16 + block.lines.length * lineH + 10;
+      h += 20 + block.lines.length * lineH + 10;
     });
-    h += 12;
+    h += 14;
     return { b, color, blocks, h };
   });
 
-  const rows = [];
-  for (let i = 0; i < cards.length; i += cols) {
-    rows.push(cards.slice(i, i + cols));
-  }
-  const rowHeights = rows.map((row) =>
-    Math.max(...row.map((card) => card.h)),
-  );
-  const bodyH = rowHeights.reduce((sum, h) => sum + h + gap, 0);
-  const pageH = y + bodyH + 40;
+  let y = margin + 22 + titleLines.length * 28 + 8 + summaryLines.length * 18 + 18;
+  const bodyH = cards.reduce((sum, card) => sum + card.h + gap, 0);
+  const pageH = y + bodyH + 36;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${pageH}" viewBox="0 0 ${pageW} ${pageH}">
   <rect width="100%" height="100%" fill="#f6edd4"/>
@@ -147,44 +233,37 @@ function buildMindMapSvg(map, branches) {
     )}</text>`;
     ty += 18;
   });
-  ty += 10;
+  ty += 12;
 
-  let rowY = ty;
-  rows.forEach((row, rowIndex) => {
-    const rowH = rowHeights[rowIndex];
-    row.forEach((card, col) => {
-      const x = margin + col * (cardW + gap);
-      const { color, b, blocks } = card;
-      svg += `<rect x="${x}" y="${rowY}" width="${cardW}" height="${rowH}" rx="14" fill="#fffdf7" stroke="${color.stroke}" stroke-width="2.5"/>`;
-      svg += `<rect x="${x}" y="${rowY}" width="8" height="${rowH}" rx="4" fill="${color.stroke}"/>`;
-      svg += `<text x="${x + 22}" y="${rowY + 24}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="12" font-weight="800" fill="${color.stroke}">MISS ${esc(
-        String(b.index),
+  let cardY = ty;
+  cards.forEach((card) => {
+    const x = margin;
+    const { color, b, blocks, h } = card;
+    svg += `<rect x="${x}" y="${cardY}" width="${cardW}" height="${h}" rx="14" fill="#fffdf7" stroke="${color.stroke}" stroke-width="2.5"/>`;
+    svg += `<rect x="${x}" y="${cardY}" width="8" height="${h}" rx="4" fill="${color.stroke}"/>`;
+    svg += `<text x="${x + 22}" y="${cardY + 24}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="12" font-weight="800" fill="${color.stroke}">MISS ${esc(
+      String(b.index || ''),
+    )}</text>`;
+    svg += `<text x="${x + 22}" y="${cardY + 42}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="0.6" fill="#5a4e38">${esc(
+      String(b.topic || 'Science').toUpperCase(),
+    )}</text>`;
+    let by = cardY + 56;
+    blocks.forEach((block) => {
+      const fill =
+        block.tone === 'bad' ? '#fde8e8' : block.tone === 'ok' ? '#e4f6ea' : '#fff';
+      const blockH = 20 + block.lines.length * lineH;
+      svg += `<rect x="${x + 16}" y="${by}" width="${cardW - 32}" height="${blockH}" rx="8" fill="${fill}" stroke="rgba(40,50,60,0.12)"/>`;
+      svg += `<text x="${x + 26}" y="${by + 14}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="10" font-weight="800" letter-spacing="0.5" fill="#6a5638">${esc(
+        block.label.toUpperCase(),
       )}</text>`;
-      svg += `<text x="${x + 22}" y="${rowY + 42}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="11" font-weight="700" letter-spacing="0.6" fill="#5a4e38">${esc(
-        String(b.topic || 'Science').toUpperCase(),
-      )}</text>`;
-      let by = rowY + 56;
-      blocks.forEach((block) => {
-        const fill =
-          block.tone === 'bad'
-            ? '#fde8e8'
-            : block.tone === 'ok'
-              ? '#e4f6ea'
-              : '#fff';
-        const blockH = 18 + block.lines.length * lineH;
-        svg += `<rect x="${x + 16}" y="${by}" width="${cardW - 32}" height="${blockH}" rx="8" fill="${fill}" stroke="rgba(40,50,60,0.12)"/>`;
-        svg += `<text x="${x + 26}" y="${by + 14}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="10" font-weight="800" letter-spacing="0.5" fill="#6a5638">${esc(
-          block.label.toUpperCase(),
+      block.lines.forEach((line, li) => {
+        svg += `<text x="${x + 26}" y="${by + 32 + li * lineH}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="13" fill="#1f1c12">${esc(
+          line,
         )}</text>`;
-        block.lines.forEach((line, li) => {
-          svg += `<text x="${x + 26}" y="${by + 32 + li * lineH}" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="13" fill="#1f1c12">${esc(
-            line,
-          )}</text>`;
-        });
-        by += blockH + 8;
       });
+      by += blockH + 8;
     });
-    rowY += rowH + gap;
+    cardY += h + gap;
   });
 
   svg += `<text x="${pageW / 2}" y="${pageH - 22}" text-anchor="middle" font-family="Trebuchet MS, Segoe UI, sans-serif" font-size="11" fill="#6a5638">Saved ${esc(
@@ -203,10 +282,11 @@ function svgToPngBlob(svg, width, height) {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      const scale = 2;
+      const maxDim = 16000;
+      const scale = Math.min(2, maxDim / Math.max(width, height));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.round(width * scale);
-      canvas.height = Math.round(height * scale);
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         URL.revokeObjectURL(url);

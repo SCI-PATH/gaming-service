@@ -221,37 +221,58 @@ export const UNLOCK_ITEMS = [
   },
 ];
 
-/** World placement slots (tile coords) — spaced so large props don't cover each other */
-export const UNLOCK_WORLD_SLOTS = [
-  { tileX: 36, tileY: 26 },
-  { tileX: 42, tileY: 26 },
-  { tileX: 48, tileY: 26 },
-  { tileX: 54, tileY: 26 },
-  { tileX: 34, tileY: 30 },
-  { tileX: 40, tileY: 30 },
-  { tileX: 46, tileY: 30 },
-  { tileX: 52, tileY: 30 },
-  { tileX: 35, tileY: 34 },
-  { tileX: 41, tileY: 34 },
-  { tileX: 47, tileY: 34 },
-  { tileX: 53, tileY: 34 },
-  { tileX: 32, tileY: 28 },
-  { tileX: 56, tileY: 28 },
-  { tileX: 33, tileY: 32 },
-  { tileX: 55, tileY: 32 },
-  { tileX: 38, tileY: 28 },
-  { tileX: 44, tileY: 28 },
-  { tileX: 50, tileY: 28 },
-  { tileX: 37, tileY: 36 },
+/**
+ * Decorative yard slots — kept off the player spawn (48,32), farm shop (40–46,28–33),
+ * plant beds, paddock (39–55,43–52), cleaning yard (22–36,44–52), and forest gate.
+ * Buildings use the first list; animals/props use the second.
+ */
+export const UNLOCK_BUILDING_SLOTS = [
+  { tileX: 8, tileY: 12 },
+  { tileX: 86, tileY: 12 },
+  { tileX: 6, tileY: 30 },
+  { tileX: 88, tileY: 30 },
+  { tileX: 16, tileY: 6 },
+  { tileX: 78, tileY: 6 },
 ];
 
-/** Building-sized items get these roomier slots first */
-export const UNLOCK_BUILDING_SLOTS = [
-  { tileX: 34, tileY: 24 },
-  { tileX: 44, tileY: 23 },
-  { tileX: 54, tileY: 24 },
-  { tileX: 30, tileY: 28 },
-  { tileX: 58, tileY: 28 },
+export const UNLOCK_WORLD_SLOTS = [
+  { tileX: 7, tileY: 18 },
+  { tileX: 87, tileY: 18 },
+  { tileX: 7, tileY: 26 },
+  { tileX: 87, tileY: 26 },
+  { tileX: 7, tileY: 36 },
+  { tileX: 87, tileY: 36 },
+  { tileX: 22, tileY: 16 },
+  { tileX: 72, tileY: 16 },
+  { tileX: 24, tileY: 32 },
+  { tileX: 70, tileY: 32 },
+  { tileX: 32, tileY: 18 },
+  { tileX: 62, tileY: 18 },
+  { tileX: 10, tileY: 48 },
+  { tileX: 84, tileY: 48 },
+  { tileX: 18, tileY: 48 },
+  { tileX: 76, tileY: 48 },
+  { tileX: 40, tileY: 6 },
+  { tileX: 54, tileY: 6 },
+  { tileX: 8, tileY: 8 },
+  { tileX: 86, tileY: 8 },
+];
+
+/** Zones unlock sprites must not cover (tile rects, inclusive padding applied at pick time). */
+export const UNLOCK_KEEP_CLEAR = [
+  { x: 46, y: 30, w: 5, h: 5 }, // player spawn
+  { x: 39, y: 27, w: 8, h: 7 }, // farm shop + queue
+  { x: 45, y: 26, w: 6, h: 5 }, // forest gate
+  { x: 12, y: 22, w: 8, h: 5 },
+  { x: 73, y: 22, w: 8, h: 5 },
+  { x: 28, y: 8, w: 8, h: 5 },
+  { x: 57, y: 8, w: 8, h: 5 },
+  { x: 12, y: 38, w: 8, h: 5 },
+  { x: 73, y: 38, w: 8, h: 5 },
+  { x: 20, y: 53, w: 8, h: 5 },
+  { x: 65, y: 53, w: 8, h: 5 },
+  { x: 39, y: 43, w: 16, h: 9 }, // animal paddock
+  { x: 22, y: 44, w: 14, h: 8 }, // cleaning yard
 ];
 
 /** Ground tiles staged for next-level maps */
@@ -332,8 +353,9 @@ export function clearOwnedUnlocks() {
 
 /**
  * Persist ownership. Pass purchasedAtLevel so later levels can stage challenges.
+ * Learning Path rewards may set availableAtLevel = current level so they appear now.
  * @param {string} itemId
- * @param {{ purchasedAtLevel?: number }} [opts]
+ * @param {{ purchasedAtLevel?: number, availableAtLevel?: number, source?: string, pricePaid?: number }} [opts]
  */
 export function markUnlocked(itemId, opts = {}) {
   const store = readStore();
@@ -347,9 +369,17 @@ export function markUnlocked(itemId, opts = {}) {
       : Number(prev.purchasedAtLevel) > 0
         ? Number(prev.purchasedAtLevel)
         : 1;
+  const availableAt =
+    Number(opts.availableAtLevel) > 0
+      ? Number(opts.availableAtLevel)
+      : Number(prev.availableAtLevel) > 0
+        ? Number(prev.availableAtLevel)
+        : null;
   store.meta[itemId] = {
     ...prev,
     purchasedAtLevel: level,
+    ...(availableAt ? { availableAtLevel: availableAt } : {}),
+    source: opts.source || prev.source || 'shop',
     stageProgress: prev.stageProgress || {},
   };
 
@@ -582,4 +612,51 @@ export function resolveUnlockDisplayScale(
   }
   if (item.displayScale > 0) return Number(item.displayScale);
   return 1;
+}
+
+function tileInRect(tileX, tileY, rect, pad = 0) {
+  return (
+    tileX >= rect.x - pad &&
+    tileX < rect.x + rect.w + pad &&
+    tileY >= rect.y - pad &&
+    tileY < rect.y + rect.h + pad
+  );
+}
+
+export function isUnlockKeepClearTile(tileX, tileY, pad = 1) {
+  return UNLOCK_KEEP_CLEAR.some((rect) => tileInRect(tileX, tileY, rect, pad));
+}
+
+/**
+ * Pick a decorative slot that stays off gameplay, UI, and already-placed items.
+ * @param {{ category?: string }} item
+ * @param {{ tileX: number, tileY: number }[]} usedSlots
+ * @param {{ collidesAt?: (x: number, y: number) => boolean, minTileGap?: number }} [opts]
+ */
+export function pickUnlockWorldSlot(item, usedSlots = [], opts = {}) {
+  const pool =
+    item?.category === 'building' ? UNLOCK_BUILDING_SLOTS : UNLOCK_WORLD_SLOTS;
+  const used = Array.isArray(usedSlots) ? usedSlots : [];
+  const minGap = Math.max(2, Number(opts.minTileGap) || 3);
+  const collidesAt =
+    typeof opts.collidesAt === 'function' ? opts.collidesAt : null;
+
+  const isFree = (slot) => {
+    const { tileX, tileY } = slot;
+    if (isUnlockKeepClearTile(tileX, tileY, 1)) return false;
+    if (collidesAt?.(tileX, tileY) || collidesAt?.(tileX, tileY + 1)) return false;
+    return used.every((u) => {
+      const dx = Math.abs((u.tileX || 0) - tileX);
+      const dy = Math.abs((u.tileY || 0) - tileY);
+      return dx >= minGap || dy >= minGap;
+    });
+  };
+
+  const found = pool.find(isFree);
+  if (found) return found;
+
+  const fallback = pool.find(
+    (slot) => !isUnlockKeepClearTile(slot.tileX, slot.tileY, 0),
+  );
+  return fallback || pool[used.length % pool.length] || pool[0];
 }

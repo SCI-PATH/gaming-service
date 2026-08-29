@@ -5,7 +5,11 @@
  *   http://localhost:5173/?studentId=abc&username=alex&displayName=Alex&sessionId=sess_xyz&topicId=plant_biology&grade=7&source=sci-path
  */
 import { loginStudentFromPlatform } from './mockStudents.js';
-import { applyRemoteFarmProgress } from './farmProgress.js';
+import { applyRemoteFarmProgress, applyChapterFarmLevel } from './farmProgress.js';
+import {
+  applyChapterLaunch,
+  grantLearningPathReward,
+} from './chapterPath.js';
 
 function readSearchParams() {
   if (typeof window === 'undefined') return null;
@@ -26,6 +30,12 @@ function readSearchParams() {
  *   grade: number | null,
  *   startLevel: number | null,
  *   cash: number | null,
+ *   lessonId: string | null,
+ *   chapterTitle: string | null,
+ *   nextLessonId: string | null,
+ *   nextChapterTitle: string | null,
+ *   rewardItem: string | null,
+ *   returnUrl: string | null,
  *   source: string | null
  * } | null}
  */
@@ -59,6 +69,15 @@ export function parsePlatformLaunchFromUrl(search = readSearchParams()) {
       ? Math.max(0, Number(cashRaw))
       : null;
 
+  const lessonId = String(search.get('lessonId') || search.get('chapterId') || '').trim();
+  const chapterTitle = String(search.get('chapterTitle') || '').trim();
+  const nextLessonId = String(search.get('nextLessonId') || '').trim();
+  const nextChapterTitle = String(
+    search.get('nextTitle') || search.get('nextChapterTitle') || '',
+  ).trim();
+  const rewardItem = String(search.get('rewardItem') || search.get('unlockItem') || '').trim();
+  const returnUrl = String(search.get('returnUrl') || '').trim();
+
   return {
     studentId,
     username,
@@ -68,6 +87,12 @@ export function parsePlatformLaunchFromUrl(search = readSearchParams()) {
     grade,
     startLevel,
     cash,
+    lessonId: lessonId || null,
+    chapterTitle: chapterTitle || null,
+    nextLessonId: nextLessonId || null,
+    nextChapterTitle: nextChapterTitle || null,
+    rewardItem: rewardItem || null,
+    returnUrl: returnUrl || null,
     source: search.get('source') || null,
   };
 }
@@ -77,10 +102,13 @@ export function parsePlatformLaunchFromUrl(search = readSearchParams()) {
  * Safe to call once on app boot.
  */
 export function resolvePlatformLaunch() {
-  const launch = parsePlatformLaunchFromUrl();
+  const search = readSearchParams();
+  const launch = parsePlatformLaunchFromUrl(search);
   if (!launch) {
     return { student: null, sessionId: null, fromPlatform: false };
   }
+
+  const chapter = applyChapterLaunch(search);
 
   const student = loginStudentFromPlatform({
     id: launch.studentId,
@@ -90,8 +118,22 @@ export function resolvePlatformLaunch() {
     topicId: launch.topicId,
     sessionId: launch.sessionId,
   });
+  if (student && chapter.lessonId) {
+    student.lessonId = chapter.lessonId;
+    student.chapterTitle = chapter.chapterTitle;
+  }
 
-  if (student && (launch.startLevel != null || launch.cash != null)) {
+  const startLevel =
+    chapter.startLevel != null
+      ? chapter.startLevel
+      : launch.startLevel;
+
+  if (student && startLevel != null) {
+    applyChapterFarmLevel(startLevel, launch.cash);
+    if (chapter.rewardItem || chapter.lessonId) {
+      grantLearningPathReward(startLevel, chapter.rewardItem);
+    }
+  } else if (student && (launch.startLevel != null || launch.cash != null)) {
     applyRemoteFarmProgress({
       currentLevel: launch.startLevel,
       highestCompletedLevel:
@@ -119,6 +161,15 @@ export function resolvePlatformLaunch() {
         'cash',
         'wallet',
         'source',
+        'lessonId',
+        'chapterId',
+        'chapterTitle',
+        'nextLessonId',
+        'nextTitle',
+        'nextChapterTitle',
+        'rewardItem',
+        'unlockItem',
+        'returnUrl',
       ]) {
         clean.searchParams.delete(key);
       }
@@ -132,9 +183,14 @@ export function resolvePlatformLaunch() {
     student,
     sessionId: launch.sessionId,
     topicId: launch.topicId,
-    startLevel: launch.startLevel,
+    startLevel,
     cash: launch.cash,
+    lessonId: chapter.lessonId || launch.lessonId,
+    chapterTitle: chapter.chapterTitle || launch.chapterTitle,
+    nextLessonId: chapter.nextLessonId || launch.nextLessonId,
+    nextChapterTitle: chapter.nextChapterTitle || launch.nextChapterTitle,
     fromPlatform: Boolean(student),
+    fromLearningPath: Boolean(chapter.fromLearningPath && chapter.lessonId),
     source: launch.source,
   };
 }

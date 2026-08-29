@@ -134,6 +134,8 @@ describe('Test 2 — fill in the blank oxygen', () => {
     assert.match(text, /oxygen|take in|food|carbon/);
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.ok(turn.interactionQuestion);
+    assert.ok(turn.structured.mindMap.nodes.length >= 2);
+    assert.equal(turn.structured.assessment.studentAnswer, 'oxygen');
   });
 });
 

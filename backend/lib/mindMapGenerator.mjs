@@ -173,6 +173,7 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       question: a.prompt || a.question || '',
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
+      options: Array.isArray(a.options) ? a.options : [],
       why_wrong: '',
       key_concept: lessonOk
         ? clip(lesson.studentAnswer.concept, 90)
@@ -588,6 +589,7 @@ export function toClientShape(map) {
     prompt: b.question,
     studentAnswer: b.student_answer,
     correctAnswer: b.correct_answer,
+    options: b.options || [],
     why: b.why_wrong,
     keyConcept: b.key_concept,
     keyExplain: b.key_concept_explain,

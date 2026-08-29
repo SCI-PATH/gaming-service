@@ -17,6 +17,9 @@ export default function GameShellHeader({
   student,
   farm = {},
   gameReady = false,
+  chapterTitle = '',
+  chapterLevel = null,
+  onOpenLearningPath,
   onOpenDashboard,
   onBackToFarm,
   onLogout,
@@ -38,14 +41,20 @@ export default function GameShellHeader({
             {gameReady ? (
               <>
                 <span className="game-shell-live-dot" aria-hidden />
-                Live run
+                {chapterTitle
+                  ? `${chapterTitle} · Level ${farm.levelId ?? 1}`
+                  : 'Live run'}
               </>
             ) : (
               'Loading farm…'
             )}
           </p>
         ) : mode === 'lobby' ? (
-          <p className="game-shell-header-sub">Farm &amp; unlock adventure</p>
+          <p className="game-shell-header-sub">
+            {chapterTitle
+              ? `Chapter farm · ${chapterTitle}`
+              : 'Farm & unlock adventure'}
+          </p>
         ) : (
           <p className="game-shell-header-sub">Frustration, topics, and Sage&apos;s next step</p>
         )}
@@ -55,7 +64,9 @@ export default function GameShellHeader({
         <div className="game-shell-header-stats" aria-label="Run stats">
           <span className="game-shell-stat-chip">
             <span className="game-shell-stat-label">Level</span>
-            <strong>{farm.levelId ?? 1}</strong>
+            <strong>
+              {chapterLevel != null ? chapterLevel : farm.levelId ?? 1}
+            </strong>
           </span>
           <span className="game-shell-stat-chip is-cash">
             <span className="game-shell-stat-label">Cash</span>
@@ -71,6 +82,17 @@ export default function GameShellHeader({
           </span>
           <span className="game-shell-player-name">{student?.displayName || 'Player'}</span>
         </div>
+
+        {onOpenLearningPath && !isPlaying ? (
+          <button
+            type="button"
+            className="game-shell-btn"
+            onClick={onOpenLearningPath}
+            title="Back to learning path"
+          >
+            <span>Learning Path</span>
+          </button>
+        ) : null}
 
         {isDashboard ? (
           <button type="button" className="game-shell-btn" onClick={onBackToFarm}>

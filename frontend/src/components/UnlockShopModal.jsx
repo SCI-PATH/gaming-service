@@ -14,6 +14,9 @@ export default function UnlockShopModal({
   cash,
   performance,
   onClose,
+  returnToLearningPath = false,
+  chapterTitle = '',
+  nextChapterTitle = '',
 }) {
   const [owned, setOwned] = useState(() => getOwnedUnlockIds());
   const [message, setMessage] = useState(null);
@@ -66,7 +69,11 @@ export default function UnlockShopModal({
       <div className="unlock-shop-card">
         <header className="unlock-shop-head">
           <div>
-            <p className="unlock-shop-kicker">Level complete</p>
+            <p className="unlock-shop-kicker">
+              {chapterTitle
+                ? `Chapter complete · ${chapterTitle}`
+                : 'Level complete'}
+            </p>
             <h2 id="unlock-shop-title">Unlock Shop</h2>
             <p className="unlock-shop-sub">{catalog.bandLabel}</p>
             {catalog.frustrationLabel ? (
@@ -82,9 +89,11 @@ export default function UnlockShopModal({
         </header>
 
         <p className="unlock-shop-hint">
-          Prices adapt to how this level went: stronger quiz results raise
-          prices; higher support need lowers them so unlocks stay reachable.
-          Bought items appear on your next farm — no extra quests for them.
+          {returnToLearningPath
+            ? `Bought items will appear on your next chapter farm. After this shop you return to the learning path${
+                nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ''
+              }.`
+            : 'Prices adapt to how this level went: stronger quiz results raise prices; higher support need lowers them so unlocks stay reachable. Bought items appear on your next farm — no extra quests for them.'}
         </p>
 
         {message && <p className="unlock-shop-message">{message}</p>}
@@ -131,7 +140,7 @@ export default function UnlockShopModal({
             className="unlock-shop-continue"
             onClick={onClose}
           >
-            Continue to Forest
+            {returnToLearningPath ? 'Return to Learning Path' : 'Continue to Forest'}
           </button>
         </footer>
       </div>
