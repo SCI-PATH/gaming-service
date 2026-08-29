@@ -23,6 +23,7 @@ export default function GameShellHeader({
   onOpenDashboard,
   onBackToFarm,
   onLogout,
+  loggingOut = false,
 }) {
   const isDashboard = mode === 'dashboard';
   const isPlaying = mode === 'playing';
@@ -110,8 +111,14 @@ export default function GameShellHeader({
           </button>
         )}
 
-        <button type="button" className="game-shell-btn is-ghost" onClick={onLogout}>
-          Log out
+        <button
+          type="button"
+          className="game-shell-btn is-ghost"
+          onClick={onLogout}
+          disabled={loggingOut}
+          aria-busy={loggingOut}
+        >
+          {loggingOut ? 'Signing out…' : 'Log out'}
         </button>
       </div>
     </header>

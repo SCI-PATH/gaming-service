@@ -342,6 +342,10 @@ export default function ScienceQuizModal({
           return;
         }
         isCorrect = Boolean(graded?.ok && graded?.isCorrect);
+        const gradePayload =
+          graded?.data?.grade && typeof graded.data.grade === 'object'
+            ? graded.data.grade
+            : graded?.data || null;
         const engineCorrect =
           extractEngineCorrectAnswer(graded, questionData) ||
           (gradePayload?.ideal_answer &&
@@ -352,10 +356,6 @@ export default function ScienceQuizModal({
           !isGradeStatusFeedback(gradePayload.idealAnswer)
             ? String(gradePayload.idealAnswer)
             : null);
-        const gradePayload =
-          graded?.data?.grade && typeof graded.data.grade === 'object'
-            ? graded.data.grade
-            : graded?.data || null;
         const sageInput = normalizeSageMindMapInput({
           questionData: { ...questionData, questionType },
           selectedText,

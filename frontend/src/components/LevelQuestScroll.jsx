@@ -96,6 +96,12 @@ export default function LevelQuestScroll({
         const harvested = Number(crop.cropsHarvestedTotal) || 0;
         const sold = Number(crop.cropsSoldThisChallenge) || 0;
         const planted = Boolean(crop.plantDone);
+        const plantDone =
+          planted ||
+          completed ||
+          status === 'ACTIVITY_COMPLETED' ||
+          status === 'ITEM_DELIVERED' ||
+          status === 'ITEM_SOLD';
 
         let detail;
         let hint = 'Press E on the labelled gold bed — answer the science question to plant.';
@@ -118,7 +124,7 @@ export default function LevelQuestScroll({
           id: `crop-${crop.slot ?? crop.id}`,
           title: `Plant ${name}`,
           detail,
-          done: completed,
+          done: plantDone,
           hint: !completed ? hint : null,
           kind: 'crop',
           status,

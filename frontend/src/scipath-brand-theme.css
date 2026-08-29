@@ -222,6 +222,11 @@ body {
   color: var(--muted);
 }
 
+.game-shell-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 @media (max-width: 640px) {
   .game-shell-header-stats {
     order: 3;

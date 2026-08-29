@@ -155,8 +155,16 @@ export default function GameLobbyOverlay({
           </button>
           {!isGuide && savedRun ? (
             <p className="game-lobby-saved">
-              Saved: {savedRun.label}. Pick up where you left the crops, cash, and
-              shop.
+              Saved: {savedRun.label}
+              {savedRun.remainingQuestions > 0 && savedRun.questionsAnswered > 0
+                ? `. Continue for the remaining ${savedRun.remainingQuestions} question${
+                    savedRun.remainingQuestions === 1 ? '' : 's'
+                  }`
+                : '. Pick up where you left the crops, cash, and shop'}
+              {savedRun.frustrationScore != null
+                ? ` · frustration ${savedRun.frustrationScore}`
+                : ''}
+              .
             </p>
           ) : null}
           {!isGuide && savedRun && onStartOver ? (

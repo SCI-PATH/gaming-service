@@ -65,6 +65,8 @@ import {
   farmRunSummary,
   hasFarmRun,
   loadFarmRun,
+  mergeFarmRun,
+  answeredFromRun,
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
 import { shouldRetryLessonAfterFarm } from './data/frustrationModel.js';
@@ -74,9 +76,14 @@ import {
   newlyUnlockedLabels,
   ownedUnlockLabels,
   openLearningPathHome,
+  openScipathLogout,
   parkFarmProgressAtCompletedLevel,
   returnToLearningPath,
 } from './data/chapterPath.js';
+import {
+  clearAssessmentSession,
+  exportAssessmentSession,
+} from './assessmentEngine/assessmentQuizSession.js';
 
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
@@ -185,6 +192,7 @@ export default function App() {
   const [motivationContext, setMotivationContext] = useState(null);
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [gamePhase, setGamePhase] = useState('menu');
   const [gameOverPayload, setGameOverPayload] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -283,6 +291,8 @@ export default function App() {
     activeMindMap,
     clearTrigger: clearAvatarTrigger,
     resetSession: resetAvatarTelemetry,
+    hydrateSession: hydrateAvatarTelemetry,
+    captureSessionSnapshot: captureAvatarTelemetry,
     recordAnswer: recordAvatarAnswer,
     recordHintUsed: recordAvatarHint,
     recordSelectionSwitch: recordAvatarOptionSwitch,
@@ -468,6 +478,95 @@ export default function App() {
     storylineChallengesRef.current = [];
   }, [resetAvatarTelemetry]);
 
+  const persistLeaveProgress = useCallback(() => {
+    if (inFarm) emitSaveFarmRun();
+    const run = loadFarmRun();
+    if (!run) return null;
+    const answered = Math.max(
+      Number(farm.questionsAnswered) || 0,
+      answeredFromRun(run),
+    );
+    return mergeFarmRun({
+      ...run,
+      questionsAnswered: answered,
+      maxQuestions: farm.maxQuestions || run.maxQuestions || DDA_CONFIG.maxQuestions,
+      frustrationScore: telemetrySession.frustrationScore || 0,
+      frustrationLevel: telemetrySession.frustrationLevel || 'low',
+      telemetry: captureAvatarTelemetry(),
+      assessmentSession:
+        exportAssessmentSession() || run.assessmentSession || null,
+    });
+  }, [
+    inFarm,
+    farm.levelId,
+    farm.earnings,
+    farm.currentMoney,
+    farm.questionsAnswered,
+    farm.maxQuestions,
+    telemetrySession.frustrationScore,
+    telemetrySession.frustrationLevel,
+    captureAvatarTelemetry,
+  ]);
+
+  const applySavedRunToUi = useCallback(
+    (run) => {
+      if (!run) return;
+      const answered = answeredFromRun(run);
+      setSavedRun(farmRunSummary(run));
+      setFarm((prev) => ({
+        ...prev,
+        levelId: run.levelId || prev.levelId,
+        earnings: run.currentMoney ?? prev.earnings,
+        currentMoney: run.currentMoney ?? prev.currentMoney,
+        questionsAnswered: Math.max(prev.questionsAnswered || 0, answered),
+        maxQuestions: run.maxQuestions || prev.maxQuestions,
+        cropChallengeList: Array.isArray(run.cropChallengeList)
+          ? run.cropChallengeList
+          : prev.cropChallengeList,
+        cropId: run.cropId || prev.cropId,
+        cropName: run.cropName || prev.cropName,
+        levelCropComplete: Boolean(run.levelCropComplete || prev.levelCropComplete),
+        levelAnimalComplete: Boolean(
+          run.levelAnimalComplete || prev.levelAnimalComplete,
+        ),
+        levelCleanComplete: Boolean(run.levelCleanComplete || prev.levelCleanComplete),
+        animalTended: Boolean(run.animalTended || prev.animalTended),
+        cropsSoldThisChallenge:
+          run.cropsSoldThisChallenge ?? prev.cropsSoldThisChallenge,
+      }));
+      const telem =
+        run.telemetry && typeof run.telemetry === 'object'
+          ? run.telemetry
+          : {
+              frustrationScore: run.frustrationScore,
+              frustrationLevel: run.frustrationLevel,
+              correctAnswers: run.quizCorrect,
+              incorrectAnswers: run.quizIncorrect,
+            };
+      hydrateAvatarTelemetry(telem);
+    },
+    [hydrateAvatarTelemetry],
+  );
+
+  useEffect(() => {
+    if (!student?.id) return;
+    applySavedRunToUi(loadFarmRun());
+  }, [student?.id, applySavedRunToUi]);
+
+  useEffect(() => {
+    if (!student?.id) return undefined;
+    const onLeave = () => persistLeaveProgress();
+    window.addEventListener('pagehide', onLeave);
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') onLeave();
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    return () => {
+      window.removeEventListener('pagehide', onLeave);
+      document.removeEventListener('visibilitychange', onHidden);
+    };
+  }, [student?.id, persistLeaveProgress]);
+
   const handleAvatarClose = useCallback(() => {
     setAvatarOpen(false);
     setAvatarTrigger(null);
@@ -516,37 +615,64 @@ export default function App() {
       syncStudentLogin(nextStudent, {
         startLevel: boot.lobby?.levelId ?? resolveCurrentLevelId(),
       });
-      setSavedRun(farmRunSummary());
+      applySavedRunToUi(loadFarmRun());
     },
-    [resetSessionUi],
+    [resetSessionUi, applySavedRunToUi],
   );
 
   const handleLogout = useCallback(async () => {
-    if (student?.id) {
-      await submitLeaderboardScore({
-        studentId: student.id,
-        studentName: student.displayName,
-        displayName: student.displayName,
-        score: computeArenaScore({
-          rpEarned,
-          earnings: farm.earnings,
-          levelId: farm.levelId,
-          questionsAnswered: farm.questionsAnswered,
-        }),
-        currentLevel: farm.levelId,
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      if (student?.id) {
+        await submitLeaderboardScore({
+          studentId: student.id,
+          studentName: student.displayName,
+          displayName: student.displayName,
+          score: computeArenaScore({
+            rpEarned,
+            earnings: farm.earnings,
+            levelId: farm.levelId,
+            questionsAnswered: farm.questionsAnswered,
+          }),
+          currentLevel: farm.levelId,
+          quizCorrect: farm.questionsAnswered || 0,
+          walletBalance: farm.earnings,
+        });
+      }
+      if (inFarm) emitSaveFarmRun();
+      persistLeaveProgress();
+      syncStudentLogout({
+        endLevel: farm.levelId,
         quizCorrect: farm.questionsAnswered || 0,
-        walletBalance: farm.earnings,
       });
+    } catch {
+      /* still sign out */
     }
-    if (inFarm) emitSaveFarmRun();
-    syncStudentLogout({
-      endLevel: farm.levelId,
-      quizCorrect: farm.questionsAnswered || 0,
-    });
     logoutStudent();
+    const leaveToUserManagement = Boolean(
+      student?.fromPlatform ||
+        student?.sessionId ||
+        isLearningPathLinked(),
+    );
+    if (leaveToUserManagement) {
+      openScipathLogout();
+      return;
+    }
     resetSessionUi();
     setStudent(null);
-  }, [resetSessionUi, farm.levelId, farm.questionsAnswered, farm.earnings, rpEarned, student]);
+    setLoggingOut(false);
+  }, [
+    loggingOut,
+    resetSessionUi,
+    farm.levelId,
+    farm.questionsAnswered,
+    farm.earnings,
+    rpEarned,
+    student,
+    inFarm,
+    persistLeaveProgress,
+  ]);
 
   const maxQuestions = farm.maxQuestions ?? DDA_CONFIG.maxQuestions;
 
@@ -672,6 +798,8 @@ export default function App() {
 
   const handleLobbyStartOver = useCallback(() => {
     clearFarmRun();
+    clearAssessmentSession();
+    resetAvatarTelemetry();
     setSavedRun(null);
     pendingResumeRef.current = false;
     const levelId = Math.max(1, Number(farm.levelId) || 1);
@@ -681,7 +809,7 @@ export default function App() {
       startingMoney: cash,
     });
     ForestGameBridge.emit(FARM_EVENTS.MENU_START);
-  }, [farm.levelId, farm.earnings]);
+  }, [farm.levelId, farm.earnings, resetAvatarTelemetry]);
 
   const handleLobbyLeaderboard = useCallback(() => {
     setLeaderboardOpen(true);
@@ -1306,7 +1434,8 @@ export default function App() {
 
   const handleQuizClose = useCallback(() => {
     setQuizPayload(null);
-  }, []);
+    persistLeaveProgress();
+  }, [persistLeaveProgress]);
 
   const handleReturnToLearningPath = useCallback(
     (payload = {}) => {
@@ -1450,6 +1579,7 @@ export default function App() {
         onOpenDashboard={handleOpenResearchDashboard}
         onBackToFarm={handleBackToFarm}
         onLogout={handleLogout}
+        loggingOut={loggingOut}
       />
 
       {appView === 'dashboard' ? (

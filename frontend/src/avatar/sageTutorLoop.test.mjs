@@ -20,10 +20,15 @@ import {
   revealsCorrectTooEarly,
   tutorLoopSystemAddon,
   shouldEnterTutorLoop,
+  shouldCompareStudentAnswer,
 } from './sageTutorLoop.js';
 import {
   scienceKeyIdea,
+  explainCorrectIdea,
   composeFiveStepLesson,
+  looksLikeSymbolicTypedAnswer,
+  resolveFreeTextCorrectAnswer,
+  validateStructuredLesson,
 } from './explainMisconception.js';
 
 function ctx(over = {}) {
@@ -601,6 +606,82 @@ describe('five-step teaching order', () => {
     assert.match(key, /capacitor|store|charg/i);
   });
 
+  it('describes seed-leaf science on a timeout miss instead of pasting the ideal answer', () => {
+    const attempt = {
+      prompt:
+        'What are seed leaves, and how do they differ between dicot and monocot plants?',
+      studentAnswer: 'ran out of time (no pick yet)',
+      correctAnswer:
+        'Dicotyledonous plants (dicots) are a plant group named for two seed leaves.',
+      questionType: 'ShortAnswer',
+      topic: 'Plant Diversity',
+    };
+    const key = scienceKeyIdea(attempt);
+    const explain = explainCorrectIdea(attempt, {
+      frustrationLevel: 'moderate',
+    });
+    assert.equal(
+      /Dicotyledonous plants \(dicots\) are a plant group named for two seed leaves\.?/i.test(
+        key,
+      ),
+      false,
+    );
+    assert.match(key, /seed leaf|cotyledon/i);
+    assert.match(explain, /cotyledon|dicot|monocot|di-|mono-/i);
+    assert.match(explain, /No answer was typed|science idea this question/i);
+    assert.equal(explain.trim() === attempt.correctAnswer.trim(), false);
+  });
+
+  it('teaches flowering plants vs habitat for an MCQ miss card', () => {
+    const attempt = {
+      prompt: 'What is a characteristic feature of flowering plants?',
+      studentAnswer: 'Only grow in water',
+      correctAnswer: 'flowers and fruits',
+      questionType: 'MCQ',
+      options: [
+        'Only grow in water',
+        'flowers and fruits',
+        'Have no roots',
+        'Do not make seeds',
+      ],
+      topic: 'Plant Biology',
+    };
+    const key = scienceKeyIdea(attempt);
+    const explain = explainCorrectIdea(attempt, {
+      frustrationLevel: 'moderate',
+    });
+    assert.equal(/this question is asking/i.test(key), false);
+    assert.equal(/this question is asking/i.test(explain), false);
+    assert.match(key, /flower|fruit/i);
+    assert.match(explain, /flower|fruit|seed/i);
+    assert.match(explain, /water|habitat/i);
+  });
+
+  it('supports typed monocot miss with monocots-and-dicots ground truth', () => {
+    const attempt = {
+      prompt:
+        'What are the two main groups of flowering plants based on their seed structure?',
+      studentAnswer: 'monocods',
+      correctAnswer: 'flowers that produce seeds',
+      questionType: 'ShortAnswer',
+      topic: 'Plant Biology',
+    };
+    const right = resolveFreeTextCorrectAnswer(attempt);
+    assert.match(right, /monocot/i);
+    assert.match(right, /dicot/i);
+    assert.equal(/flowers that produce seeds/i.test(right), false);
+    const key = scienceKeyIdea({ ...attempt, correctAnswer: right });
+    const explain = explainCorrectIdea(
+      { ...attempt, correctAnswer: right },
+      { frustrationLevel: 'moderate' },
+    );
+    assert.equal(/flowers that produce seeds/i.test(key), false);
+    assert.match(key, /monocot|dicot|seed leaf|cotyledon/i);
+    assert.match(explain, /monocot/i);
+    assert.match(explain, /dicot/i);
+    assert.equal(looksLikeSymbolicTypedAnswer('monocods'), false);
+  });
+
   it('uses charge-transfer science for a thin typed miss, not a placeholder', () => {
     const key = scienceKeyIdea({
       prompt:
@@ -697,6 +778,8 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     assert.match(addon, /respiration/);
     assert.match(addon, /photosynthesis/);
     assert.match(addon, /YOU are the scientific teacher/);
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /YOUR ANSWER/);
   });
 
   it('keeps the full typed sentence for Grok', () => {
@@ -725,6 +808,180 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     });
     assert.match(addon, /A resistor stores electrical energy/);
     assert.match(addon, /A capacitor stores electrical energy/);
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
     assert.equal(/studentAnswer="incorrect"/.test(addon), false);
   });
+});
+
+describe('fill-in / typed: blank or symbols describe the correct answer only', () => {
+  it('treats N blanks and keyboard mash as symbolic', () => {
+    assert.equal(looksLikeSymbolicTypedAnswer(''), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('N | N | N'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('xxx'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('???'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('asdf'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('5'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('5 | 5 | 5'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('Flowers'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('respiration'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('CO2'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('roots | N'), false);
+  });
+
+  it('does not compare a numeric fill-in pick like 5 with the key', () => {
+    const context = {
+      current_question: {
+        question_text:
+          'The main parts of a plant include the ____, ____, and ____.',
+        question_type: 'MultiBlank',
+        student_last_wrong_answer: '5',
+        correct_answer: 'roots | stem | leaves',
+        is_correct: false,
+      },
+      frustration_score: 40,
+    };
+    const state = compactTeachingState(context);
+    assert.equal(shouldCompareStudentAnswer(state), false);
+    const addon = tutorLoopSystemAddon(context);
+    assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/1\) YOUR ANSWER/.test(addon), false);
+  });
+
+  it('does not compare placeholder fill-in blanks with the key', () => {
+    const context = {
+      current_question: {
+        question_text: 'The main parts of a flowering plant are ______, ______, and ______.',
+        question_type: 'MultiBlank',
+        student_last_wrong_answer: 'N | N | N',
+        correct_answer: 'roots | stem | leaves',
+        is_correct: false,
+      },
+      frustration_score: 40,
+    };
+    const state = compactTeachingState(context);
+    assert.equal(shouldCompareStudentAnswer(state), false);
+    const addon = tutorLoopSystemAddon(context);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
+    assert.match(addon, /placeholder symbols/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/1\) YOUR ANSWER/.test(addon), false);
+    const turn = composeTutorTurn({
+      studentMessage: 'explain',
+      context,
+      session: { phase: 'support' },
+    });
+    assert.equal(turn.structured.teaching.strategy, 'describe_correct');
+    assert.equal(turn.structured.misconception.type, 'no_usable_answer');
+    assert.equal(
+      turn.structured.mindMap.nodes.some((n) => n.role === 'student_concept'),
+      false,
+    );
+  });
+
+  it('describes the correct idea when the typed answer is empty', () => {
+    const context = {
+      current_question: {
+        question_text: 'What are the main parts of a flowering plant?',
+        question_type: 'ShortAnswer',
+        student_last_wrong_answer: '',
+        correct_answer: 'roots, stem, leaves, and flowers',
+        is_correct: false,
+      },
+    };
+    const addon = tutorLoopSystemAddon(context);
+    assert.equal(shouldCompareStudentAnswer(compactTeachingState(context)), false);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/SCIENTIFIC COMPARISON/.test(addon), false);
+  });
+
+  it('keeps MCQ compare teaching even if a choice is short', () => {
+    const addon = tutorLoopSystemAddon({
+      current_question: {
+        question_text: 'Which gas is required for photosynthesis?',
+        question_type: 'MCQ',
+        options: ['Oxygen', 'Helium', 'Carbon dioxide', 'Nitrogen'],
+        student_last_wrong_answer: 'Helium',
+        correct_answer: 'Carbon dioxide',
+        is_correct: false,
+      },
+    });
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /YOUR ANSWER/);
+  });
+});
+
+describe('every usable wrong answer gets wrong-vs-correct teaching', () => {
+  const cases = [
+    {
+      name: 'typed monocot miss',
+      prompt: 'What are the two main groups of flowering plants based on their seed structure?',
+      studentAnswer: 'monocods',
+      correctAnswer: 'flowers that produce seeds',
+      questionType: 'ShortAnswer',
+      topic: 'Plant Biology',
+    },
+    {
+      name: 'MCQ habitat miss',
+      prompt: 'What is a characteristic feature of flowering plants?',
+      studentAnswer: 'Only grow in water',
+      correctAnswer: 'flowers and fruits',
+      questionType: 'MCQ',
+      topic: 'Plant Biology',
+    },
+    {
+      name: 'fill-in condensation miss',
+      prompt: 'Water evaporating from leaves is called ___.',
+      studentAnswer: 'condensation',
+      correctAnswer: 'transpiration',
+      questionType: 'FillInBlank',
+      topic: 'Water Cycle',
+    },
+    {
+      name: 'MCQ stem jobs miss',
+      prompt: 'The stem mainly does which jobs?',
+      studentAnswer: 'makes seeds',
+      correctAnswer: 'support and transport',
+      questionType: 'MCQ',
+      topic: 'Plant Biology',
+    },
+    {
+      name: 'True/False dicot miss',
+      prompt: 'Dicotyledonous plants are named for having two seed lobes.',
+      studentAnswer: 'False',
+      correctAnswer: 'True',
+      questionType: 'TrueFalse',
+      topic: 'Plant Diversity',
+    },
+    {
+      name: 'unknown-topic typed miss still compares',
+      prompt: 'Name the fundamental particles in ordinary matter.',
+      studentAnswer: 'gluons glue',
+      correctAnswer: 'quarks are fundamental particles',
+      questionType: 'ShortAnswer',
+      topic: 'Physics',
+    },
+  ];
+
+  for (const c of cases) {
+    it(`compares wrong vs correct for ${c.name}`, () => {
+      const right = resolveFreeTextCorrectAnswer(c) || c.correctAnswer;
+      const attempt = { ...c, correctAnswer: right };
+      const lesson = composeFiveStepLesson(attempt, { frustrationLevel: 'moderate' });
+      assert.equal(validateStructuredLesson(lesson), true);
+      assert.equal(Boolean(lesson.insufficientKnowledge), false);
+      assert.match(lesson.selected || '', /\S/);
+      assert.match(lesson.correct || '', /\S/);
+      assert.match(lesson.comparison || '', /\S/);
+      assert.ok(lesson.studentAnswer?.scientificDefinition?.length >= 24);
+      assert.ok(lesson.correctAnswer?.scientificDefinition?.length >= 24);
+      assert.ok(lesson.scientificComparison?.keyScientificDifference);
+      assert.ok(lesson.sections?.some((s) => s.id === 'your_answer'));
+      assert.ok(lesson.sections?.some((s) => s.id === 'correct_answer'));
+      assert.ok(lesson.sections?.some((s) => s.id === 'difference'));
+    });
+  }
 });

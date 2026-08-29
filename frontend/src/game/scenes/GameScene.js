@@ -18,8 +18,10 @@ import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
 import { getFarmLevel } from '../../data/farmLevels';
 import {
   clearAssessmentSession,
+  exportAssessmentSession,
   isRenderableQuizQuestion,
   resolveScienceQuestion,
+  restoreAssessmentSession,
   terminateAssessmentSession,
   warmupAssessmentSession,
 } from '../../assessmentEngine/assessmentQuizSession.js';
@@ -185,7 +187,11 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
-    clearAssessmentSession();
+    if (this._resumeSnapshot?.assessmentSession) {
+      restoreAssessmentSession(this._resumeSnapshot.assessmentSession);
+    } else if (!this._resumeSnapshot) {
+      clearAssessmentSession();
+    }
     this.farmLevel = getFarmLevel(this.levelId);
     this.baseCropValue = this.farmLevel.cropValue;
     this.currentMoney = this.devStartingMoney || 0;
@@ -450,7 +456,13 @@ export default class GameScene extends Phaser.Scene {
   }
 
   captureRunSnapshot() {
-    if (!this.player || this.forestUnlocked) return null;
+    if (this.forestUnlocked) return null;
+    const answered = this.questionsAnswered();
+    if (!this.player && answered <= 0) {
+      const plantedIds = this.cropPlantedSet?.size || 0;
+      const soldAny = Object.values(this.cropSoldMap || {}).some((n) => Number(n) > 0);
+      if (!planted.length && plantedIds <= 0 && !soldAny) return null;
+    }
     const planted = (this.plantedCrops || [])
       .filter((crop) => crop?.active && crop.cropState !== 'harvested')
       .map((crop) => ({
@@ -463,8 +475,8 @@ export default class GameScene extends Phaser.Scene {
     return {
       levelId: this.levelId,
       currentMoney: this.currentMoney,
-      playerTileX: this.player.x / TILE_SIZE,
-      playerTileY: this.player.y / TILE_SIZE,
+      playerTileX: this.player ? this.player.x / TILE_SIZE : 48,
+      playerTileY: this.player ? this.player.y / TILE_SIZE : 32,
       carriedCount: this.carriedCount || 0,
       carryStack: [...(this.carryStack || [])],
       harvestedItemsCount: this.harvestedItemsCount || 0,
@@ -474,6 +486,11 @@ export default class GameScene extends Phaser.Scene {
       cropSoldMap: { ...(this.cropSoldMap || {}) },
       cropPlantedSet: [...(this.cropPlantedSet || [])],
       cropHarvestMap: { ...(this.cropHarvestMap || {}) },
+      cropId: this.farmLevel?.cropId || this.cropChallenge?.cropId || '',
+      cropName: this.farmLevel?.cropName || this.cropChallenge?.cropName || '',
+      cropChallengeId: this.cropChallenge?.id || null,
+      cropChallengeList: this.buildCropChallengeProgress(),
+      levelCropSlot: this.levelCropSlot || 0,
       harvestUnlocked: Boolean(this.harvestUnlocked),
       plantDoneForChallenge: Boolean(this.plantDoneForChallenge),
       loadUnlocked: Boolean(this.loadUnlocked),
@@ -490,6 +507,11 @@ export default class GameScene extends Phaser.Scene {
       levelCleanComplete: Boolean(this.levelCleanComplete),
       quizCorrect: this.quizCorrect || 0,
       quizIncorrect: this.quizIncorrect || 0,
+      questionsAnswered: answered,
+      maxQuestions: DDA_CONFIG.maxQuestions,
+      frustrationScore: this.frustrationScore || 0,
+      frustrationLevel: this.frustrationLevel || 'low',
+      assessmentSession: exportAssessmentSession(),
       attemptScores: [...(this.attemptScores || [])],
       responseTimesMs: [...(this.responseTimesMs || [])],
       retryCount: this.retryCount || 0,
@@ -529,8 +551,18 @@ export default class GameScene extends Phaser.Scene {
     this.cropsSoldThisChallenge = Number(snap.cropsSoldThisChallenge) || 0;
     if (Number(snap.harvestTarget) > 0) this.harvestTarget = Number(snap.harvestTarget);
     this.cropSoldMap = { ...(snap.cropSoldMap || {}) };
-    this.cropPlantedSet = new Set(snap.cropPlantedSet || []);
+    this.cropPlantedSet = new Set(
+      (Array.isArray(snap.cropPlantedSet)
+        ? snap.cropPlantedSet
+        : Object.keys(snap.cropPlantedSet || {})
+      )
+        .map((id) => String(id || '').trim())
+        .filter(Boolean),
+    );
     this.cropHarvestMap = { ...(snap.cropHarvestMap || {}) };
+    if (Number.isFinite(Number(snap.levelCropSlot))) {
+      this.levelCropSlot = Math.max(0, Number(snap.levelCropSlot) || 0);
+    }
     this.harvestUnlocked = Boolean(snap.harvestUnlocked);
     this.plantDoneForChallenge = Boolean(snap.plantDoneForChallenge);
     this.loadUnlocked = Boolean(snap.loadUnlocked);
@@ -552,6 +584,11 @@ export default class GameScene extends Phaser.Scene {
       ? [...snap.responseTimesMs]
       : [];
     this.retryCount = Number(snap.retryCount) || 0;
+    this.frustrationScore = Number(snap.frustrationScore) || this.frustrationScore || 0;
+    this.frustrationLevel = snap.frustrationLevel || this.frustrationLevel || 'low';
+    if (snap.assessmentSession) {
+      restoreAssessmentSession(snap.assessmentSession);
+    }
     const elapsed = Math.max(0, Number(snap.levelElapsedMs) || 0);
     this.levelStartedAtMs = Date.now() - elapsed;
     if (this.harvestUnlocked) this.harvestArmedUntil = Date.now() + 60_000;
@@ -598,6 +635,23 @@ export default class GameScene extends Phaser.Scene {
     if (this.cleanStarted && this.cleaningLayer) {
       this.cleaningLayer.started = true;
     }
+
+    const resumeCropId = String(snap.cropId || this.farmLevel?.cropId || '').trim();
+    if (resumeCropId) {
+      this._activateBedChallenge(resumeCropId);
+    }
+    this.plantDoneForChallenge = Boolean(
+      (resumeCropId && this.cropPlantedSet.has(resumeCropId)) ||
+        snap.plantDoneForChallenge,
+    );
+
+    try {
+      this.createPlantPlotMarkers();
+    } catch {
+      /* plots optional */
+    }
+    this.refreshActiveChallenges();
+    this.refreshPersonalizedActivities();
 
     this.syncCarryTrail();
     this.syncMoneyAliases();
@@ -1450,6 +1504,7 @@ export default class GameScene extends Phaser.Scene {
       loadUnlocked: Boolean(this.loadUnlocked),
       pendingQuizMode: this.pendingQuizMode || null,
       shopStockQty: shopStockForCrop(this.worldShop, this.farmLevel?.cropId),
+      shopStockMap: this.worldShop?.shopStock || {},
       // Per-crop maps for free-choice model
       cropSoldMap: this.cropSoldMap || {},
       cropPlantedSet: this.cropPlantedSet || new Set(),
@@ -1741,6 +1796,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.syncVegetableGoalText();
+    this.persistFarmRun();
   }
 
   /** Full-level avg response time (not the rolling DDA window). */
@@ -2386,6 +2442,7 @@ export default class GameScene extends Phaser.Scene {
     this.emitFarmState();
 
     if (gained > 0) {
+      this.persistFarmRun();
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'farm_shop_sale',
         reward: gained,
@@ -2539,8 +2596,9 @@ export default class GameScene extends Phaser.Scene {
       const soldMap = this.cropSoldMap || {};
       const harvestTarget = this.harvestTarget || 4;
       const isCropDone = (soldMap[cropId] || 0) >= harvestTarget;
+      const isPlanted = Boolean(this.cropPlantedSet?.has(cropId));
       const labelText = String(def.cropName || 'plant').toUpperCase();
-      const labelColor = isCropDone ? '#80e880' : '#ffe08a';
+      const labelColor = isCropDone ? '#80e880' : isPlanted ? '#c8e878' : '#ffe08a';
       const label = this.add
         .text(px + pw / 2, py - 6, labelText, {
           fontFamily: 'Courier New, monospace',
@@ -4100,6 +4158,7 @@ export default class GameScene extends Phaser.Scene {
         this.cropPlantedSet = this.cropPlantedSet || new Set();
         this.cropPlantedSet.add(plantedCropId);
       }
+      this.persistFarmRun();
       // Keep library harvest target (pick N · sell N) — do not overwrite with patch size.
       // Do not wipe cropsHarvestedTotal / carry — other beds may already be harvested.
       // Don't reset cropsSoldThisChallenge — it's now per-crop via cropSoldMap

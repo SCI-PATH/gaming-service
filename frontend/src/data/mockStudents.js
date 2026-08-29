@@ -54,6 +54,7 @@ function loadSession() {
       grade: data.grade ?? null,
       topicId: data.topicId ?? null,
       sessionId: data.sessionId ?? null,
+      fromPlatform: Boolean(data.fromPlatform || data.sessionId),
     };
   } catch {
     return null;
@@ -75,6 +76,7 @@ export function loginStudent(displayName) {
     id,
     username: id,
     displayName: name,
+    fromPlatform: false,
   };
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(currentStudent));

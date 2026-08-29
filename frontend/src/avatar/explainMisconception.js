@@ -47,6 +47,110 @@ function isPlaceholderBlank(text) {
   return /^\s*n(\s*\|\s*n)*\s*$/i.test(norm(text)) || /^n+$/i.test(norm(text));
 }
 
+const SCIENCE_SHORT_TOKENS = new Set([
+  'co2',
+  'co₂',
+  'o2',
+  'o₂',
+  'h2o',
+  'h₂o',
+  'n2',
+  'n₂',
+  'o3',
+  'o₃',
+  'dna',
+  'rna',
+  'atp',
+  'adp',
+  'ph',
+  'uv',
+  'ir',
+  'nacl',
+  'hcl',
+  'koh',
+  'fe',
+  'na',
+  'ca',
+  'mg',
+  'zn',
+  'cu',
+]);
+
+const TYPED_FILLER = new Set([
+  'um',
+  'uh',
+  'hmm',
+  'huh',
+  'lol',
+  'idk',
+  'ok',
+  'okay',
+  'yes',
+  'no',
+  'true',
+  'false',
+  'none',
+  'nothing',
+  'blank',
+  'test',
+  'asdf',
+  'qwer',
+  'zxcv',
+]);
+
+function splitTypedParts(text) {
+  return String(text || '')
+    .split(/\s*[|·,;/]\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '—' && part !== '-' && part !== '_');
+}
+
+function isScienceFormulaToken(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  const compact = s.replace(/[\s._-]/g, '').toLowerCase();
+  if (SCIENCE_SHORT_TOKENS.has(compact)) return true;
+  return /^(?:[a-z]{1,2}\d+){1,4}[a-z0-9]*$/i.test(compact);
+}
+
+function isSymbolicTypedPart(part) {
+  const s = String(part || '')
+    .replace(/blank\s*\d+\s*:\s*/gi, '')
+    .trim();
+  if (!s) return true;
+  const compact = s.replace(/[\s._-]/g, '').toLowerCase();
+  if (TYPED_FILLER.has(compact)) return true;
+  // Bare numbers / digit mash (e.g. "5", "12", "5 | 5") are not science words.
+  if (/^\d+$/.test(compact)) return true;
+  if (/^(n+|x+|y+|z+|\?+|-+|_+)$/i.test(s)) return true;
+  if (/^(asdf+|qwer+|zxcv+|hjkl+|aaa+|xxx+|zzz+|qqq+|www+)$/i.test(s)) {
+    return true;
+  }
+  if (/^[^a-z0-9]+$/i.test(s)) return true;
+  if (isScienceFormulaToken(s)) return false;
+  if (s.length <= 2) return true;
+  if (/[aeiou]/i.test(s) && /[a-z]{3,}/i.test(s)) return false;
+  return s.length < 4;
+}
+
+/**
+ * Fill-in / typed text that is empty, timed out, or placeholder symbols
+ * (N, X, 5, ???, keyboard mash) — not a scientific idea SAGE can compare.
+ */
+export function looksLikeSymbolicTypedAnswer(text) {
+  const raw = norm(text)
+    .replace(/blank\s*\d+\s*:\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return true;
+  if (isNoPick(raw) || isPlaceholderBlank(raw)) return true;
+  if (/^(no answer|nothing typed|left blank)$/i.test(raw)) return true;
+  if (/^\d+(\s*[|·,;/]\s*\d+)*$/.test(raw)) return true;
+  const parts = splitTypedParts(raw);
+  if (!parts.length) return true;
+  return parts.every((part) => isSymbolicTypedPart(part));
+}
+
 export function voiceBand(voice = {}) {
   const level = String(voice.frustrationLevel || voice.level || 'moderate').toLowerCase();
   const tone = String(voice.tone || 'practice').toLowerCase();
@@ -383,7 +487,23 @@ const STUDENT_WORLD_IDEAS = [
     mismatch: 'Storing water helps the plant survive. It does not produce seeds.',
   },
   {
-    test: /flower.{0,80}seed|produce seeds|through flowers/,
+    test: /only grow in water|grow only in water|aquatic only|live only in water/,
+    label: 'only grow in water',
+    purpose: 'habitat — living only in water',
+    bodyShort:
+      '“Only grow in water” describes a habitat idea: living in water. Habitat is about where an organism lives.',
+    bodyFull:
+      '“Only grow in water” is a habitat claim — it says where a plant lives. Some plants do live in water, but that is not the feature that defines flowering plants. Flowering plants are defined by flowers and often fruits with seeds.',
+    what: 'This pick describes a habitat: living only in water.',
+    means: 'Habitat means the place where an organism lives.',
+    usedFor: 'Habitat tells us where a plant lives, not how it reproduces.',
+    how: 'Aquatic plants live in water; flowering plants are named for flowers and fruits.',
+    example: 'A water lily lives in water, but it is still a flowering plant because it makes flowers.',
+    mismatch:
+      'Living only in water is about habitat, not the reproductive feature of flowering plants.',
+  },
+  {
+    test: /(?:through\s+)?flowers?\s+that\s+produce\s+seeds|produce\s+seeds\s+through\s+flowers/,
     label: 'flowers that produce seeds',
     purpose: 'reproduction and seed formation',
     bodyShort:
@@ -396,6 +516,21 @@ const STUDENT_WORLD_IDEAS = [
     how: 'After pollination, a flower can form a seed that holds a developing embryo.',
     example: 'A mango flower can lead to a fruit with a seed inside.',
     mismatch: 'Flowers making seeds is reproduction, not water storage.',
+  },
+  {
+    test: /\bmonocods?\b|\bmonocots?\b|\bdicods?\b|\bdicots?\b/,
+    label: 'monocots',
+    purpose: 'one-seed-leaf flowering plants',
+    what: 'Monocots are flowering plants with one seed leaf (cotyledon).',
+    means: 'The prefix “mono-” means one. Dicots are the other main group, with two seed leaves.',
+    usedFor: 'Naming monocots is part of sorting flowering plants by seed structure.',
+    how: 'A monocot seed has one cotyledon; maize and grasses are common monocots.',
+    example: 'Writing “monocods” usually means monocots — one group, not both groups.',
+    bodyShort:
+      'Monocots are one main group of flowering plants. They have one seed leaf. The other main group is dicots, with two seed leaves.',
+    bodyFull:
+      'Monocots are flowering plants with one cotyledon (seed leaf). Dicots have two. A question that asks for the two main groups wants both monocots and dicots, not only monocots.',
+    mismatch: 'Monocots alone are not both main groups of flowering plants.',
   },
   {
     test: /\bflowers?\b|\bfruits?\b/,
@@ -717,7 +852,7 @@ const CORRECT_WORLD_IDEAS = [
     label: 'carbon dioxide',
   },
   {
-    test: /flower.{0,80}seed|produce seeds|through flowers/,
+    test: /(?:through\s+)?flowers?\s+that\s+produce\s+seeds|produce\s+seeds\s+through\s+flowers/,
     label: 'flowers that produce seeds',
     purpose: 'reproduction and seed formation',
     what: 'Flowers are reproductive structures in flowering plants.',
@@ -729,6 +864,53 @@ const CORRECT_WORLD_IDEAS = [
       'Flowers are reproductive structures in flowering plants. Reproduction can result in seeds, which can grow into new plants.',
     bodyFull:
       'Flowers are reproductive structures in flowering plants. They are involved in reproduction that can lead to seed formation. A seed contains a developing embryo and can grow into a new plant under suitable conditions. This is related to plant reproduction and seed formation.',
+  },
+  {
+    test: /dicotyledon|\bdicots?\b/,
+    label: 'Dicots (two seed leaves)',
+    what: 'Dicotyledonous plants (dicots) are a plant group named for two seed leaves.',
+    means: 'The prefix “di-” means two; cotyledons are seed leaves (seed lobes).',
+    usedFor: 'We use that name to group beans, tomato, and mango-type plants.',
+    how: 'A dicot seed typically opens with two seed lobes.',
+    example: 'A bean seed split into two halves is a simple dicot example.',
+  },
+  {
+    test: /monocotyledon|\bmonocots?\b/,
+    label: 'Monocots (one seed leaf)',
+    what: 'Monocots are plants with one seed leaf.',
+    means: 'The prefix “mono-” means one; that seed leaf is a cotyledon.',
+    usedFor: 'We use that name for grasses, rice, and maize.',
+    how: 'A monocot seed has one cotyledon and often fibrous roots.',
+    example: 'A maize seedling with one seed leaf is a monocot.',
+  },
+  {
+    // Only the paired groups label — never hijack a single dicot/monocot T/F stem.
+    test: /monocots?\s+and\s+dicots?|dicots?\s+and\s+monocots?|two main groups/,
+    label: 'monocots and dicots',
+    purpose: 'monocots and dicots',
+    what: 'Flowering plants are grouped by seed structure into monocots and dicots.',
+    means: 'Monocots have one seed leaf (cotyledon). Dicots have two seed leaves.',
+    usedFor: 'Seed-leaf count is how scientists sort flowering plants into two main groups.',
+    how: 'Look inside the seed: one cotyledon means monocot; two means dicot.',
+    example: 'Maize is a monocot; a bean seed that splits into two lobes is a dicot.',
+    bodyShort:
+      'The two main groups of flowering plants by seed structure are monocots (one seed leaf) and dicots (two seed leaves).',
+    bodyFull:
+      'Flowering plants are sorted by seed structure into two main groups: monocots and dicots. Monocots have one cotyledon (seed leaf). Dicots have two cotyledons. That count — not habitat — is the grouping rule.',
+  },
+  {
+    test: /\bflowers?\b|\bfruits?\b/,
+    label: 'flowers and fruits',
+    purpose: 'flowers and fruits',
+    what: 'Flowering plants make flowers, and many later form fruits that hold seeds.',
+    means: 'Flowers and fruits are the reproductive features that define flowering plants.',
+    usedFor: 'They let the plant reproduce and make the next generation.',
+    how: 'After pollination, a flower can form a fruit with seeds inside.',
+    example: 'A tomato plant makes flowers, then fruits with seeds.',
+    bodyShort:
+      'Flowering plants are special because they make flowers, and many then form fruits that hold seeds. Growing only in water is not what makes a plant a flowering plant.',
+    bodyFull:
+      'Flowering plants are plants that produce flowers. Many also form fruits that protect and carry seeds. Flowers and fruits are reproductive structures. Living only in water is a habitat fact, not the defining feature of flowering plants.',
   },
   {
     test: /store water|storing water|leaves that store|leaves to store|succulent/,
@@ -759,22 +941,6 @@ const CORRECT_WORLD_IDEAS = [
     usedFor: 'Flowers use it to produce pollen for reproduction.',
     how: 'Pollen forms in the anther and can then be moved to a pistil.',
     example: 'Dusty yellow anthers in a hibiscus are making pollen.',
-  },
-  {
-    test: /dicotyledon|dicot/,
-    what: 'Dicotyledonous plants (dicots) are a plant group named for two seed leaves.',
-    means: 'The prefix “di-” means two; cotyledons are seed leaves (seed lobes).',
-    usedFor: 'We use that name to group beans, tomato, and mango-type plants.',
-    how: 'A dicot seed typically opens with two seed lobes.',
-    example: 'A bean seed split into two halves is a simple dicot example.',
-  },
-  {
-    test: /monocot/,
-    what: 'Monocots are plants with one seed leaf.',
-    means: 'The prefix “mono-” means one; that seed leaf is a cotyledon.',
-    usedFor: 'We use that name for grasses, rice, and maize.',
-    how: 'A monocot seed has one cotyledon and often fibrous roots.',
-    example: 'A maize seedling with one seed leaf is a monocot.',
   },
   {
     test: /\bglucose\b|sugar/,
@@ -872,13 +1038,19 @@ const CORRECT_WORLD_IDEAS = [
 
 function lookupCorrectIdea(right, prompt = '', topic = '') {
   const r = lower(right);
-  const hit = CORRECT_WORLD_IDEAS.find((row) => row.test.test(r));
-  if (hit) return hit;
-  // Never scan the question text for fill-in lists — that steals
-  // unrelated labels (e.g. "leaf and stem diversity") from other misses.
-  if (looksLikeFillInList(right)) return null;
+  if (r) {
+    const hit = CORRECT_WORLD_IDEAS.find((row) => row.test.test(r));
+    if (hit) return hit;
+  }
+  // Never invent a correct idea from the question stem alone — that steals
+  // unrelated labels (e.g. "flowers that produce seeds" from a monocot/dicot stem).
+  if (!r || looksLikeFillInList(right)) return null;
   const blob = lower(`${right} ${prompt} ${topic}`);
-  return CORRECT_WORLD_IDEAS.find((row) => row.test.test(blob)) || null;
+  // Prefer matches that still involve the answer token, not prompt-only hits.
+  return (
+    CORRECT_WORLD_IDEAS.find((row) => row.test.test(r) || (row.test.test(blob) && row.test.test(r))) ||
+    null
+  );
 }
 
 function pickMeet(idea, band) {
@@ -891,12 +1063,20 @@ function pickMeet(idea, band) {
 function ideaBody(idea, band) {
   if (!idea) return '';
   if (band === 'micro' || band === 'simple') {
-    return idea.bodyShort || [idea.what, idea.usedFor || idea.means].map(norm).filter(Boolean).join(' ');
+    return (
+      idea.bodyShort ||
+      idea.meetShort ||
+      idea.meet ||
+      [idea.what, idea.usedFor || idea.means].map(norm).filter(Boolean).join(' ')
+    );
   }
   let text =
     idea.bodyFull ||
     idea.bodyShort ||
+    idea.meetRich ||
+    idea.meet ||
     [idea.what, idea.means, idea.usedFor, idea.how].map(norm).filter(Boolean).join(' ');
+  if (!text && idea.meetShort) text = idea.meetShort;
   if (band === 'rich' && idea.example) {
     const marker = lower(idea.example).slice(0, 24);
     if (marker && !lower(text).includes(marker)) text = `${text} ${idea.example}`;
@@ -974,13 +1154,52 @@ export function questionJob(attempt = {}) {
         'The leaf takes in carbon dioxide, plus water and light, to build sugar. Oxygen is given off.',
     };
   }
-  if (/produce seeds|new plants|reproduc/.test(p) && /flower|plant|seed/.test(p)) {
+  if (
+    /characteristic|feature|special about|define|known for/.test(p) &&
+    /flowering plant/.test(p)
+  ) {
     return {
-      verbPhrase: 'produce seeds',
-      purpose: 'reproduction',
-      asking: 'how flowering plants produce seeds',
-      rightHow: 'Flowering plants produce seeds through their flowers.',
+      verbPhrase: 'name what makes flowering plants special',
+      purpose: 'flowers and fruits',
+      asking: 'what characteristic feature flowering plants have',
+      rightHow:
+        'Flowering plants make flowers, and many later form fruits that hold seeds. That reproductive feature is what makes them flowering plants — not where they live, such as only in water.',
     };
+  }
+  if (
+    (/two main groups|main groups|groups of flowering/.test(p) ||
+      (/seed structure/.test(p) && /group/.test(p))) &&
+    /flowering|seed/.test(p)
+  ) {
+    return {
+      verbPhrase: 'name the two seed-structure groups of flowering plants',
+      purpose: 'monocots and dicots',
+      asking: 'the two main groups of flowering plants based on seed structure',
+      rightHow:
+        'Flowering plants are grouped by seed structure into monocots (one seed leaf / cotyledon) and dicots (two seed leaves). Naming only monocots misses the other main group.',
+    };
+  }
+  if (/main parts of a plant|parts of a plant include/.test(p)) {
+    return {
+      verbPhrase: 'name the main plant organs',
+      purpose: 'roots, stem, and leaves as the plant body',
+      asking: 'which organs are the main parts of a plant',
+      rightHow:
+        'The main parts of a plant are roots, stem, and leaves. Flowers and fruits are for reproduction, and photosynthesis is a leaf process, not a plant part.',
+    };
+  }
+  if (
+    /produce seeds|new plants/.test(p) ||
+    (/reproduc/.test(p) && !/main parts of a plant|parts of a plant include/.test(p))
+  ) {
+    if (/flower|plant|seed/.test(p)) {
+      return {
+        verbPhrase: 'produce seeds',
+        purpose: 'reproduction',
+        asking: 'how flowering plants produce seeds',
+        rightHow: 'Flowering plants produce seeds through their flowers.',
+      };
+    }
   }
   if (/photosynth/.test(p) && !/gas/.test(p)) {
     return {
@@ -1029,20 +1248,23 @@ export function questionJob(attempt = {}) {
       rightHow: hint || 'Leaves hold chlorophyll and capture most sunlight for photosynthesis.',
     };
   }
-  if (/dicotyledon|two seed|seed lobes?|cotyledon/.test(p)) {
+  if (/dicotyledon|two seed|seed lobes?|cotyledon/.test(p) && !/differ|monocot|seed leaves?/.test(p)) {
     return {
       verbPhrase: 'name plants with two seed leaves',
       rightHow:
         'Dicotyledonous (dicot) plants have two cotyledons — seed leaves. The prefix “di-” means two.',
     };
   }
-  if (/main parts of a plant|parts of a plant include/.test(p)) {
+  if (
+    /seed leaves?|cotyledon/.test(p) &&
+    (/dicot|monocot|differ|difference|compare/.test(p) || /how do they differ/.test(p))
+  ) {
     return {
-      verbPhrase: 'name the main plant organs',
-      purpose: 'roots, stem, and leaves as the plant body',
-      asking: 'which organs are the main parts of a plant',
+      verbPhrase: 'explain seed leaves in dicots vs monocots',
+      purpose: 'seed leaves (cotyledons)',
+      asking: 'what seed leaves are and how dicots and monocots differ',
       rightHow:
-        'The main parts of a plant are roots, stem, and leaves. Flowers and fruits are for reproduction, and photosynthesis is a leaf process, not a plant part.',
+        'Seed leaves are cotyledons — the first leaf-like parts inside a seed. Dicots have two cotyledons (di- means two). Monocots have one cotyledon (mono- means one). That count is how the two plant groups are named.',
     };
   }
   if (/\bstem\b/.test(p) && /support|transport/.test(p)) {
@@ -1094,20 +1316,26 @@ export function questionJob(attempt = {}) {
           'Use the scientific idea in the sentence — not a related idea from another topic.',
       };
     }
+    const known = lookupCorrectIdea(right, prompt, attempt.topic);
     return {
       verbPhrase: 'match the science job in the question',
+      purpose: known?.label || known?.purpose || shortConceptLabel(right, 48),
       asking: claim?.fact
         ? firstSentence(claim.fact)
-        : stemIntent(prompt).asking,
+        : known?.what
+          ? firstSentence(known.what)
+          : shortConceptLabel(right, 72),
       rightHow:
         claim?.fact ||
         hint ||
-        stemIntent(prompt).asking,
+        ideaBody(known, 'medium') ||
+        known?.what ||
+        `“${clip(right, 60)}” is the science idea this question is scoring.`,
     };
   }
   return {
     verbPhrase: 'answer this farm question',
-    rightHow: stemIntent(prompt).asking,
+    rightHow: claim?.fact || hint || clip(attempt.topic || 'the science idea in this farm question', 80),
   };
 }
 
@@ -1206,8 +1434,21 @@ function conceptPurpose(text, attempt, side) {
   const job = questionJob(attempt);
   if (side === 'correct' && job?.purpose) return job.purpose;
   const t = lower(text);
+  if (/only grow in water|grow in water|aquatic only|aquatic plant/.test(t)) {
+    return 'habitat — living only in water';
+  }
   if (/store water|storing water|leaves that store|succulent/.test(t)) {
     return 'water storage and survival';
+  }
+  if (/condensation/.test(t)) return 'water vapour turning into liquid';
+  if (/transpiration/.test(t)) return 'water leaving leaves into the air';
+  if (/precipitation|rainfall|\brain\b/.test(t)) return 'water falling from clouds';
+  if (/evaporat/.test(t)) return 'liquid water turning into vapour';
+  if (/makes? seeds|seed making|produce seeds/.test(t)) {
+    return 'reproduction by making seeds';
+  }
+  if (/support and transport|support.*transport|transport.*support/.test(t)) {
+    return 'holding the plant up and moving water and food';
   }
   if (/flower|seed|reproduc/.test(t) && !/store water/.test(t)) {
     return 'reproduction and seed formation';
@@ -1215,6 +1456,7 @@ function conceptPurpose(text, attempt, side) {
   if (/helium/.test(t)) return 'a light unreactive gas used in balloons';
   if (/carbon dioxide|co2|co₂/.test(t)) return 'the gas plants take in to make food';
   if (/oxygen/.test(t)) return 'the gas animals breathe; plants usually give it off in light';
+  if (/nitrogen|\bn2\b/.test(t)) return 'a soil nutrient for proteins, not the leaf intake gas';
   return '';
 }
 
@@ -1363,8 +1605,21 @@ function isTypedAttempt(attempt = {}) {
 
 function inferredTypedCorrect(attempt = {}) {
   const direct = displayChoice(attempt.correctAnswer || attempt.correct_answer);
-  if (direct) return direct;
   const prompt = lower(attempt.prompt || attempt.question || attempt.questionText || '');
+  // Prefer stem-grounded inference when the stored key clearly mismatches the question.
+  if (
+    (/two main groups|main groups|groups of flowering/.test(prompt) ||
+      (/seed structure/.test(prompt) && /group/.test(prompt))) &&
+    /flowering|seed/.test(prompt)
+  ) {
+    if (
+      !direct ||
+      /flowers that produce seeds|only grow in water|flowers and fruits/i.test(direct)
+    ) {
+      return 'monocots and dicots';
+    }
+  }
+  if (direct) return direct;
   if (/gas/.test(prompt) && /photosynth|take in/.test(prompt)) return 'carbon dioxide';
   if (/what is photosynthesis|define photosynthesis/.test(prompt)) {
     return 'Photosynthesis is the process by which plants use light energy to make glucose from carbon dioxide and water.';
@@ -1372,7 +1627,42 @@ function inferredTypedCorrect(attempt = {}) {
   if (/why.*sunlight|need sunlight/.test(prompt)) {
     return 'Plants use sunlight as an energy source during photosynthesis.';
   }
+  if (
+    /characteristic|feature/.test(prompt) &&
+    /flowering plant/.test(prompt)
+  ) {
+    return 'flowers and fruits';
+  }
   return '';
+}
+
+/** Resolve the correct idea shown on mind-map cards for fill-in / typed misses. */
+export function resolveFreeTextCorrectAnswer(attempt = {}) {
+  const prompt = attempt.prompt || attempt.question || attempt.questionText || '';
+  const fromAe = displayChoice(
+    attempt.correctAnswer ||
+      attempt.correct_answer ||
+      attempt.canonicalCorrectAnswer ||
+      attempt.grade?.ideal_answer ||
+      attempt.grade?.idealAnswer ||
+      '',
+  );
+  const inferred = inferredTypedCorrect({
+    ...attempt,
+    correctAnswer: fromAe,
+    prompt,
+  });
+  if (inferred) return inferred;
+  const job = questionJob({ ...attempt, prompt, correctAnswer: fromAe });
+  if (job?.purpose && !isMetaQuestionAskLine(job.purpose)) return job.purpose;
+  return fromAe || '';
+}
+
+function normalizeScienceTypo(text) {
+  return String(text || '')
+    .replace(/\bmonocods?\b/gi, 'monocots')
+    .replace(/\bdicods?\b/gi, 'dicots')
+    .replace(/\bphotosyntheis\b/gi, 'photosynthesis');
 }
 
 function isPartialTypedPhotosynthesis(attempt = {}) {
@@ -1393,14 +1683,21 @@ function isPartialTypedPhotosynthesis(attempt = {}) {
 }
 
 function ideaFromTypedText(text, attempt = {}, side = 'student') {
-  const cleaned = displayChoice(text);
+  const cleaned = normalizeScienceTypo(displayChoice(text));
   if (!cleaned) return null;
   const m = typedMentions(cleaned);
   const prompt = lower(attempt.prompt || attempt.question || attempt.questionText || '');
   const aboutGas = /gas/.test(prompt) && /photosynth|take in/.test(prompt);
   const aboutPhoto = /photosynth|make food/.test(prompt);
+  const aboutSeedGroups =
+    (/two main groups|main groups|groups of flowering/.test(prompt) ||
+      (/seed structure/.test(prompt) && /group/.test(prompt))) &&
+    /flowering|seed/.test(prompt);
 
   if (side === 'student') {
+    if (aboutSeedGroups && /\bmonocot/.test(lower(cleaned))) {
+      return lookupStudentIdea('monocots') || lookupCorrectIdea('monocots', '', '');
+    }
     if (m.oxygen && (aboutGas || aboutPhoto || m.food || m.respiration)) {
       return lookupStudentIdea('oxygen');
     }
@@ -1427,43 +1724,158 @@ function ideaFromTypedText(text, attempt = {}, side = 'student') {
     const co2 = lookupCorrectIdea('carbon dioxide', '', '');
     if (co2 && (aboutGas || m.co2)) return co2;
   }
-  if (aboutPhoto && !aboutGas) return TYPED_PHOTOSYNTHESIS_FULL_IDEA;
+  if (aboutPhoto && !aboutGas && !aboutSeedGroups) return TYPED_PHOTOSYNTHESIS_FULL_IDEA;
+  if (aboutSeedGroups) {
+    return lookupCorrectIdea('monocots and dicots', '', '');
+  }
   return (
-    lookupCorrectIdea(cleaned, prompt, attempt.topic || '') ||
-    lookupCorrectIdea(inferredTypedCorrect(attempt), prompt, attempt.topic || '') ||
-    TYPED_PHOTOSYNTHESIS_FULL_IDEA
+    lookupCorrectIdea(cleaned, '', '') ||
+    lookupCorrectIdea(inferredTypedCorrect(attempt), '', '') ||
+    (aboutPhoto && !aboutGas ? TYPED_PHOTOSYNTHESIS_FULL_IDEA : null)
   );
 }
 
-/** Short science idea for map "Key idea" — never just True/False. */
+function isMetaQuestionAskLine(text) {
+  return /^this question is asking\b/i.test(String(text || '').trim());
+}
+
+function sameScienceLine(a, b) {
+  const left = lower(a).replace(/[^a-z0-9]+/g, ' ').trim();
+  const right = lower(b).replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.length >= 24 && right.includes(left)) return true;
+  if (right.length >= 24 && left.includes(right)) return true;
+  return false;
+}
+
+function noUsableStudentAnswer(attempt = {}) {
+  const raw = norm(attempt.studentAnswer || attempt.student_answer || '');
+  if (!raw) return true;
+  if (isNoPick(raw) || isPlaceholderBlank(raw) || looksLikeSymbolicTypedAnswer(raw)) {
+    return true;
+  }
+  return /ran out of time|no pick yet|nothing typed|left blank/i.test(raw);
+}
+
+/** Short science idea for map "Key idea" — never dump the full ideal answer. */
 export function scienceKeyIdea(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const right = displayChoice(attempt.correctAnswer);
+  const job = questionJob(attempt);
+  if (
+    job?.purpose &&
+    !isMetaQuestionAskLine(job.purpose) &&
+    !/^this question is asking for /i.test(job.purpose)
+  ) {
+    return clip(job.purpose, 48);
+  }
   const fillCorrect = ideaFromFillInQuestion(attempt, 'correct');
-  if (fillCorrect?.label) return fillCorrect.label;
+  if (fillCorrect?.label && !sameScienceLine(fillCorrect.label, right)) {
+    return clip(fillCorrect.label, 48);
+  }
   const claim = unpackScienceClaim(prompt, attempt.topic);
   if (isTrueFalseToken(right) && claim?.fact) return firstSentence(claim.fact);
   const idea = isTrueFalseToken(right)
     ? null
     : lookupCorrectIdea(right, prompt, attempt.topic);
-  if (idea?.label) return idea.label;
-  if (idea?.what) return firstSentence(idea.what);
-  if (claim?.fact) return firstSentence(claim.fact);
-  const job = questionJob(attempt);
-  if (job?.purpose && !/^this question is asking for /i.test(job.purpose)) {
-    return job.purpose;
+  if (idea?.label) return clip(idea.label, 48);
+  if (idea?.means && !sameScienceLine(idea.means, right) && !isMetaQuestionAskLine(idea.means)) {
+    return clip(firstSentence(idea.means), 48);
   }
-  if (job?.asking && !/^this question is asking for /i.test(job.asking)) {
-    return firstSentence(job.asking);
+  if (idea?.what && !sameScienceLine(idea.what, right) && !isMetaQuestionAskLine(idea.what)) {
+    return clip(firstSentence(idea.what), 48);
+  }
+  if (claim?.fact && !sameScienceLine(claim.fact, right)) {
+    return clip(firstSentence(claim.fact), 48);
+  }
+  if (
+    job?.asking &&
+    !isMetaQuestionAskLine(job.asking) &&
+    !/^this question is asking for /i.test(job.asking)
+  ) {
+    return clip(firstSentence(job.asking), 48);
   }
   if (
     job?.rightHow &&
+    !isMetaQuestionAskLine(job.rightHow) &&
     !/^this question is asking for /i.test(job.rightHow) &&
-    !/^[A-D]\s*[—–-]/.test(job.rightHow)
+    !/^[A-D]\s*[—–-]/.test(job.rightHow) &&
+    !sameScienceLine(job.rightHow, right)
   ) {
-    return firstSentence(job.rightHow);
+    return clip(firstSentence(job.rightHow), 48);
+  }
+  if (right && !isTrueFalseToken(right)) {
+    return shortConceptLabel(right, 48) || clip(attempt.topic || 'This science idea', 40);
   }
   return clip(attempt.topic || 'This science idea', 40);
+}
+
+/**
+ * Scientific description of the assessment-engine correct idea for THIS question.
+ * Used for mind-map "Let's look" — never just paste the ideal answer string.
+ */
+export function explainCorrectIdea(attempt = {}, voice = {}) {
+  const band = voiceBand(voice);
+  const right = displayChoice(attempt.correctAnswer);
+  const wrong = displayChoice(attempt.studentAnswer);
+  const job = questionJob(attempt);
+  const idea =
+    verifiedIdeaFor(right, attempt, 'correct') ||
+    lookupCorrectIdea(right, attempt.prompt || attempt.question || '', attempt.topic || '');
+
+  let body = '';
+  if (
+    job?.rightHow &&
+    !sameScienceLine(job.rightHow, right) &&
+    !isMetaQuestionAskLine(job.rightHow) &&
+    !/^this question is asking for /i.test(job.rightHow)
+  ) {
+    body = band === 'micro' || band === 'simple'
+      ? firstSentence(job.rightHow)
+      : job.rightHow;
+  }
+  if (!body) {
+    body = ideaBody(idea, band);
+  }
+  if (!body || sameScienceLine(body, right) || isMetaQuestionAskLine(body)) {
+    const enriched = [idea?.means, idea?.how, idea?.example]
+      .map(norm)
+      .filter(Boolean)
+      .join(' ');
+    body =
+      enriched ||
+      (!isMetaQuestionAskLine(job?.rightHow) ? job?.rightHow : '') ||
+      scienceKeyIdea(attempt);
+  }
+  if (sameScienceLine(body, right) || isMetaQuestionAskLine(body)) {
+    body = scienceKeyIdea(attempt);
+  }
+
+  // When the student picked a real wrong science idea, connect both briefly.
+  if (
+    wrong &&
+    !noUsableStudentAnswer(attempt) &&
+    !isTrueFalseToken(wrong) &&
+    body &&
+    !sameScienceLine(wrong, right)
+  ) {
+    const wrongBit = /only grow in water|aquatic|water only/i.test(wrong)
+      ? 'Growing only in water is about habitat, not the feature that defines flowering plants.'
+      : '';
+    if (wrongBit && !lower(body).includes('habitat')) {
+      body = `${body} ${wrongBit}`;
+    }
+  }
+
+  if (noUsableStudentAnswer(attempt) && body) {
+    const lead =
+      band === 'micro'
+        ? 'Here is the science this question wants.'
+        : 'No answer was typed in time — here is the science idea this question is checking.';
+    return clip(`${lead} ${body}`, fiveStepClip(band));
+  }
+  return clip(body, band === 'micro' ? 160 : fiveStepClip(band));
 }
 
 function catalogAsIdea(text, attempt) {
@@ -1515,19 +1927,26 @@ export function verifiedIdeaFor(text, attempt = {}, side = 'student') {
 function statementScience(attempt, band) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const topic = attempt.topic || '';
+  // Prefer the T/F claim unpack before catalog matching the whole stem —
+  // a stem with "dicotyledonous" must not resolve to the paired "monocots and dicots" group.
+  const claim = unpackScienceClaim(prompt, topic);
+  if (claim?.fact) {
+    const idea =
+      lookupCorrectIdea(firstSentence(claim.fact), '', topic) ||
+      lookupStudentIdea(firstSentence(claim.fact)) ||
+      {
+        label: scienceKeyIdea(attempt),
+        what: claim.fact,
+        purpose: 'the science in this statement',
+      };
+    const text =
+      band === 'micro' || band === 'simple' ? firstSentence(claim.fact) : claim.fact;
+    return { idea, text };
+  }
   const idea =
     lookupCorrectIdea(prompt, prompt, topic) || lookupStudentIdea(prompt);
   const taught = ideaBody(idea, band);
   if (taught) return { idea, text: taught };
-  const claim = unpackScienceClaim(prompt, topic);
-  if (claim?.fact) {
-    const text =
-      band === 'micro' || band === 'simple' ? firstSentence(claim.fact) : claim.fact;
-    return {
-      idea: { label: scienceKeyIdea(attempt), what: claim.fact, purpose: 'the science in this statement' },
-      text,
-    };
-  }
   const how = questionJob(attempt)?.rightHow;
   if (how) {
     const text = band === 'micro' || band === 'simple' ? firstSentence(how) : how;
@@ -1543,7 +1962,9 @@ function statementScience(attempt, band) {
 export function canDescribeScientifically(text, attempt = {}, side = 'student') {
   const raw = norm(text);
   if (!raw) return false;
-  if (isNoPick(raw) || isPlaceholderBlank(raw)) return false;
+  if (isNoPick(raw) || isPlaceholderBlank(raw) || looksLikeSymbolicTypedAnswer(raw)) {
+    return false;
+  }
   if (isTrueFalseToken(raw)) return Boolean(statementScience(attempt, 'medium').text);
   return Boolean(verifiedIdeaFor(raw, attempt, side));
 }
@@ -1569,6 +1990,61 @@ export function isVagueOrIncomplete(text) {
   if (/this is a (science|plant|biological) (concept|function|idea)/i.test(s)) return true;
   if (/related to plants\.?$/i.test(s) && s.length < 48) return true;
   return false;
+}
+
+/**
+ * Last-resort science card so every usable wrong/correct pick still gets
+ * a wrong-vs-correct lesson — even when the catalog has no exact match.
+ */
+function fallbackConceptIdea(text, attempt = {}, side = 'student') {
+  const cleaned = displayChoice(text) || norm(text);
+  if (!cleaned) return null;
+  const label = shortConceptLabel(cleaned, 72) || cleaned;
+  const job = questionJob(attempt);
+  const claim = unpackScienceClaim(
+    attempt.prompt || attempt.question || '',
+    attempt.topic || '',
+  );
+  const topic = norm(attempt.topic) || 'this science lesson';
+  const asking = job?.asking || scienceKeyIdea(attempt) || topic;
+
+  if (side === 'correct') {
+    const how = job?.rightHow || claim?.fact || '';
+    const purpose =
+      job?.purpose ||
+      conceptPurpose(cleaned, attempt, 'correct') ||
+      `the idea that answers this ${topic} question`;
+    const definition = how
+      ? how
+      : `${label} is the correct science idea for this question. It matches what the question is asking about ${asking}.`;
+    return {
+      label,
+      purpose,
+      what: firstSentence(definition),
+      means: purpose,
+      usedFor: purpose,
+      how: firstSentence(how || definition),
+      example: firstSentence(how || definition),
+      bodyShort: firstSentence(definition),
+      bodyFull: definition,
+    };
+  }
+
+  const purpose =
+    conceptPurpose(cleaned, attempt, 'student') ||
+    `the science idea in “${clip(label, 40)}”`;
+  const definition = `“${clip(label, 60)}” is the idea you chose. Scientifically it points to ${purpose}. That can be a real science thought, but it is not what this ${topic} question is asking about (${asking}).`;
+  return {
+    label,
+    purpose,
+    what: firstSentence(definition),
+    means: purpose,
+    usedFor: purpose,
+    how: purpose,
+    example: `On this farm question you chose “${clip(label, 48)}”.`,
+    bodyShort: firstSentence(definition),
+    bodyFull: definition,
+  };
 }
 
 function completeConcept(text, attempt, side, band) {
@@ -1605,11 +2081,58 @@ function completeConcept(text, attempt, side, band) {
       example: example || firstSentence(definition),
     };
   }
-  const idea = verifiedIdeaFor(text, attempt, side);
-  const definition = ideaBody(idea, band);
-  const scientificFunction =
+
+  let idea = verifiedIdeaFor(text, attempt, side);
+  let definition = ideaBody(idea, band);
+  let scientificFunction =
     idea?.purpose || idea?.usedFor || conceptPurpose(text, attempt, side);
-  const example = idea?.example || idea?.how || firstSentence(definition);
+  let example = idea?.example || idea?.how || firstSentence(definition);
+
+  if (
+    !idea ||
+    !norm(definition) ||
+    definition.length < 24 ||
+    isVagueOrIncomplete(definition) ||
+    !norm(scientificFunction) ||
+    isVagueOrIncomplete(scientificFunction)
+  ) {
+    const fallback = fallbackConceptIdea(text, attempt, side);
+    if (fallback) {
+      idea = {
+        ...fallback,
+        label: idea?.label || fallback.label,
+        purpose: idea?.purpose || idea?.usedFor || fallback.purpose,
+        usedFor: idea?.usedFor || fallback.usedFor,
+        what: idea?.what || fallback.what,
+        means: idea?.means || fallback.means,
+        how: idea?.how || fallback.how,
+        example: idea?.example || idea?.how || fallback.example,
+        bodyShort: idea?.bodyShort || idea?.meetShort || fallback.bodyShort,
+        bodyFull:
+          idea?.bodyFull ||
+          idea?.meetRich ||
+          idea?.meet ||
+          fallback.bodyFull,
+        meet: idea?.meet,
+        meetShort: idea?.meetShort,
+        meetRich: idea?.meetRich,
+      };
+      definition = ideaBody(idea, band) || fallback.bodyFull;
+      scientificFunction =
+        idea.purpose || idea.usedFor || fallback.purpose || scientificFunction;
+      example =
+        idea.example || idea.how || fallback.example || firstSentence(definition);
+    }
+  }
+
+  if (!norm(definition) || definition.length < 24) {
+    const fallback = fallbackConceptIdea(text, attempt, side);
+    definition = fallback?.bodyFull || definition;
+    scientificFunction = scientificFunction || fallback?.purpose || '';
+    example = example || fallback?.example || firstSentence(definition);
+    idea = idea || fallback;
+  }
+
   return {
     title,
     concept: idea?.label || shortConceptLabel(text, 72) || displayChoice(text),
@@ -2042,13 +2565,12 @@ function composeTutorMiss(attempt, voice) {
   const band = voiceBand(voice);
   const wrong = norm(attempt.studentAnswer);
 
-  if (isPlaceholderBlank(wrong) || isNoPick(wrong)) {
-    return clip(
-      band === 'micro'
-        ? `Let's look at the sentence itself. ${scienceKeyIdea(attempt)}`
-        : `No pick yet — start with the idea in the sentence. ${scienceKeyIdea(attempt)}`,
-      fiveStepClip(band),
-    );
+  if (
+    isPlaceholderBlank(wrong) ||
+    isNoPick(wrong) ||
+    looksLikeSymbolicTypedAnswer(wrong)
+  ) {
+    return explainCorrectIdea(attempt, voice);
   }
 
   const lesson = composeFiveStepLesson(attempt, voice);
@@ -2058,12 +2580,6 @@ function composeTutorMiss(attempt, voice) {
 
 export function explainWhyWrong(attempt = {}, voice = {}) {
   return composeTutorMiss(attempt, voice);
-}
-
-export function explainCorrectIdea(attempt = {}, voice = {}) {
-  const band = voiceBand(voice);
-  const idea = scienceKeyIdea(attempt);
-  return clip(idea, band === 'micro' ? 160 : 260);
 }
 
 /** Build the five SAGE teaching sections from a farm miss. */
@@ -2081,7 +2597,13 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
     : norm(input.correctAnswer || input.correct_answer);
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
-  if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
+  if (
+    isPlaceholderBlank(studentAnswer) ||
+    isNoPick(studentAnswer) ||
+    looksLikeSymbolicTypedAnswer(studentAnswer)
+  ) {
+    return null;
+  }
   const attempt = {
     prompt,
     question: prompt,

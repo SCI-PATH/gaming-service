@@ -21,6 +21,8 @@ import {
   shortConceptLabel,
   composeFiveStepLesson,
   validateStructuredLesson,
+  looksLikeSymbolicTypedAnswer,
+  resolveFreeTextCorrectAnswer,
 } from './explainMisconception.js';
 import {
   isFillInQuestionType,
@@ -441,11 +443,19 @@ export function buildPersonalizedMindMap({
       a.grade?.idealAnswer ||
       a.canonicalCorrectAnswer ||
       '';
+    const resolvedCorrect = freeText
+      ? resolveFreeTextCorrectAnswer({
+          ...a,
+          correctAnswer: a.correctAnswer || fromGrade,
+          prompt: a.prompt || a.question,
+        })
+      : '';
     const cleanRight = freeText
-      ? safeScienceLine(a.correctAnswer, null) ||
+      ? safeScienceLine(resolvedCorrect, null) ||
+        safeScienceLine(a.correctAnswer, null) ||
         safeScienceLine(fromGrade, null) ||
+        resolvedCorrect ||
         a.correctAnswer ||
-        scienceKeyIdea(a) ||
         'the idea in this farm question'
       : shortConceptLabel(a.correctAnswer, 48) ||
         safeScienceLine(a.correctAnswer, null) ||
@@ -455,15 +465,28 @@ export function buildPersonalizedMindMap({
     const conceptual = {
       ...a,
       studentAnswer: a.studentAnswer,
-      correctAnswer: a.correctAnswer,
+      correctAnswer: freeText
+        ? resolvedCorrect || a.correctAnswer || fromGrade
+        : a.correctAnswer,
     };
-    const lesson = composeFiveStepLesson(conceptual, {
-      tone: profile.tone,
-      frustrationLevel: profile.frustrationLevel,
-      explainDepth: profile.explainDepth,
-    });
+    const noUsablePick =
+      looksLikeSymbolicTypedAnswer(a.studentAnswer) ||
+      /ran out of time|no pick yet|nothing typed|left blank/i.test(
+        String(cleanWrong || ''),
+      );
+    const lesson = noUsablePick
+      ? null
+      : composeFiveStepLesson(conceptual, {
+          tone: profile.tone,
+          frustrationLevel: profile.frustrationLevel,
+          explainDepth: profile.explainDepth,
+        });
     const lessonOk = validateStructuredLesson(lesson);
-    const why = '';
+    const why = lessonOk
+      ? lesson.comparisonFields?.keyScientificDifference ||
+        lesson.comparison ||
+        ''
+      : '';
     const rightExplain = lessonOk
       ? lesson.correctAnswer.scientificDefinition
       : explainCorrectIdea(conceptual, {
@@ -471,11 +494,37 @@ export function buildPersonalizedMindMap({
           frustrationLevel: profile.frustrationLevel,
           explainDepth: profile.explainDepth,
         });
+    const wrongExplain = lessonOk
+      ? lesson.studentAnswer?.scientificDefinition || ''
+      : '';
     const keyIdea = lessonOk
-      ? lesson.comparisonFields?.keyScientificDifference ||
-        lesson.correctAnswer?.concept ||
+      ? lesson.correctAnswer?.concept ||
+        lesson.comparisonFields?.correctConcept ||
         scienceKeyIdea(conceptual)
       : scienceKeyIdea(conceptual);
+    // Never paste the ideal answer into Key idea / Let's look.
+    const keyConcept = (() => {
+      const raw = clip(keyIdea, 90) || t;
+      if (
+        sameLine(raw, cleanRight) ||
+        sameLine(raw, a.correctAnswer) ||
+        sameLine(raw, fromGrade)
+      ) {
+        return clip(scienceKeyIdea(conceptual), 90) || t;
+      }
+      return raw;
+    })();
+    const keyExplain = (() => {
+      const raw = String(rightExplain || '').trim();
+      if (!raw || sameLine(raw, cleanRight) || sameLine(raw, keyConcept)) {
+        return explainCorrectIdea(conceptual, {
+          tone: profile.tone,
+          frustrationLevel: profile.frustrationLevel,
+          explainDepth: profile.explainDepth,
+        });
+      }
+      return raw;
+    })();
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 
     let nodes = [
@@ -485,7 +534,7 @@ export function buildPersonalizedMindMap({
         label: shortLabel(cleanWrong, 22) || 'Your pick',
         title: 'Your answer',
         icon: '✗',
-        body: why,
+        body: wrongExplain || why,
         meta: { studentAnswer: cleanWrong },
       },
       {
@@ -503,7 +552,7 @@ export function buildPersonalizedMindMap({
         label: shortLabel(cleanRight, 22) || 'Correct idea',
         title: 'Correct idea',
         icon: '✓',
-        body: rightExplain,
+        body: keyExplain,
         meta: {
           correctAnswer: cleanRight,
           hint: a.hint,
@@ -562,11 +611,11 @@ export function buildPersonalizedMindMap({
       hint: a.hint,
       why,
       why_wrong: why,
-      rightExplain,
-      keyConcept: clip(keyIdea, 90) || t,
-      key_concept: clip(keyIdea, 90) || t,
-      keyExplain: rightExplain,
-      key_concept_explain: rightExplain,
+      rightExplain: keyExplain,
+      keyConcept,
+      key_concept: keyConcept,
+      keyExplain,
+      key_concept_explain: keyExplain,
       lesson: lessonOk ? lesson : null,
       farmLink: related.explanation,
       farm_link: related.explanation,
@@ -744,6 +793,22 @@ function pickTopicIcon(topic) {
 function clip(s, n) {
   const t = String(s || '');
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+}
+
+function sameLine(a, b) {
+  const left = String(a || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const right = String(b || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.length >= 24 && right.includes(left)) return true;
+  if (right.length >= 24 && left.includes(right)) return true;
+  return false;
 }
 
 function shortLabel(s, n) {

@@ -8,6 +8,8 @@ import {
   scienceKeyIdea,
   composeFiveStepLesson,
   validateStructuredLesson,
+  looksLikeSymbolicTypedAnswer,
+  resolveFreeTextCorrectAnswer,
 } from '../../frontend/src/avatar/explainMisconception.js';
 
 const TOPIC_ICONS = {
@@ -92,6 +94,22 @@ function clip(text, n = 120) {
   return s.length > n ? `${s.slice(0, n - 1).trim()}…` : s;
 }
 
+function sameRough(a, b) {
+  const left = String(a || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const right = String(b || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.length >= 24 && right.includes(left)) return true;
+  if (right.length >= 24 && left.includes(right)) return true;
+  return false;
+}
+
 function looksLikeMetaAnswer(raw) {
   const s = String(raw || '').trim();
   if (!s) return true;
@@ -161,11 +179,31 @@ export function buildLocalMindMap(attempts, adaptation = null) {
 
   const branches = list.map((a, i) => {
     const topic = a.topic || 'Science';
-    const right = a.correctAnswer;
-    const q = clip(a.prompt || a.question, 140);
-    const conceptual = conceptualAttempt(a);
-    const lesson = composeFiveStepLesson(conceptual, voice);
+    const resolvedRight =
+      resolveFreeTextCorrectAnswer(a) || a.correctAnswer || '';
+    const right = resolvedRight;
+    const conceptual = {
+      ...conceptualAttempt(a),
+      correctAnswer: right,
+      studentAnswer: a.studentAnswer,
+      prompt: a.prompt || a.question,
+    };
+    const noUsable =
+      looksLikeSymbolicTypedAnswer(a.studentAnswer) ||
+      /ran out of time|no pick yet|nothing typed|left blank/i.test(
+        String(a.studentAnswer || ''),
+      );
+    const lesson = noUsable ? null : composeFiveStepLesson(conceptual, voice);
     const lessonOk = validateStructuredLesson(lesson);
+    const keyConcept = lessonOk
+      ? clip(lesson.correctAnswer.concept, 90)
+      : clip(scienceKeyIdea(conceptual), 90) || clip(topic, 40) || 'Key idea';
+    const keyExplain = lessonOk
+      ? lesson.correctAnswer.scientificDefinition
+      : explainCorrectIdea(conceptual, voice);
+    const whyWrong = lessonOk
+      ? lesson.comparisonFields?.keyScientificDifference || lesson.comparison || ''
+      : '';
     return {
       miss_index: i + 1,
       topic,
@@ -174,17 +212,25 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
       options: Array.isArray(a.options) ? a.options : [],
-      why_wrong: '',
-      key_concept: lessonOk
-        ? clip(lesson.studentAnswer.concept, 90)
-        : clip(scienceKeyIdea(conceptual), 90) || clip(right || topic, 40) || 'Key idea',
-      key_concept_explain: lessonOk
-        ? lesson.correctAnswer.scientificDefinition
-        : explainCorrectIdea(conceptual, voice),
+      why_wrong: whyWrong,
+      key_concept:
+        sameRough(keyConcept, right) || /flowers that produce seeds/i.test(keyConcept)
+          ? clip(scienceKeyIdea(conceptual), 90) || clip(topic, 40) || 'Key idea'
+          : keyConcept,
+      key_concept_explain:
+        sameRough(keyExplain, right) ||
+        sameRough(keyExplain, keyConcept) ||
+        /flowers that produce seeds/i.test(keyExplain)
+          ? explainCorrectIdea(conceptual, voice)
+          : keyExplain,
       lesson: lessonOk ? lesson : null,
-      farm_link: scienceKeyIdea(conceptual)
-        ? `Hold this idea for the farm question: ${clip(scienceKeyIdea(conceptual), 80)}.`
-        : `Come back to this miss and try the farm question with one clear idea.`,
+      farm_link: (() => {
+        const idea = scienceKeyIdea(conceptual);
+        if (idea && !sameRough(idea, right)) {
+          return `Hold this idea for the farm question: ${clip(idea, 80)}.`;
+        }
+        return `Come back to this miss and try the farm question with one clear idea.`;
+      })(),
       color_index: i % 6,
     };
   });
