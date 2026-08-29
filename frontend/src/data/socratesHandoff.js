@@ -4,7 +4,7 @@
  * On click:
  *  1. Flush the live farm score to gaming-service (0–100)
  *  2. GET /api/engagement/frustration (per student — not per topic)
- *  3. POST that score to Component 4 as a user-level tone cue (topic_id USER)
+ *  3. POST that score to Component 4 as a per-student tone cue
  *  4. Open SCI-PATH /tutor?from=farm with the lesson unlocked so Socrates
  *     can infer the real topic from the student's question
  */
@@ -14,10 +14,8 @@ import {
   syncFrustration,
 } from './engagementSync.js';
 
-const DEFAULT_ANALYTICS_API = 'http://127.0.0.1:8003';
+const DEFAULT_ANALYTICS_API = 'http://52.66.167.213:8003';
 const DEFAULT_SCIPATH_APP = 'http://127.0.0.1:3000';
-/** Matches Component 4 USER_LEVEL_FRUSTRATION_TOPIC — not a curriculum skill. */
-const USER_LEVEL_TOPIC_ID = 'USER';
 
 function envUrl(key, fallback) {
   try {
@@ -26,20 +24,19 @@ function envUrl(key, fallback) {
   } catch {
     /* use fallback */
   }
-  try {
-    if (typeof window !== 'undefined') {
-      const host = window.location.hostname;
-      if (host === 'localhost' || host === '127.0.0.1') {
-        if (fallback.includes(':3000')) {
+  // Prefer explicit fallback (usually the deployed analytics host). Do NOT
+  // rewrite :8003 to localhost — local C4 is often not running.
+  if (key === 'VITE_SCIPATH_APP_URL') {
+    try {
+      if (typeof window !== 'undefined') {
+        const host = window.location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') {
           return `${window.location.protocol}//${host}:3000`;
         }
-        if (fallback.includes(':8003')) {
-          return `${window.location.protocol}//${host}:8003`;
-        }
       }
+    } catch {
+      /* use fallback */
     }
-  } catch {
-    /* use fallback */
   }
   return fallback.replace(/\/+$/, '');
 }
@@ -88,7 +85,6 @@ async function postFrustrationCue({ userId, frustrationScore, source }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       user_id: userId,
-      topic_id: USER_LEVEL_TOPIC_ID,
       frustration_score: frustrationScore,
       source,
     }),
@@ -121,7 +117,7 @@ function buildSocratesUrl({ frustrationScore } = {}) {
  *   opened: boolean,
  *   cuePosted: boolean,
  *   frustrationScore: number | null,
- *   topicId: string,
+ *   topicId: null,
  *   tutorUrl: string,
  *   error?: string
  * }>}
@@ -144,7 +140,7 @@ export async function handoffToSocrates({
       opened: false,
       cuePosted: false,
       frustrationScore: null,
-      topicId: USER_LEVEL_TOPIC_ID,
+      topicId: null,
       tutorUrl,
       error: 'No student id — relaunch the farm from SCI-PATH.',
     };
@@ -209,7 +205,7 @@ export async function handoffToSocrates({
       opened: false,
       cuePosted,
       frustrationScore: unit,
-      topicId: USER_LEVEL_TOPIC_ID,
+      topicId: null,
       tutorUrl,
       error: err?.message || 'Could not open Socrates',
     };
@@ -219,7 +215,7 @@ export async function handoffToSocrates({
     opened,
     cuePosted,
     frustrationScore: unit,
-    topicId: USER_LEVEL_TOPIC_ID,
+    topicId: null,
     tutorUrl,
     ...(cuePosted ? {} : { error: cueError }),
   };
