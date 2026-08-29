@@ -20,10 +20,12 @@ import {
   revealsCorrectTooEarly,
   tutorLoopSystemAddon,
   shouldEnterTutorLoop,
+  shouldCompareStudentAnswer,
 } from './sageTutorLoop.js';
 import {
   scienceKeyIdea,
   composeFiveStepLesson,
+  looksLikeSymbolicTypedAnswer,
 } from './explainMisconception.js';
 
 function ctx(over = {}) {
@@ -697,6 +699,8 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     assert.match(addon, /respiration/);
     assert.match(addon, /photosynthesis/);
     assert.match(addon, /YOU are the scientific teacher/);
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /YOUR ANSWER/);
   });
 
   it('keeps the full typed sentence for Grok', () => {
@@ -725,6 +729,108 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     });
     assert.match(addon, /A resistor stores electrical energy/);
     assert.match(addon, /A capacitor stores electrical energy/);
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
     assert.equal(/studentAnswer="incorrect"/.test(addon), false);
+  });
+});
+
+describe('fill-in / typed: blank or symbols describe the correct answer only', () => {
+  it('treats N blanks and keyboard mash as symbolic', () => {
+    assert.equal(looksLikeSymbolicTypedAnswer(''), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('N | N | N'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('xxx'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('???'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('asdf'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('5'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('5 | 5 | 5'), true);
+    assert.equal(looksLikeSymbolicTypedAnswer('Flowers'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('respiration'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('CO2'), false);
+    assert.equal(looksLikeSymbolicTypedAnswer('roots | N'), false);
+  });
+
+  it('does not compare a numeric fill-in pick like 5 with the key', () => {
+    const context = {
+      current_question: {
+        question_text:
+          'The main parts of a plant include the ____, ____, and ____.',
+        question_type: 'MultiBlank',
+        student_last_wrong_answer: '5',
+        correct_answer: 'roots | stem | leaves',
+        is_correct: false,
+      },
+      frustration_score: 40,
+    };
+    const state = compactTeachingState(context);
+    assert.equal(shouldCompareStudentAnswer(state), false);
+    const addon = tutorLoopSystemAddon(context);
+    assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/1\) YOUR ANSWER/.test(addon), false);
+  });
+
+  it('does not compare placeholder fill-in blanks with the key', () => {
+    const context = {
+      current_question: {
+        question_text: 'The main parts of a flowering plant are ______, ______, and ______.',
+        question_type: 'MultiBlank',
+        student_last_wrong_answer: 'N | N | N',
+        correct_answer: 'roots | stem | leaves',
+        is_correct: false,
+      },
+      frustration_score: 40,
+    };
+    const state = compactTeachingState(context);
+    assert.equal(shouldCompareStudentAnswer(state), false);
+    const addon = tutorLoopSystemAddon(context);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
+    assert.match(addon, /placeholder symbols/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/1\) YOUR ANSWER/.test(addon), false);
+    const turn = composeTutorTurn({
+      studentMessage: 'explain',
+      context,
+      session: { phase: 'support' },
+    });
+    assert.equal(turn.structured.teaching.strategy, 'describe_correct');
+    assert.equal(turn.structured.misconception.type, 'no_usable_answer');
+    assert.equal(
+      turn.structured.mindMap.nodes.some((n) => n.role === 'student_concept'),
+      false,
+    );
+  });
+
+  it('describes the correct idea when the typed answer is empty', () => {
+    const context = {
+      current_question: {
+        question_text: 'What are the main parts of a flowering plant?',
+        question_type: 'ShortAnswer',
+        student_last_wrong_answer: '',
+        correct_answer: 'roots, stem, leaves, and flowers',
+        is_correct: false,
+      },
+    };
+    const addon = tutorLoopSystemAddon(context);
+    assert.equal(shouldCompareStudentAnswer(compactTeachingState(context)), false);
+    assert.match(addon, /CORRECT ANSWER/);
+    assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
+    assert.equal(/SCIENTIFIC COMPARISON/.test(addon), false);
+  });
+
+  it('keeps MCQ compare teaching even if a choice is short', () => {
+    const addon = tutorLoopSystemAddon({
+      current_question: {
+        question_text: 'Which gas is required for photosynthesis?',
+        question_type: 'MCQ',
+        options: ['Oxygen', 'Helium', 'Carbon dioxide', 'Nitrogen'],
+        student_last_wrong_answer: 'Helium',
+        correct_answer: 'Carbon dioxide',
+        is_correct: false,
+      },
+    });
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /YOUR ANSWER/);
   });
 });

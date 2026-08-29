@@ -232,6 +232,29 @@ export function buildLearningPathReturnUrl({
   return url.toString();
 }
 
+export function getScipathLogoutUrl() {
+  const app = getScipathAppUrl();
+  let origin = app;
+  try {
+    const launch = readStoredLaunch();
+    if (launch.returnUrl) {
+      origin = new URL(launch.returnUrl).origin;
+    }
+  } catch {
+    /* keep default */
+  }
+  return `${String(origin).replace(/\/+$/, '')}/logout`;
+}
+
+/** Same outcome as SCI-PATH / User Management Log out: revoke JWT and show login. */
+export function openScipathLogout() {
+  const href = getScipathLogoutUrl();
+  if (typeof window !== 'undefined') {
+    window.location.assign(href);
+  }
+  return href;
+}
+
 export function openLearningPathHome() {
   const launch = readStoredLaunch();
   const app = getScipathAppUrl();

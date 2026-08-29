@@ -802,6 +802,42 @@ export function useBehavioralTelemetry({
     setTrigger(null);
   }, []);
 
+  const captureSessionSnapshot = useCallback(() => {
+    return {
+      frustrationScore: Number(session.frustrationScore) || 0,
+      frustrationLevel: session.frustrationLevel || 'low',
+      consecutiveFails: consecutiveFailsRef.current,
+      correctAnswers: correctRef.current,
+      incorrectAnswers: incorrectRef.current,
+      timesSec: [...timesSecRef.current],
+      answerHistory: Array.isArray(session.answerHistory)
+        ? session.answerHistory.slice(-40)
+        : [],
+    };
+  }, [session]);
+
+  const hydrateSession = useCallback((snap) => {
+    if (!snap || typeof snap !== 'object') return;
+    const score = Number(snap.frustrationScore);
+    consecutiveFailsRef.current = Number(snap.consecutiveFails) || 0;
+    correctRef.current = Number(snap.correctAnswers) || 0;
+    incorrectRef.current = Number(snap.incorrectAnswers) || 0;
+    if (Array.isArray(snap.timesSec)) {
+      timesSecRef.current = snap.timesSec
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n));
+    }
+    setSession((prev) => ({
+      ...prev,
+      consecutiveFails: consecutiveFailsRef.current,
+      frustrationScore: Number.isFinite(score) ? score : prev.frustrationScore,
+      frustrationLevel: snap.frustrationLevel || prev.frustrationLevel,
+      answerHistory: Array.isArray(snap.answerHistory)
+        ? snap.answerHistory
+        : prev.answerHistory,
+    }));
+  }, []);
+
   // Level change → archive prior accuracy for performance_delta + trend
   useEffect(() => {
     if (levelId == null) return;
@@ -1466,6 +1502,8 @@ export function useBehavioralTelemetry({
     activeMindMap,
     clearTrigger,
     resetSession,
+    hydrateSession,
+    captureSessionSnapshot,
     recordAnswer,
     recordHintUsed,
     recordSelectionSwitch,

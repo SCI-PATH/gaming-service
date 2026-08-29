@@ -47,6 +47,110 @@ function isPlaceholderBlank(text) {
   return /^\s*n(\s*\|\s*n)*\s*$/i.test(norm(text)) || /^n+$/i.test(norm(text));
 }
 
+const SCIENCE_SHORT_TOKENS = new Set([
+  'co2',
+  'co₂',
+  'o2',
+  'o₂',
+  'h2o',
+  'h₂o',
+  'n2',
+  'n₂',
+  'o3',
+  'o₃',
+  'dna',
+  'rna',
+  'atp',
+  'adp',
+  'ph',
+  'uv',
+  'ir',
+  'nacl',
+  'hcl',
+  'koh',
+  'fe',
+  'na',
+  'ca',
+  'mg',
+  'zn',
+  'cu',
+]);
+
+const TYPED_FILLER = new Set([
+  'um',
+  'uh',
+  'hmm',
+  'huh',
+  'lol',
+  'idk',
+  'ok',
+  'okay',
+  'yes',
+  'no',
+  'true',
+  'false',
+  'none',
+  'nothing',
+  'blank',
+  'test',
+  'asdf',
+  'qwer',
+  'zxcv',
+]);
+
+function splitTypedParts(text) {
+  return String(text || '')
+    .split(/\s*[|·,;/]\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '—' && part !== '-' && part !== '_');
+}
+
+function isScienceFormulaToken(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  const compact = s.replace(/[\s._-]/g, '').toLowerCase();
+  if (SCIENCE_SHORT_TOKENS.has(compact)) return true;
+  return /^(?:[a-z]{1,2}\d+){1,4}[a-z0-9]*$/i.test(compact);
+}
+
+function isSymbolicTypedPart(part) {
+  const s = String(part || '')
+    .replace(/blank\s*\d+\s*:\s*/gi, '')
+    .trim();
+  if (!s) return true;
+  const compact = s.replace(/[\s._-]/g, '').toLowerCase();
+  if (TYPED_FILLER.has(compact)) return true;
+  // Bare numbers / digit mash (e.g. "5", "12", "5 | 5") are not science words.
+  if (/^\d+$/.test(compact)) return true;
+  if (/^(n+|x+|y+|z+|\?+|-+|_+)$/i.test(s)) return true;
+  if (/^(asdf+|qwer+|zxcv+|hjkl+|aaa+|xxx+|zzz+|qqq+|www+)$/i.test(s)) {
+    return true;
+  }
+  if (/^[^a-z0-9]+$/i.test(s)) return true;
+  if (isScienceFormulaToken(s)) return false;
+  if (s.length <= 2) return true;
+  if (/[aeiou]/i.test(s) && /[a-z]{3,}/i.test(s)) return false;
+  return s.length < 4;
+}
+
+/**
+ * Fill-in / typed text that is empty, timed out, or placeholder symbols
+ * (N, X, 5, ???, keyboard mash) — not a scientific idea SAGE can compare.
+ */
+export function looksLikeSymbolicTypedAnswer(text) {
+  const raw = norm(text)
+    .replace(/blank\s*\d+\s*:\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return true;
+  if (isNoPick(raw) || isPlaceholderBlank(raw)) return true;
+  if (/^(no answer|nothing typed|left blank)$/i.test(raw)) return true;
+  if (/^\d+(\s*[|·,;/]\s*\d+)*$/.test(raw)) return true;
+  const parts = splitTypedParts(raw);
+  if (!parts.length) return true;
+  return parts.every((part) => isSymbolicTypedPart(part));
+}
+
 export function voiceBand(voice = {}) {
   const level = String(voice.frustrationLevel || voice.level || 'moderate').toLowerCase();
   const tone = String(voice.tone || 'practice').toLowerCase();
@@ -1543,7 +1647,9 @@ function statementScience(attempt, band) {
 export function canDescribeScientifically(text, attempt = {}, side = 'student') {
   const raw = norm(text);
   if (!raw) return false;
-  if (isNoPick(raw) || isPlaceholderBlank(raw)) return false;
+  if (isNoPick(raw) || isPlaceholderBlank(raw) || looksLikeSymbolicTypedAnswer(raw)) {
+    return false;
+  }
   if (isTrueFalseToken(raw)) return Boolean(statementScience(attempt, 'medium').text);
   return Boolean(verifiedIdeaFor(raw, attempt, side));
 }
@@ -2081,7 +2187,13 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
     : norm(input.correctAnswer || input.correct_answer);
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
-  if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
+  if (
+    isPlaceholderBlank(studentAnswer) ||
+    isNoPick(studentAnswer) ||
+    looksLikeSymbolicTypedAnswer(studentAnswer)
+  ) {
+    return null;
+  }
   const attempt = {
     prompt,
     question: prompt,

@@ -7,7 +7,11 @@
  * Assessment engine owns the correct answer. SAGE teaches from the miss and waits.
  */
 
-import { tutorLoopSystemAddon } from '../../frontend/src/avatar/sageTutorLoop.js';
+import {
+  tutorLoopSystemAddon,
+  shouldCompareStudentAnswer,
+  compactTeachingState,
+} from '../../frontend/src/avatar/sageTutorLoop.js';
 
 export const INTERVENTION_MODES = {
   SUPPORT_AND_SCAFFOLD: 'SUPPORT_AND_SCAFFOLD',
@@ -43,8 +47,9 @@ QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
 - YOU are the scientific teacher. There is no local lesson catalog and you must not dump letter keys (“you chose C”, “the correct answer is B”, “this question is asking for C”).
 - The assessment engine owns correctness (is_correct, student answer, correct answer). You explain scientifically; you do not decide which answer is correct.
-- When the student missed the item, teach ALL of this (natural wording is fine): YOUR ANSWER (scientific meaning of the student’s pick as a real concept) → CORRECT ANSWER (Grade 6–9 scientific meaning of the assessment-engine key) → SCIENTIFIC COMPARISON (student’s concept vs correct concept) → WHY YOUR ANSWER IS WRONG (why it does not satisfy THIS question) → WHY THE CORRECT ANSWER IS CORRECT (why it does satisfy THIS question) → KEY CONNECTION (short memory aid) → QUICK CHECK (one question, do not answer it).
-- Wrong for this question is not the same as scientifically false. The student must understand what their wrong answer actually represents, how it differs from the correct idea, and why the question’s requirement matches the correct idea.
+- Teaching MODE is chosen per miss — obey the live TEACHING MODE / tutor addon block every turn (it can switch between compare vs correct-only).
+- COMPARE mode (MCQ, True/False, or fill-in/typed with a real science word/phrase/sentence): YOUR ANSWER (scientific meaning of the student’s pick) → CORRECT ANSWER → SCIENTIFIC COMPARISON → WHY YOUR ANSWER IS WRONG for THIS question → WHY THE CORRECT ANSWER IS CORRECT for THIS question → KEY CONNECTION → QUICK CHECK (do not answer it). Wrong for this question is not the same as scientifically false.
+- CORRECT-ONLY mode (fill-in / typed when blank, timeout, or only symbols/numbers such as N, X, 5, ???, asdf): do NOT invent meaning for that pick; do NOT compare a symbol or number to science. Teach ONLY: CORRECT ANSWER (what it is, what it does, why it fits THIS question) → KEY CONNECTION → QUICK CHECK.
 - Never output INSUFFICIENT_KNOWLEDGE when question text and the assessment-engine correct answer are present.
 
 ADAPTIVE CONVERSATION (critical):
@@ -307,12 +312,19 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
   }
 
   if (!auto && studentSaid) {
+    const teachState = compactTeachingState(context, {});
+    const compareMiss = shouldCompareStudentAnswer(teachState);
+    const scienceTeach = compareMiss
+      ? `When their reason is conceptual OR they ask to explain: COMPARE mode — student miss meaning → correct key meaning → comparison → why miss fails THIS question → why key fits → memory aid → quick check, then WAIT.${correct ? ` Key: ${String(correct).slice(0, 80)}.` : ''} Do not dump a letter.`
+      : `When their reason is conceptual OR they ask to explain: CORRECT-ONLY mode — the farm miss was blank/symbolic (not a science idea). Scientifically describe the assessment-engine correct answer only (what it is, what it does, why it fits THIS question)${correct ? `: ${String(correct).slice(0, 80)}` : ''}. Do NOT invent meaning for N/X/5/???. No comparison. Memory aid + quick check, then WAIT.`;
     lines.push(
       `STUDENT JUST SAID: "${studentSaid.slice(0, 280)}".`,
       'You MUST answer with AI coaching for THIS message (not a generic script).',
-      'If they picked A/B/C/D: name their hang-up in one short warm phrase, then if a wrong farm answer is present, YOU are the scientific teacher: wrong-answer meaning → correct-answer meaning → comparison → why it does not fit THIS question → why the key does → memory aid → quick check, then WAIT.',
+      compareMiss
+        ? 'If they picked A/B/C/D: name their hang-up in one short warm phrase, then if a wrong farm answer is present, YOU are the scientific teacher in COMPARE mode: wrong-answer meaning → correct-answer meaning → comparison → why it does not fit THIS question → why the key does → memory aid → quick check, then WAIT.'
+        : 'If they picked A/B/C/D: name their hang-up briefly, then if the farm miss was blank/symbolic, YOU are the scientific teacher in CORRECT-ONLY mode: describe the correct science idea for THIS question only — no fake meaning for symbols/numbers, no comparison.',
       genMap || focus.require_mind_map || wrong || mayReveal
-        ? `When their reason is conceptual OR they ask to explain: scientifically teach the student miss vs the assessment-engine key${correct ? ` (key: ${String(correct).slice(0, 80)})` : ''}. Do not dump a letter. Finish with one question and stop.`
+        ? scienceTeach
         : 'Support process first; science only if they chose a concept gap or asked to explain — still keep it on the Active farm question.',
       'Never ignore their words. Never invent ability ranks. Never mention frustration scores. Never invent an unrelated correct answer. Do not answer your own QUICK CHECK.',
     );

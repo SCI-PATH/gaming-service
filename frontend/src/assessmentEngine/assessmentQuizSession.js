@@ -16,8 +16,10 @@ import {
 } from '../data/curriculumTopics.js';
 
 const FETCH_TIMEOUT_MS = 15000;
-const ANSWER_TIMEOUT_MS = 20000;
+/** Short answers wait on Groq; keep under the Vite proxy 60s cap. */
+const ANSWER_TIMEOUT_MS = 45000;
 const FAIL_COOLDOWN_MS = 4000;
+const SESSION_STORE_KEY = 'scipath_iae_quiz_session';
 const AE_LOG = '[AssessmentEngine]';
 
 function aeLog(label, detail) {
@@ -451,6 +453,48 @@ export function mapAssessmentQuestion(rawQuestion) {
   return mapped;
 }
 
+function persistRuntime() {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    if (!sessionId || sessionComplete || nextStopped) {
+      sessionStorage.removeItem(SESSION_STORE_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      SESSION_STORE_KEY,
+      JSON.stringify({
+        sessionId,
+        activeBase,
+        sessionComplete: false,
+        nextStopped: false,
+      }),
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function hydrateRuntimeFromStore() {
+  if (sessionId) return true;
+  try {
+    if (typeof sessionStorage === 'undefined') return false;
+    const raw = sessionStorage.getItem(SESSION_STORE_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    const sid = String(saved?.sessionId || saved?.session_id || '').trim();
+    if (!sid) return false;
+    sessionId = sid;
+    activeBase = saved?.activeBase || saved?.base || activeBase || null;
+    sessionComplete = Boolean(saved?.sessionComplete);
+    nextStopped = Boolean(saved?.nextStopped);
+    assessmentUnavailable = false;
+    aeLog('session hydrated', { session_id: sessionId, base: activeBase });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function clearRuntime({ keepUnavailable = false } = {}) {
   sessionId = null;
   cachedQuestion = null;
@@ -459,6 +503,7 @@ function clearRuntime({ keepUnavailable = false } = {}) {
   activeBase = null;
   ensurePromise = null;
   nextPromise = null;
+  persistRuntime();
   if (!keepUnavailable) {
     assessmentUnavailable = false;
   }
@@ -470,7 +515,37 @@ export function clearAssessmentSession() {
 }
 
 export function getAssessmentSessionId() {
+  hydrateRuntimeFromStore();
   return sessionId;
+}
+
+/** Snapshot so a mid-level logout can resume the same Assessment Engine quiz. */
+export function exportAssessmentSession() {
+  hydrateRuntimeFromStore();
+  if (!sessionId || sessionComplete || nextStopped) return null;
+  return {
+    sessionId,
+    activeBase,
+    sessionComplete: false,
+    nextStopped: false,
+  };
+}
+
+/** Restore a saved Assessment Engine session instead of starting a new 15-question quiz. */
+export function restoreAssessmentSession(saved) {
+  const sid = String(saved?.sessionId || saved?.session_id || '').trim();
+  if (!sid) return false;
+  sessionId = sid;
+  activeBase = saved?.activeBase || saved?.base || activeBase || null;
+  sessionComplete = Boolean(saved?.sessionComplete);
+  nextStopped = Boolean(saved?.nextStopped);
+  cachedQuestion = null;
+  assessmentUnavailable = false;
+  ensurePromise = null;
+  nextPromise = null;
+  persistRuntime();
+  aeLog('session restored', { session_id: sessionId, base: activeBase });
+  return true;
 }
 
 /** Start post-lesson (and first /next) so the first farm quiz is not blocked on C4. */
@@ -616,6 +691,7 @@ async function postLesson(student) {
   sessionId = String(id);
   sessionComplete = false;
   nextStopped = false;
+  persistRuntime();
   aeLog('session started', {
     session_id: sessionId,
     base: activeBase,
@@ -628,6 +704,7 @@ async function postLesson(student) {
 
 async function ensureSession() {
   if (nextStopped || sessionComplete) return null;
+  hydrateRuntimeFromStore();
   if (sessionId) return sessionId;
   if (ensurePromise) return ensurePromise;
 
@@ -667,10 +744,12 @@ async function fetchNextOnce() {
     sessionId = null;
     cachedQuestion = null;
     activeBase = null;
+    persistRuntime();
     return { status: 'lost' };
   }
   if (result.status === 409) {
     nextStopped = true;
+    persistRuntime();
     aeWarn('/next 409 — this session has no more items');
     return { status: 'stop' };
   }
@@ -686,6 +765,7 @@ async function fetchNextOnce() {
     String(data.status || '').toLowerCase() === 'completed'
   ) {
     sessionComplete = true;
+    persistRuntime();
     aeLog('/next session complete — no more engine questions');
     return { status: 'stop' };
   }
@@ -790,6 +870,7 @@ export async function submitAssessmentAnswer({
   studentAnswer,
   timeTakenSeconds,
 } = {}) {
+  hydrateRuntimeFromStore();
   if (!sessionId || !questionId) {
     aeWarn('skip /answer — no session or question id', { sessionId, questionId });
     return { ok: false, isCorrect: false, isComplete: false };
@@ -813,6 +894,7 @@ export async function submitAssessmentAnswer({
       sessionId = null;
       cachedQuestion = null;
       activeBase = null;
+      persistRuntime();
     }
     return { ok: false, isCorrect: false, isComplete: false, data: result.data };
   }
@@ -837,6 +919,7 @@ export async function submitAssessmentAnswer({
   if (isComplete) {
     sessionComplete = true;
     cachedQuestion = null;
+    persistRuntime();
   } else if (!nextStopped && !assessmentUnavailable) {
     const gen = fetchGeneration;
     void fetchNextMapped()
