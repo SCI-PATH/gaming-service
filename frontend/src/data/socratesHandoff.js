@@ -104,10 +104,15 @@ async function postFrustrationCue({ userId, frustrationScore, source }) {
   return data;
 }
 
-function buildSocratesUrl() {
+function buildSocratesUrl({ frustrationScore } = {}) {
   const app = envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
   const url = new URL('/tutor', `${app}/`);
   url.searchParams.set('from', 'farm');
+  const unit = toUnitScore(frustrationScore);
+  if (unit != null) {
+    // SCI-PATH /tutor posts this to Component 4 if the gaming GET is empty.
+    url.searchParams.set('frustrationScore', String(unit));
+  }
   return url.toString();
 }
 
@@ -129,10 +134,12 @@ export async function handoffToSocrates({
   metrics = {},
 } = {}) {
   const userId = resolveHandoffStudentId(student);
-  const tutorUrl = buildSocratesUrl();
   const live = liveFrustration(telemetry, metrics);
 
   if (!userId) {
+    const tutorUrl = buildSocratesUrl({
+      frustrationScore: live.frustrationScore,
+    });
     return {
       opened: false,
       cuePosted: false,
@@ -174,6 +181,7 @@ export async function handoffToSocrates({
   }
 
   const unit = toUnitScore(score100) ?? 0;
+  const tutorUrl = buildSocratesUrl({ frustrationScore: unit });
   let cuePosted = false;
   let cueError = '';
   try {
