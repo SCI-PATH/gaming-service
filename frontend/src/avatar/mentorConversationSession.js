@@ -132,9 +132,9 @@ function applyTutorIfReady(session, studentMessage) {
     context,
     session,
   });
-  if (!turn?.reply) return null;
+  if (!turn) return null;
   return {
-    reply: turn.reply,
+    reply: turn.reply || '',
     understanding: turn.intent || 'tutor',
     guidance_level: GUIDANCE_LEVELS.REPAIR,
     phase: 'support',
@@ -993,17 +993,6 @@ export function resolvePerformanceReply({
     };
   }
 
-  // Prefer live AI whenever it is responsive and student-aware.
-  // Local adaptive is the offline safety net only.
-  const modelOk =
-    Boolean(model) &&
-    model.length > 24 &&
-    !looksLikeIgnoredStudentReply(model, studentMessage, {
-      spoken_opener: frozen.spoken_opener,
-      ...focus,
-    }) &&
-    modelTouchesPerformance(model, studentMessage, adaptive.session || frozen);
-
   const tutorSession = adaptive.session || frozen;
   const tutorTurn =
     shouldEnterTutorLoop(tutorSession, tutorContextFromSession(tutorSession), studentMessage)
@@ -1013,6 +1002,17 @@ export function resolvePerformanceReply({
           session: tutorSession,
         })
       : adaptive.tutor_turn || null;
+
+  // Prefer live Grok teaching. Never replace it with a local catalog lesson.
+  const modelOk =
+    Boolean(model) &&
+    model.length > 24 &&
+    !looksLikeIgnoredStudentReply(model, studentMessage, {
+      spoken_opener: frozen.spoken_opener,
+      ...focus,
+    }) &&
+    (looksLikeGrokTeaching(model) ||
+      modelTouchesPerformance(model, studentMessage, tutorSession));
 
   if (modelOk) {
     const guarded = tutorTurn
@@ -1063,6 +1063,21 @@ export function resolvePerformanceReply({
     evaluation: adaptive.evaluation,
     pending_options: adaptive.pending_options,
   };
+}
+
+function looksLikeGrokTeaching(reply) {
+  const r = String(reply || '').toLowerCase();
+  if (!r) return false;
+  return (
+    /your answer/.test(r) ||
+    /correct answer/.test(r) ||
+    /scientific comparison/.test(r) ||
+    /why (your|the student's) answer/.test(r) ||
+    /key connection/.test(r) ||
+    /quick check/.test(r) ||
+    (r.length > 180 &&
+      /\b(because|function|stores|resists|opposes|difference)\b/.test(r))
+  );
 }
 
 function modelTouchesPerformance(reply, studentMessage, session) {

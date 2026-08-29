@@ -24,6 +24,7 @@ export {
   extractFillInCorrectAnswer,
   extractTypedStudentAnswer,
   extractTypedCorrectAnswer,
+  formatGroundTruthChoice,
   isFillInQuestionType,
   isTypedAnswerQuestionType,
   usesSageFreeTextAnswer,
@@ -86,8 +87,10 @@ export {
 } from './mentorConversationSession.js';
 export {
   composeTutorTurn,
+  compactTeachingState,
   detectQuestionType,
   frustrationDelivery,
+  guardModelTutorReply,
   NEXT_ACTIONS,
 } from './sageTutorLoop.js';
 export {

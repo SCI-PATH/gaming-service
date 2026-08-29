@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import {
   NEXT_ACTIONS,
   answersOwnQuestion,
+  compactTeachingState,
   composeTutorTurn,
   detectQuestionType,
   frustrationDelivery,
@@ -17,6 +18,7 @@ import {
   recommendDifficulty,
   relatedPreviousMistakes,
   revealsCorrectTooEarly,
+  tutorLoopSystemAddon,
 } from './sageTutorLoop.js';
 import {
   scienceKeyIdea,
@@ -83,25 +85,60 @@ describe('question types', () => {
   });
 });
 
+describe('MCQ letter labels for Grok', () => {
+  it('sends C — Resistor not only C', () => {
+    const state = compactTeachingState({
+      current_question: {
+        question_text: 'What device is used to store static electric charges?',
+        question_type: 'MCQ',
+        options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+        student_last_wrong_answer: 'C',
+        correct_answer: 'Capacitor',
+        is_correct: false,
+        topic: 'Static Electricity',
+      },
+      frustration_score: 40,
+    });
+    assert.equal(state.studentAnswer, 'Resistor');
+    assert.equal(state.correctAnswer, 'Capacitor');
+    assert.equal(state.studentAnswerLabel, 'C — Resistor');
+    assert.equal(state.correctAnswerLabel, 'B — Capacitor');
+    assert.equal(hasSufficientKnowledge(state), true);
+    const addon = tutorLoopSystemAddon({
+      current_question: {
+        question_text: 'What device is used to store static electric charges?',
+        question_type: 'MCQ',
+        options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+        student_last_wrong_answer: 'C',
+        correct_answer: 'Capacitor',
+        is_correct: false,
+      },
+      frustration_score: 85,
+    });
+    assert.match(addon, /C — Resistor/);
+    assert.match(addon, /B — Capacitor/);
+    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /WHY THE CORRECT ANSWER IS CORRECT/);
+    assert.match(addon, /YOU are the scientific teacher/);
+    assert.match(addon, /Tiny sentences/);
+    assert.equal(/INSUFFICIENT_KNOWLEDGE when the ground truth above is present/i.test(addon), true);
+  });
+});
+
 describe('Test 1 — MCQ helium miss', () => {
-  it('explores helium, contrasts CO2, asks, and waits', () => {
+  it('keeps assessment ground truth and waits; Grok is the teaching source', () => {
     const turn = composeTutorTurn({
       studentMessage: 'D. I mix photosynthesis ideas',
       context: ctx(),
       session,
     });
-    const text = turn.reply.toLowerCase();
     assert.equal(turn.structured.assessment.isCorrect, false);
     assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
     assert.equal(turn.structured.assessment.studentAnswer, 'Helium');
-    assert.match(text, /helium/);
-    assert.match(text, /carbon dioxide|co2/);
-    const heliumAt = text.indexOf('helium');
-    const carbonAt = text.indexOf('carbon');
-    assert.ok(heliumAt >= 0 && carbonAt > heliumAt);
+    assert.equal(turn.teachingSource, 'grok');
+    assert.equal(turn.reply, '');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.ok(turn.interactionQuestion.includes('?'));
-    assert.equal(/your answer is wrong because/i.test(turn.reply), false);
     assert.ok(turn.structured.mindMap.nodes.length >= 2);
   });
 });
@@ -128,10 +165,10 @@ describe('Test 2 — fill in the blank oxygen', () => {
         },
       },
     });
-    const text = turn.reply.toLowerCase();
     assert.equal(turn.structured.questionType, 'MultiBlank');
-    assert.equal(turn.structured.misconception.type, 'process_confusion');
-    assert.match(text, /oxygen|take in|food|carbon/);
+    assert.equal(turn.structured.misconception.type, 'blank_swap');
+    assert.equal(turn.teachingSource, 'grok');
+    assert.equal(turn.reply, '');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.ok(turn.interactionQuestion);
     assert.ok(turn.structured.mindMap.nodes.length >= 2);
@@ -163,10 +200,11 @@ describe('Test 3 — true/false oxygen to make glucose', () => {
         },
       },
     });
-    const text = turn.reply.toLowerCase();
     assert.equal(turn.structured.questionType, 'TrueFalse');
-    assert.match(text, /sentence|claim|process|glucose|oxygen/);
+    assert.equal(turn.teachingSource, 'grok');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
+    assert.equal(turn.structured.assessment.studentAnswer, 'True');
+    assert.equal(turn.structured.assessment.correctAnswer, 'False');
   });
 });
 
@@ -183,12 +221,12 @@ describe('Test 4 — high frustration', () => {
         evidence: { ...session.evidence, frustration_score: 85 },
       },
     });
-    assert.match(turn.reply.toLowerCase(), /okay|small step|that's okay|calm|tiny/);
     assert.equal(turn.structured.teaching.tone, 'highly_reassuring');
     assert.equal(turn.structured.mindMap.complexity, 'micro');
     assert.ok(turn.hintLevel >= 2);
     assert.equal(turn.structured.adaptation.recommendedDifficulty, 'decrease');
     assert.equal(/frustration score/i.test(turn.reply), false);
+    assert.equal(turn.teachingSource, 'grok');
   });
 });
 
@@ -205,10 +243,10 @@ describe('Test 5 — low frustration', () => {
         evidence: { ...session.evidence, frustration_score: 20 },
       },
     });
-    assert.match(turn.reply.toLowerCase(), /helium|balloon|carbon dioxide|difference/);
     assert.equal(turn.structured.mindMap.complexity, 'broader');
     assert.ok(turn.structured.mindMap.nodes.length >= 4);
     assert.equal(turn.structured.teaching.tone, 'energetic_curious');
+    assert.equal(turn.teachingSource, 'grok');
   });
 });
 
@@ -253,7 +291,8 @@ describe('Test 6 — repeated misconception', () => {
         },
       },
     });
-    assert.match(turn.reply.toLowerCase(), /similar|connect|gas/);
+    assert.ok(turn.structured.assessment.studentAnswer);
+    assert.equal(turn.teachingSource, 'grok');
     const adapt = recommendDifficulty({
       demonstratedUnderstanding: false,
       frustrationScore: 25,
@@ -297,14 +336,14 @@ describe('Test 7 — insufficient knowledge', () => {
     assert.match(turn.reply.toLowerCase(), /guess|enough|together/);
   });
 
-  it('does not invent a scientific function for an unknown option', () => {
+  it('does not treat an unknown chapter option as insufficient when ground truth exists', () => {
     const unknown = {
       questionText: 'Which gas is required for photosynthesis?',
       studentAnswer: 'Zargle vapour',
       correctAnswer: 'Carbon dioxide',
       topic: 'Photosynthesis',
     };
-    assert.equal(hasSufficientKnowledge(unknown), false);
+    assert.equal(hasSufficientKnowledge(unknown), true);
     const turn = composeTutorTurn({
       studentMessage: 'why?',
       context: {
@@ -322,34 +361,93 @@ describe('Test 7 — insufficient knowledge', () => {
       },
       session: { phase: 'support', student_name: 'Maya' },
     });
-    assert.equal(turn.nextAction, NEXT_ACTIONS.INSUFFICIENT_KNOWLEDGE);
+    assert.notEqual(turn.nextAction, NEXT_ACTIONS.INSUFFICIENT_KNOWLEDGE);
+    assert.equal(turn.teachingSource, 'grok');
     assert.equal(/zargle vapour is mainly about/i.test(turn.reply), false);
   });
 });
 
 describe('assessment engine authority and safety', () => {
-  it('blocks a model that invents a different correct answer', () => {
+  it('keeps Grok teaching and only corrects an invented quiz key', () => {
     const local = composeTutorTurn({
       studentMessage: 'why helium',
       context: ctx(),
       session,
     });
     const hijack =
-      'The correct answer is oxygen because plants breathe it for photosynthesis.';
+      'YOUR ANSWER: Helium is a noble gas used in balloons. CORRECT ANSWER: The correct answer is oxygen because plants breathe it for photosynthesis. SCIENTIFIC COMPARISON: Helium does not provide carbon. WHY YOUR ANSWER IS WRONG: The question asks which gas plants use to make food. KEY CONNECTION: Food-making needs carbon. QUICK CHECK: Which gas provides the carbon?';
     const guarded = guardModelTutorReply(hijack, local, {
       correctAnswer: 'Carbon dioxide',
     });
     assert.equal(inventsDifferentCorrect(hijack, 'Carbon dioxide'), true);
     assert.equal(/the correct answer is oxygen/i.test(guarded), false);
+    assert.match(guarded, /assessment-engine answer is Carbon dioxide/i);
+    assert.match(guarded, /helium is a noble gas/i);
+    assert.equal(local.reply, '');
   });
 
-  it('blocks early key dumps and self-answered questions', () => {
+  it('never replaces a full Grok lesson with a local catalog reply', () => {
+    const local = composeTutorTurn({
+      studentMessage: 'D. I mix ideas',
+      context: ctx({
+        current_question: {
+          question_text: 'What device is used to store static electric charges?',
+          question_type: 'MCQ',
+          options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+          student_last_wrong_answer: 'C',
+          correct_answer: 'Capacitor',
+          topic: 'Static Electricity',
+        },
+      }),
+      session: {
+        ...session,
+        evidence: {
+          farm_question: 'What device is used to store static electric charges?',
+          last_wrong: 'C',
+          correct_answer: 'Capacitor',
+        },
+      },
+    });
+    assert.equal(
+      hasSufficientKnowledge({
+        questionText: 'What device is used to store static electric charges?',
+        studentAnswer: local.structured.assessment.studentAnswer,
+        correctAnswer: 'Capacitor',
+      }),
+      true,
+    );
+    assert.equal(local.teachingSource, 'grok');
+    assert.match(String(local.structured.assessment.studentAnswerLabel || local.structured.assessment.studentAnswer), /Resistor/i);
+    const grok = [
+      'YOUR ANSWER: A resistor is an electronic component that opposes or limits the flow of electric current. It does not primarily store electrical energy.',
+      'CORRECT ANSWER: A capacitor stores electrical energy in an electric field. It can store and release electrical charge.',
+      'SCIENTIFIC COMPARISON: A resistor and a capacitor both appear in circuits, but they have different functions. A resistor opposes current, while a capacitor stores electrical energy.',
+      'WHY YOUR ANSWER IS WRONG: The question asks which component stores electrical energy. A resistor does not perform this main function, so resistor is incorrect.',
+      'WHY THE CORRECT ANSWER IS CORRECT: A capacitor is designed to store electrical energy, so capacitor matches the question.',
+      'KEY CONNECTION: Remember: Capacitor = stores, Resistor = resists.',
+      'QUICK CHECK: Which component stores electrical energy?',
+    ].join(' ');
+    const guarded = guardModelTutorReply(grok, local, {
+      correctAnswer: 'Capacitor',
+    });
+    assert.equal(guarded, grok);
+    assert.match(guarded, /opposes or limits the flow of electric current/i);
+    assert.match(guarded, /stores electrical energy in an electric field/i);
+    assert.equal(/this question is asking for c/i.test(guarded), false);
+  });
+
+  it('does not drop Grok for naming the assessment-engine correct answer', () => {
     assert.equal(
       revealsCorrectTooEarly('Wrong. The correct answer is Carbon dioxide.', {
         correctAnswer: 'Carbon dioxide',
       }),
       true,
     );
+    const grok =
+      'YOUR ANSWER: Helium is used in balloons. CORRECT ANSWER: Carbon dioxide is the gas plants take in to make glucose. SCIENTIFIC COMPARISON: Helium is unreactive; carbon dioxide supplies carbon. WHY YOUR ANSWER IS WRONG: The question asks which gas is required for photosynthesis. WHY THE CORRECT ANSWER IS CORRECT: Carbon dioxide matches that requirement. KEY CONNECTION: CO2 feeds food-making. QUICK CHECK: Which gas provides carbon?';
+    const local = composeTutorTurn({ studentMessage: 'why', context: ctx(), session });
+    const guarded = guardModelTutorReply(grok, local, { correctAnswer: 'Carbon dioxide' });
+    assert.match(guarded, /carbon dioxide is the gas plants take in/i);
     assert.equal(
       answersOwnQuestion(
         'What would happen if a plant received helium? It would still make glucose because helium is inert.',
@@ -488,7 +586,7 @@ describe('five-step teaching order', () => {
     assert.match(lesson.comparison, /true|two seed|naming/i);
   });
 
-  it('returns structured describe-then-compare fields on a tutor turn', () => {
+  it('does not generate local scientific teaching fields — Grok owns those', () => {
     const turn = composeTutorTurn({
       studentMessage: 'why?',
       context: ctx(),
@@ -496,10 +594,10 @@ describe('five-step teaching order', () => {
     });
     const teaching = turn.structured.teaching;
     assert.equal(teaching.strategy, 'describe_then_compare');
-    assert.match(teaching.wrongAnswerDescription.scientificDescription, /helium|balloon/i);
-    assert.match(teaching.correctAnswerDescription.scientificDescription, /carbon dioxide/i);
-    assert.ok(teaching.scientificComparison.difference);
-    assert.ok(teaching.questionConnection);
-    assert.match(teaching.interactiveCheck, /\?/);
+    assert.equal(turn.teachingSource, 'grok');
+    assert.equal(teaching.wrongAnswerDescription, null);
+    assert.equal(teaching.correctAnswerDescription, null);
+    assert.equal(teaching.scientificComparison, null);
+    assert.equal(turn.structured.assessment.source, 'assessment_engine');
   });
 });

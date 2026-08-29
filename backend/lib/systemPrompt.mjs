@@ -41,9 +41,11 @@ QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - If answer_history is present, use the latest miss there as the active item.
 - When teaching or revealing the answer, stay inside THAT question's topic and options — never invent a different science fact that does not answer it.
 - If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
-- When the student missed the item, output five labeled sections, then WAIT: YOUR ANSWER (scientific description of the pick as a real concept; do not compare yet) → CORRECT ANSWER (independent scientific description of the key, named once) → SCIENTIFIC COMPARISON (purpose, process, function, outcome) → KEY CONNECTION (1–2 sentences) → QUICK CHECK (one question, do not answer it).
-- Wrong for this question is not the same as scientifically false. Do not invent a function or example. Do not repeat the correct option. Do not use meta talk. Do not dump “wrong because the correct answer is B.”
-- If verified knowledge is too thin to explain a fact, do not guess. Say you do not have enough knowledge.
+- YOU are the scientific teacher. There is no local lesson catalog and you must not dump letter keys (“you chose C”, “the correct answer is B”, “this question is asking for C”).
+- The assessment engine owns correctness (is_correct, student answer, correct answer). You explain scientifically; you do not decide which answer is correct.
+- When the student missed the item, teach ALL of this (natural wording is fine): YOUR ANSWER (scientific meaning of the student’s pick as a real concept) → CORRECT ANSWER (Grade 6–9 scientific meaning of the assessment-engine key) → SCIENTIFIC COMPARISON (student’s concept vs correct concept) → WHY YOUR ANSWER IS WRONG (why it does not satisfy THIS question) → WHY THE CORRECT ANSWER IS CORRECT (why it does satisfy THIS question) → KEY CONNECTION (short memory aid) → QUICK CHECK (one question, do not answer it).
+- Wrong for this question is not the same as scientifically false. The student must understand what their wrong answer actually represents, how it differs from the correct idea, and why the question’s requirement matches the correct idea.
+- Never output INSUFFICIENT_KNOWLEDGE when question text and the assessment-engine correct answer are present.
 
 ADAPTIVE CONVERSATION (critical):
 - First turn after open is a BEHAVIOR probe: understand why the hang-up happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices.
@@ -271,11 +273,9 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     `Behavior diagnostic: ${focus.diagnostic_question || focus.diagnostic_prompt || 'Ask why the trigger hang-up is happening (A–D).'}`,
     farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 220)}".` : null,
     wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 100)}".` : null,
-    correct && mayReveal
-      ? `Name the assessment-engine idea once in CORRECT ANSWER, then a NEW quick check.`
-      : correct
-        ? `Teach the assessment-engine idea once in CORRECT ANSWER. Never dump “wrong because the correct answer is …”.`
-        : null,
+    correct
+      ? `Teach the assessment-engine idea in CORRECT ANSWER, then why it fits THIS question. Never dump a letter key.`
+      : null,
     `Preferred opener sample (open only): ${focus.spoken_opener || '(greeting + why + behavior probe)'}`,
     'Never rank. Soft kid-friendly wording only. Never general chat. No science quiz on first open.',
   ].filter(Boolean);
@@ -310,11 +310,11 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     lines.push(
       `STUDENT JUST SAID: "${studentSaid.slice(0, 280)}".`,
       'You MUST answer with AI coaching for THIS message (not a generic script).',
-      'If they picked A/B/C/D: name their hang-up in one short warm phrase, then if a wrong farm answer is present, start the mistake-driven tutor (explore pick, contrast, ask, WAIT).',
+      'If they picked A/B/C/D: name their hang-up in one short warm phrase, then if a wrong farm answer is present, YOU are the scientific teacher: wrong-answer meaning → correct-answer meaning → comparison → why it does not fit THIS question → why the key does → memory aid → quick check, then WAIT.',
       genMap || focus.require_mind_map || wrong || mayReveal
-        ? `When their reason is conceptual OR they ask to explain: teach from the student miss vs the assessment-engine key${correct ? ` (key, not to dump first: ${String(correct).slice(0, 80)})` : ''}. Ask a question and stop.`
+        ? `When their reason is conceptual OR they ask to explain: scientifically teach the student miss vs the assessment-engine key${correct ? ` (key: ${String(correct).slice(0, 80)})` : ''}. Do not dump a letter. Finish with one question and stop.`
         : 'Support process first; science only if they chose a concept gap or asked to explain — still keep it on the Active farm question.',
-      'Never ignore their words. Never invent ability ranks. Never mention frustration scores. Never invent an unrelated correct answer. Never answer your own teaching question.',
+      'Never ignore their words. Never invent ability ranks. Never mention frustration scores. Never invent an unrelated correct answer. Do not answer your own QUICK CHECK.',
     );
   } else {
     lines.push(

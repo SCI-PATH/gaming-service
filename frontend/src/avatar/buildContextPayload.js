@@ -191,7 +191,8 @@ export function buildContextPayload({
       quiz?.studentLastWrongAnswer ||
       quiz?.selectedText ||
       null
-    : friendlyWrongAnswer(
+    : sageInput.studentAnswer ||
+      friendlyWrongAnswer(
         telemetry.lastWrongAnswer ||
           quiz?.studentLastWrongAnswer ||
           quiz?.selectedText ||
@@ -207,23 +208,15 @@ export function buildContextPayload({
     return s;
   };
 
-  const knownCorrect = sageFreeText
-    ? sageInput.correctAnswer ||
-      sageInput.canonicalCorrectAnswer ||
-      safeCorrect(
-        quiz?.correctAnswer ||
-          quiz?.questionData?.correctAnswer ||
-          focusIn?.correct_answer ||
-          telemetry.lastCorrectAnswer ||
-          null,
-      )
-    : safeCorrect(
-        quiz?.correctAnswer ||
-          quiz?.questionData?.correctAnswer ||
-          focusIn?.correct_answer ||
-          telemetry.lastCorrectAnswer ||
-          null,
-      );
+  const knownCorrect = sageInput.correctAnswer ||
+    sageInput.canonicalCorrectAnswer ||
+    safeCorrect(
+      quiz?.correctAnswer ||
+        quiz?.questionData?.correctAnswer ||
+        focusIn?.correct_answer ||
+        telemetry.lastCorrectAnswer ||
+        null,
+    );
   const teachingSession =
     telemetry.teaching_session ||
     focusIn?.conversation_session?.teaching_session ||
@@ -464,6 +457,7 @@ export function buildContextPayload({
             knownCorrect ||
             safeCorrect(mindMapSummary?.correctAnswer) ||
             null,
+          is_correct: false,
           mode: quiz?.mode || quiz?.questionData?.mode || null,
           hint: quiz?.hint || quiz?.questionData?.hint || null,
           topic:
@@ -483,6 +477,7 @@ export function buildContextPayload({
             safeCorrect(focus?.correct_answer) ||
             safeCorrect(mindMapSummary?.correctAnswer) ||
             null,
+          is_correct: false,
           mode: null,
           topic: focus?.concept_topic || mindMapSummary?.topic || null,
         },
@@ -508,9 +503,10 @@ export function buildContextPayload({
       'trigger_reason_to_concept_lock',
       'ground_reply_in_active_farm_question',
       'assessment_engine_is_authoritative',
+      'grok_is_scientific_teacher',
       'mistake_driven_tutor',
       'wait_for_student_after_question',
-      teachingSession?.mayReveal ? 'reveal_correct_answer_when_known' : 'progressive_hints_no_early_reveal',
+      'teach_wrong_vs_correct_from_assessment_key',
       'use_live_frustration_each_turn',
       'no_general_chatbot',
       'frustration_aware_tone_private',

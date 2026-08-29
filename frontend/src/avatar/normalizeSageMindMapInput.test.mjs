@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   extractFillInStudentAnswer,
+  formatGroundTruthChoice,
   normalizeSageMindMapInput,
   SAGE_QUESTION_TYPES,
 } from './normalizeSageMindMapInput.js';
@@ -37,6 +38,28 @@ describe('MCQ normalization (must stay choice-based)', () => {
     assert.equal(input.correctAnswer, 'Carbon dioxide');
     assert.equal(input.isCorrect, false);
     assert.ok(input.options.includes('Helium'));
+  });
+
+  it('resolves a letter-only pick to option text and formats C — Resistor for Grok', () => {
+    const input = normalizeSageMindMapInput({
+      questionType: 'MCQ',
+      question: 'What device is used to store static electric charges?',
+      options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+      studentAnswer: 'C',
+      correctAnswer: 'B',
+      isCorrect: false,
+      topic: 'Static Electricity',
+    });
+    assert.equal(input.studentAnswer, 'Resistor');
+    assert.equal(input.correctAnswer, 'Capacitor');
+    assert.equal(
+      formatGroundTruthChoice('C', ['Switch', 'Capacitor', 'Resistor', 'Wire']),
+      'C — Resistor',
+    );
+    assert.equal(
+      formatGroundTruthChoice('Capacitor', ['Switch', 'Capacitor', 'Resistor', 'Wire']),
+      'B — Capacitor',
+    );
   });
 });
 

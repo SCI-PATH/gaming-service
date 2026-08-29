@@ -23,11 +23,6 @@ import {
 } from './createSpeechEngine.js';
 import ConceptMindMap from './ConceptMindMap.jsx';
 import SageAvatar from './SageAvatar.jsx';
-import SageLessonPanel from './SageLessonPanel.jsx';
-import {
-  formatLessonSpeech,
-  teachingLessonFromMiss,
-} from './explainMisconception.js';
 import MindMapHistoryDrawer from './MindMapHistoryDrawer.jsx';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
 import {
@@ -432,67 +427,6 @@ export default function AvatarAssistantModal({
       ) || null
     );
   }, [mindMap, activeMissId]);
-
-  const sageLesson = useMemo(() => {
-    const voice = {
-      frustrationLevel:
-        telemetry.frustrationLevel || m.frustration_level || 'moderate',
-    };
-    if (activeMiss) {
-      if (activeMiss.lesson?.sections?.length) return activeMiss.lesson;
-      return teachingLessonFromMiss(
-        {
-          prompt: activeMiss.prompt || activeMiss.question,
-          studentAnswer: activeMiss.studentAnswer,
-          correctAnswer: activeMiss.correctAnswer,
-          topic: activeMiss.topic,
-          hint: activeMiss.hint,
-        },
-        voice,
-      );
-    }
-    const fromTurn =
-      tutorTurn?.structured?.teaching?.sections ||
-      tutorTurn?.teaching_session?.sections;
-    if (Array.isArray(fromTurn) && fromTurn.length) {
-      return { sections: fromTurn, check: tutorTurn.interactionQuestion };
-    }
-    const q = quiz?.questionData || quiz || {};
-    const b = mindMap?.branches?.[0] || {};
-    const ev = performanceSessionRef.current?.evidence || {};
-    return teachingLessonFromMiss(
-      {
-        prompt:
-          interventionFocus?.current_question ||
-          ev.farm_question ||
-          q.prompt ||
-          q.question ||
-          b.prompt ||
-          b.question,
-        studentAnswer:
-          interventionFocus?.last_wrong_answer ||
-          ev.last_wrong ||
-          b.studentAnswer ||
-          q.studentAnswer,
-        correctAnswer:
-          interventionFocus?.correct_answer ||
-          ev.correct_answer ||
-          b.correctAnswer ||
-          q.correctAnswer,
-        topic: interventionFocus?.concept_topic || q.topic || b.topic,
-        hint: q.hint || b.hint,
-      },
-      voice,
-    );
-  }, [
-    activeMiss,
-    tutorTurn,
-    quiz,
-    mindMap,
-    interventionFocus,
-    telemetry.frustrationLevel,
-    m.frustration_level,
-  ]);
 
   // Keep latest input for stop-to-send (avoids stale React state on Mic release)
   const inputValueRef = useRef('');
@@ -1438,12 +1372,6 @@ export default function AvatarAssistantModal({
         resolved.reply ||
           "I'm still with you. Say that idea again in one short sentence?",
       );
-      if (
-        sageLesson?.sections?.length &&
-        resolved.session?.phase === 'support'
-      ) {
-        reply = sanitizeKidSpeech(formatLessonSpeech(sageLesson));
-      }
 
       if (result.avatarMood) setMood(result.avatarMood);
 
@@ -1699,9 +1627,6 @@ export default function AvatarAssistantModal({
                 onStop={stopSpeaking}
                 size="hero"
               />
-              {sageLesson?.sections?.length ? (
-                <SageLessonPanel sections={sageLesson.sections} />
-              ) : null}
             </aside>
           </div>
         ) : (
@@ -1723,9 +1648,6 @@ export default function AvatarAssistantModal({
               onStop={stopSpeaking}
               size="lg"
             />
-            {sageLesson?.sections?.length ? (
-              <SageLessonPanel sections={sageLesson.sections} />
-            ) : null}
           </div>
         )}
 

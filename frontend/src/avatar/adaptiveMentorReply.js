@@ -5,10 +5,6 @@
 
 import { CONCEPT_CATALOG, inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import {
-  composeTutorTurn,
-  shouldEnterTutorLoop,
-} from './sageTutorLoop.js';
-import {
   friendlyStudentName,
   friendlyWhyOpened,
   sanitizeKidSpeech,
@@ -364,19 +360,6 @@ function buildAdaptiveFollowUpCore({
     context?.current_question?.correct_answer ||
     null;
 
-  let tutorFallback = '';
-  try {
-    if (shouldEnterTutorLoop({ phase: 'support' }, context, studentMessage)) {
-      tutorFallback = composeTutorTurn({
-        studentMessage,
-        context,
-        session: context?.intervention_focus?.conversation_session || {},
-      }).reply;
-    }
-  } catch {
-    tutorFallback = '';
-  }
-
   const priorUserTurns = (chatHistory || []).filter(
     (m) => m?.role === 'user',
   ).length;
@@ -398,17 +381,16 @@ function buildAdaptiveFollowUpCore({
       reply = `${name}, I hear you: "${snippet}". Good start on ${concept}! Let me fill a small gap: ${tip}${farmBit} Now: ${check}`;
       break;
     case 'misconception':
-      reply = tutorFallback ||
-        (knownCorrect
-          ? `${name}, you chose "${snippet}". Let's look at why that pick could seem reasonable before we lock the quiz idea.`
-          : `${name}, I hear you: "${snippet}". That is a common mix-up for ${concept}. ${evaluation.misconceptionTip || tip}${farmBit} Try this gentler step: ${check}`);
+      reply = knownCorrect
+        ? `${name}, I hear you: "${snippet}". Let's look at what your answer means scientifically, then at the quiz idea, and compare them.`
+        : `${name}, I hear you: "${snippet}". That is a common mix-up for ${concept}. ${evaluation.misconceptionTip || tip}${farmBit} Try this gentler step: ${check}`;
       break;
     case 'unsure':
-      reply = tutorFallback ||
+      reply =
         `${name}, thank you for being honest. I came over because ${why}. Here is a gentle clue about ${concept}: ${tip}${farmBit} ${check}`;
       break;
     case 'ask_hint':
-      reply = tutorFallback ||
+      reply =
         `${name}, here's a hint for ${concept}: ${tip}${farmBit} ${check}`;
       break;
     case 'reading':

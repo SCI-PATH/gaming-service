@@ -469,6 +469,62 @@ function typedCompleteness(source, isCorrect) {
   return 'incorrect';
 }
 
+function stripChoiceLetterPrefix(text) {
+  return compactSpaces(text).replace(/^(?:option\s*)?[A-Da-d][.)]\s+/, '');
+}
+
+function letterOnlyIndex(text) {
+  const m = compactSpaces(text).match(/^(?:option\s*)?([A-Da-d])(?:[.)]\s*)?$/i);
+  if (!m) return -1;
+  return m[1].toUpperCase().charCodeAt(0) - 65;
+}
+
+function resolveChoiceToOptionText(trimmed, options) {
+  if (!trimmed) return '';
+  const idx = letterOnlyIndex(trimmed);
+  if (idx >= 0 && options[idx]) {
+    return optionText(options[idx]) || compactSpaces(options[idx]?.text);
+  }
+  const lead = trimmed.match(/^[A-Da-d][.)]\s+(.+)$/);
+  if (lead) return compactSpaces(lead[1]);
+  return trimmed;
+}
+
+/**
+ * Grok-facing label: "C — Resistor" when options are known, else the raw answer.
+ * Used for teaching context, not for deciding correctness.
+ */
+export function formatGroundTruthChoice(raw, options = []) {
+  const labels = (Array.isArray(options) ? options : [])
+    .map((opt) => optionText(opt))
+    .filter(Boolean);
+  const trimmed = compactSpaces(raw);
+  if (!trimmed) return '';
+
+  const letterOnly = trimmed.match(/^(?:option\s*)?([A-Da-d])(?:[.)]\s*)?$/i);
+  if (letterOnly && labels.length) {
+    const idx = letterOnly[1].toUpperCase().charCodeAt(0) - 65;
+    const text = stripChoiceLetterPrefix(labels[idx] || '');
+    if (text) return `${letterOnly[1].toUpperCase()} — ${text}`;
+  }
+
+  const lead = trimmed.match(/^([A-Da-d])[.)\s:—–-]+(.+)$/);
+  if (lead && compactSpaces(lead[2])) {
+    return `${lead[1].toUpperCase()} — ${compactSpaces(lead[2])}`;
+  }
+
+  const idx = labels.findIndex((label) => {
+    const a = stripChoiceLetterPrefix(label).toLowerCase();
+    const b = stripChoiceLetterPrefix(trimmed).toLowerCase();
+    if (!a || !b) return false;
+    return a === b || (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b));
+  });
+  if (idx >= 0) {
+    return `${String.fromCharCode(65 + idx)} — ${stripChoiceLetterPrefix(labels[idx])}`;
+  }
+  return trimmed;
+}
+
 function extractChoiceStudentAnswer(source, options) {
   const q = source.questionData && typeof source.questionData === 'object'
     ? source.questionData
@@ -480,7 +536,9 @@ function extractChoiceStudentAnswer(source, options) {
     (typeof q.studentAnswer === 'string' ? q.studentAnswer : '') ||
     '';
   const trimmed = compactSpaces(direct);
-  if (trimmed) return trimmed;
+  if (trimmed) {
+    return resolveChoiceToOptionText(trimmed, options) || trimmed;
+  }
 
   const idx =
     typeof source.selectedIndex === 'number'
@@ -505,7 +563,9 @@ function extractChoiceCorrectAnswer(source, options) {
   const trimmed = compactSpaces(
     typeof direct === 'string' ? direct : optionText(direct),
   );
-  if (trimmed && !isGradeStatusText(trimmed)) return trimmed;
+  if (trimmed && !isGradeStatusText(trimmed)) {
+    return resolveChoiceToOptionText(trimmed, options) || trimmed;
+  }
 
   const correctIndex =
     typeof source.correctIndex === 'number'
