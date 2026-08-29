@@ -471,6 +471,10 @@ function fiveStepTeaching(state, delivery, name) {
       correctAnswer: state.correctAnswer,
       topic: state.topic,
       hint: state.hint,
+      options: state.options,
+      questionType: state.questionType,
+      completeness: state.completeness,
+      missingKeywords: state.missingKeywords,
     },
     { frustrationLevel: delivery.level },
   );
@@ -570,6 +574,7 @@ export function buildMisconceptionMindMap(state = {}, delivery = null) {
       correctAnswer: state.correctAnswer,
       topic: state.topic,
       hint: state.hint,
+      options: state.options,
       questionType: state.questionType,
       completeness: state.completeness,
       missingKeywords: state.missingKeywords,

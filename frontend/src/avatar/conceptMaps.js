@@ -419,6 +419,40 @@ export const CONCEPT_CATALOG = {
     ],
   },
 
+  'Static Electricity': {
+    root: 'Static electricity and stored charge',
+    summary: 'How charge is stored and how circuit parts control current.',
+    nodes: [
+      {
+        id: 'capacitor',
+        label: 'Capacitor',
+        role: 'Stores electric charge',
+        explanation:
+          'A capacitor stores static electric charges on conducting plates and can release them later.',
+        relatedWrongHints: ['resistor', 'switch', 'bulb'],
+      },
+      {
+        id: 'resistor',
+        label: 'Resistor',
+        role: 'Opposes current',
+        explanation:
+          'A resistor opposes or reduces electric current in a circuit. It does not store static charge.',
+        relatedWrongHints: ['capacitor'],
+      },
+      {
+        id: 'charge',
+        label: 'Electric charge',
+        role: 'What is stored',
+        explanation:
+          'Static electric charge can be stored in a capacitor and later released.',
+      },
+    ],
+    links: [
+      ['charge', 'capacitor'],
+      ['resistor', 'charge'],
+    ],
+  },
+
   Ecology: {
     root: 'Ecology links',
     summary: 'How living things connect through energy and habitats.',
@@ -515,6 +549,9 @@ export function inferConceptFromText(text) {
     return 'Physical & Chemical Changes';
   }
   if (/food chain|ecosystem|habitat/.test(lower)) return 'Ecology';
+  if (/capacitor|resistor|static electric|static charge/.test(lower)) {
+    return 'Static Electricity';
+  }
   if (/digest|stomach|intestin/.test(lower)) return 'Digestive System';
   if (/main parts of a plant|parts of a plant include/.test(lower)) {
     return 'Plant Biology';

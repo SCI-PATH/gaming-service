@@ -421,6 +421,12 @@ export function buildPersonalizedMindMap({
       ...a,
       studentAnswer: a.studentAnswer,
       correctAnswer: a.correctAnswer,
+      options: Array.isArray(a.options) ? a.options : [],
+      prompt: a.prompt || a.question,
+      question: a.prompt || a.question,
+      questionType: a.questionType,
+      completeness: a.completeness,
+      missingKeywords: a.missingKeywords,
     };
     const lesson = composeFiveStepLesson(conceptual, {
       tone: profile.tone,
@@ -428,6 +434,12 @@ export function buildPersonalizedMindMap({
       explainDepth: profile.explainDepth,
     });
     const lessonOk = validateStructuredLesson(lesson);
+    const studentBody = lessonOk
+      ? lesson.studentAnswer.scientificDefinition
+      : '';
+    const diffBody = lessonOk
+      ? lesson.comparisonFields?.keyScientificDifference || lesson.comparison
+      : '';
     const why = '';
     const rightExplain = lessonOk
       ? lesson.correctAnswer.scientificDefinition
@@ -450,7 +462,7 @@ export function buildPersonalizedMindMap({
         label: shortLabel(cleanWrong, 22) || 'Your pick',
         title: 'Your answer',
         icon: '✗',
-        body: why,
+        body: studentBody,
         meta: { studentAnswer: cleanWrong },
       },
       {
@@ -459,7 +471,7 @@ export function buildPersonalizedMindMap({
         label: 'Difference',
         title: "What's the difference?",
         icon: '↔',
-        body: why,
+        body: diffBody,
         meta: {},
       },
       {
@@ -533,6 +545,32 @@ export function buildPersonalizedMindMap({
       keyExplain: rightExplain,
       key_concept_explain: rightExplain,
       lesson: lessonOk ? lesson : null,
+      audioGraph: {
+        rootConcept: t,
+        nodes: [
+          {
+            id: 'student',
+            label: lessonOk ? lesson.studentAnswer.concept : cleanWrong,
+            description: studentBody || '',
+          },
+          {
+            id: 'correct',
+            label: lessonOk ? lesson.correctAnswer.concept : cleanRight,
+            description: rightExplain || '',
+          },
+        ].filter((n) => n.label),
+        relationships: [
+          studentBody && rightExplain
+            ? {
+                from: lessonOk ? lesson.studentAnswer.concept : cleanWrong,
+                to: lessonOk ? lesson.correctAnswer.concept : cleanRight,
+                relationship:
+                  diffBody ||
+                  'These ideas have different scientific jobs in this question.',
+              }
+            : null,
+        ].filter(Boolean),
+      },
       farmLink: related.explanation,
       farm_link: related.explanation,
       summary:
