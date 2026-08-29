@@ -296,6 +296,35 @@ describe('Test 7 — insufficient knowledge', () => {
     assert.equal(/zargle is|flibbons are/i.test(turn.reply), false);
     assert.match(turn.reply.toLowerCase(), /guess|enough|together/);
   });
+
+  it('does not invent a scientific function for an unknown option', () => {
+    const unknown = {
+      questionText: 'Which gas is required for photosynthesis?',
+      studentAnswer: 'Zargle vapour',
+      correctAnswer: 'Carbon dioxide',
+      topic: 'Photosynthesis',
+    };
+    assert.equal(hasSufficientKnowledge(unknown), false);
+    const turn = composeTutorTurn({
+      studentMessage: 'why?',
+      context: {
+        student_profile: { display_name: 'Maya' },
+        frustration_score: 40,
+        current_question: {
+          question_text: unknown.questionText,
+          student_last_wrong_answer: unknown.studentAnswer,
+          correct_answer: unknown.correctAnswer,
+          topic: unknown.topic,
+        },
+        intervention_focus: {
+          conversation_session: { phase: 'support', student_reason_key: 'concept_gap' },
+        },
+      },
+      session: { phase: 'support', student_name: 'Maya' },
+    });
+    assert.equal(turn.nextAction, NEXT_ACTIONS.INSUFFICIENT_KNOWLEDGE);
+    assert.equal(/zargle vapour is mainly about/i.test(turn.reply), false);
+  });
 });
 
 describe('assessment engine authority and safety', () => {
@@ -401,14 +430,19 @@ describe('five-step teaching order', () => {
     assert.equal(lesson.sections.length, 5);
     assert.equal(lesson.sections[0].title, 'YOUR ANSWER');
     assert.equal(lesson.sections[1].title, 'CORRECT ANSWER');
-    assert.equal(/carbon dioxide/i.test(selected), false);
+    assert.equal(/carbon dioxide|photosynth/i.test(selected), false);
+    assert.equal(lesson.sections[2].title, 'SCIENTIFIC COMPARISON');
+    assert.ok(lesson.wrongAnswerDescription?.scientificDescription);
+    assert.ok(lesson.correctAnswerDescription?.scientificDescription);
+    assert.match(lesson.scientificComparison.wrongConcept, /balloon|helium|unreactive/i);
+    assert.match(lesson.scientificComparison.correctConcept, /food|carbon|photosynth/i);
     assert.equal(/names its own concept|connect that back|curriculum idea/i.test(lesson.fullText), false);
     const blob = lesson.fullText.toLowerCase();
     assert.ok(blob.indexOf('helium') < blob.indexOf('carbon'));
     assert.match(blob, /difference/);
     assert.match(blob, /balloon|food-making|take in/);
     const cdHits = blob.split('carbon dioxide').length - 1;
-    assert.ok(cdHits <= 3);
+    assert.ok(cdHits <= 5);
   });
 
   it('teaches water-storage vs flower reproduction without repeating the option', () => {
@@ -423,12 +457,46 @@ describe('five-step teaching order', () => {
     );
     const blob = lesson.fullText.toLowerCase();
     assert.match(lesson.selected, /store water|survive|adaptation/i);
+    assert.equal(/seed|reproduc|flower/i.test(lesson.selected), false);
     assert.equal(/names its own concept|own job in the world/i.test(lesson.selected), false);
     assert.match(lesson.correct, /reproduc|seed/i);
-    assert.match(lesson.comparison, /difference/i);
+    assert.equal(/store water|succulent|survival/i.test(lesson.correct), false);
+    assert.match(lesson.comparison, /difference|function/i);
     assert.match(lesson.connection, /seed|reproduc/i);
     assert.match(lesson.check, /water storage or reproduction/i);
     assert.equal((blob.match(/through flowers that produce seeds/g) || []).length <= 1, true);
     assert.equal(/b\.\s*through flowers that produce seeds[\s\S]*b\.\s*through/i.test(blob), false);
+  });
+
+  it('explains a False miss as statement science, not as “False is incorrect”', () => {
+    const lesson = composeFiveStepLesson(
+      {
+        prompt: 'Dicotyledonous plants are named for having two seed lobes.',
+        studentAnswer: 'False',
+        correctAnswer: 'True',
+        topic: 'Plant Diversity',
+      },
+      { frustrationLevel: 'low' },
+    );
+    assert.match(lesson.selected, /dicot|two seed|cotyledon/i);
+    assert.equal(/false means you are saying/i.test(lesson.selected), false);
+    assert.match(lesson.correct, /scientifically true|claim that holds/i);
+    assert.equal(/false is incorrect/i.test(lesson.fullText), false);
+    assert.match(lesson.comparison, /true|two seed|naming/i);
+  });
+
+  it('returns structured describe-then-compare fields on a tutor turn', () => {
+    const turn = composeTutorTurn({
+      studentMessage: 'why?',
+      context: ctx(),
+      session,
+    });
+    const teaching = turn.structured.teaching;
+    assert.equal(teaching.strategy, 'describe_then_compare');
+    assert.match(teaching.wrongAnswerDescription.scientificDescription, /helium|balloon/i);
+    assert.match(teaching.correctAnswerDescription.scientificDescription, /carbon dioxide/i);
+    assert.ok(teaching.scientificComparison.difference);
+    assert.ok(teaching.questionConnection);
+    assert.match(teaching.interactiveCheck, /\?/);
   });
 });

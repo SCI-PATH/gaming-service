@@ -4973,6 +4973,11 @@ body {
   white-space: normal;
 }
 
+.sage-lesson-block .sage-lesson-body + .sage-lesson-diff,
+.sage-lesson-block .sage-lesson-diff + .sage-lesson-body {
+  margin-top: 6px;
+}
+
 .sage-lesson-diff {
   list-style: none;
   margin: 0 0 6px;

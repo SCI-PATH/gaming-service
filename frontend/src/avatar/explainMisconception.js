@@ -1,7 +1,8 @@
 /**
- * Sage "why" = five labeled sections, one job each:
- *   YOUR ANSWER → CORRECT ANSWER → WHAT'S THE DIFFERENCE? → KEY CONNECTION → QUICK CHECK
- * Never dump a one-line key. Never repeat the correct option. No meta prompt-talk.
+ * Sage teaching = independent scientific descriptions, then comparison:
+ *   YOUR ANSWER → CORRECT ANSWER → SCIENTIFIC COMPARISON → KEY CONNECTION → QUICK CHECK
+ * Wrong-for-this-question is not the same as scientifically false.
+ * Never invent a function or example. Never dump a one-line key.
  */
 import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
 
@@ -248,7 +249,7 @@ const STUDENT_WORLD_IDEAS = [
   {
     test: /helium/,
     label: 'helium',
-    purpose: 'a light balloon gas, not a food-making gas',
+    purpose: 'a light unreactive gas used in balloons',
     bodyShort: 'Helium is a very light gas. We normally use it to fill party balloons so they float.',
     bodyFull:
       'Helium is a very light gas. We normally use it to fill party balloons so they float. A birthday balloon filled with helium floats to the ceiling.',
@@ -267,10 +268,10 @@ const STUDENT_WORLD_IDEAS = [
   {
     test: /\boxygen\b|\bo2\b/,
     label: 'oxygen',
-    purpose: 'the gas we breathe; plants usually give it off in light',
+    purpose: 'the gas animals breathe; plants usually give it off in light',
     bodyShort: 'Oxygen is the gas animals breathe. Green plants usually release it during photosynthesis.',
     bodyFull:
-      'Oxygen is the gas animals breathe. Green plants usually release it during photosynthesis after they build sugar. It is a product of food-making, not the main gas the leaf takes in.',
+      'Oxygen is the gas animals breathe. Green plants usually release it during photosynthesis after they build sugar. That released oxygen is a product of food-making.',
     what: 'Oxygen is a gas in the air that living things use.',
     means: 'It is the gas animals breathe in to release energy from food.',
     usedFor: 'We use oxygen for breathing; green plants usually give it off in light.',
@@ -318,22 +319,27 @@ const STUDENT_WORLD_IDEAS = [
     bodyShort:
       'Some plants have leaves that can store water. This helps them survive where water is limited.',
     bodyFull:
-      'Some plants have leaves that can store water. This helps them survive in environments where water is limited. This is mainly related to plant adaptation and survival.',
-    what: 'Some plants have leaves that can store water.',
+      'Some plants have leaves adapted to store water. Those leaves retain water so the plant can survive where water is limited. This is a plant adaptation related to water storage and survival.',
+    what: 'Some plants have leaves adapted to store water.',
     means: 'Those leaves hold extra water so the plant can last through dry times.',
-    usedFor: 'This is mainly related to plant adaptation and survival.',
+    usedFor: 'This is a plant adaptation related to water storage and survival.',
+    how: 'Fleshy or thickened leaves keep water inside the plant instead of losing it quickly.',
+    example: 'A succulent plant can live through dry days because its leaves hold water.',
     mismatch: 'Storing water helps the plant survive. It does not produce seeds.',
   },
   {
     test: /flower.{0,80}seed|produce seeds|through flowers/,
     label: 'flowers that produce seeds',
-    purpose: 'reproduction',
+    purpose: 'reproduction and seed formation',
     bodyShort:
-      'Flowers are involved in reproduction in flowering plants. Reproduction can result in seeds, which can grow into new plants.',
+      'Flowers are reproductive structures in flowering plants. Reproduction can result in seeds, which can grow into new plants.',
     bodyFull:
-      'Flowers are involved in reproduction in flowering plants. Reproduction can result in the formation of seeds, which can later grow into new plants. This is mainly related to plant reproduction.',
-    what: 'Flowers are the parts flowering plants use to reproduce.',
-    usedFor: 'This is mainly related to plant reproduction.',
+      'Flowers are reproductive structures in flowering plants. They are involved in reproduction that can lead to seed formation. A seed contains a developing embryo and can grow into a new plant under suitable conditions. This is related to plant reproduction and seed formation.',
+    what: 'Flowers are reproductive structures in flowering plants.',
+    means: 'They are involved in reproduction that can lead to seed formation.',
+    usedFor: 'This is related to plant reproduction and seed formation.',
+    how: 'After pollination, a flower can form a seed that holds a developing embryo.',
+    example: 'A mango flower can lead to a fruit with a seed inside.',
     mismatch: 'Flowers making seeds is reproduction, not water storage.',
   },
   {
@@ -599,26 +605,30 @@ const CORRECT_WORLD_IDEAS = [
   {
     test: /flower.{0,80}seed|produce seeds|through flowers/,
     label: 'flowers that produce seeds',
-    purpose: 'reproduction',
-    what: 'Flowers are the parts flowering plants use to reproduce.',
-    means: 'Reproduction can result in seeds that grow into new plants.',
-    usedFor: 'This is mainly related to plant reproduction.',
-    how: 'In flowering plants, flowers are the structures where seeds can form.',
+    purpose: 'reproduction and seed formation',
+    what: 'Flowers are reproductive structures in flowering plants.',
+    means: 'They are involved in reproduction that can lead to seed formation.',
+    usedFor: 'This is related to plant reproduction and seed formation.',
+    how: 'After pollination, a flower can form a seed that holds a developing embryo.',
     example: 'A mango flower can lead to a fruit with a seed inside.',
     bodyShort:
-      'Flowers are involved in reproduction in flowering plants. Reproduction can result in seeds, which can grow into new plants.',
+      'Flowers are reproductive structures in flowering plants. Reproduction can result in seeds, which can grow into new plants.',
     bodyFull:
-      'Flowers are involved in reproduction in flowering plants. Reproduction can result in the formation of seeds, which can later grow into new plants. This is mainly related to plant reproduction.',
+      'Flowers are reproductive structures in flowering plants. They are involved in reproduction that can lead to seed formation. A seed contains a developing embryo and can grow into a new plant under suitable conditions. This is related to plant reproduction and seed formation.',
   },
   {
     test: /store water|storing water|leaves to store|succulent/,
     label: 'leaves that store water',
     purpose: 'water storage and survival',
-    what: 'Some plants have leaves that can store water.',
+    what: 'Some plants have leaves adapted to store water.',
+    means: 'Those leaves hold extra water so the plant can last through dry times.',
+    usedFor: 'This is a plant adaptation related to water storage and survival.',
+    how: 'Fleshy or thickened leaves keep water inside the plant instead of losing it quickly.',
+    example: 'A succulent plant can live through dry days because its leaves hold water.',
     bodyShort:
       'Some plants have leaves that can store water. This helps them survive where water is limited.',
     bodyFull:
-      'Some plants have leaves that can store water. This helps them survive in environments where water is limited. This is mainly related to plant adaptation and survival.',
+      'Some plants have leaves adapted to store water. Those leaves retain water so the plant can survive where water is limited. This is a plant adaptation related to water storage and survival.',
   },
   {
     test: /photosynthesis/,
@@ -679,17 +689,18 @@ function pickMeet(idea, band) {
 
 function ideaBody(idea, band) {
   if (!idea) return '';
-  if (idea.bodyShort || idea.bodyFull) {
-    if (band === 'micro' || band === 'simple') {
-      return idea.bodyShort || idea.bodyFull;
-    }
-    return idea.bodyFull || idea.bodyShort;
+  if (band === 'micro' || band === 'simple') {
+    return idea.bodyShort || [idea.what, idea.usedFor || idea.means].map(norm).filter(Boolean).join(' ');
   }
-  const core = [idea.what, idea.means, idea.usedFor].map(norm).filter(Boolean);
-  if (band === 'micro') return clip(core.slice(0, 2).join(' '), 180);
-  if (band === 'simple') return clip(core.join(' '), 240);
-  if (idea.example) core.push(idea.example);
-  return core.join(' ');
+  let text =
+    idea.bodyFull ||
+    idea.bodyShort ||
+    [idea.what, idea.means, idea.usedFor, idea.how].map(norm).filter(Boolean).join(' ');
+  if (band === 'rich' && idea.example) {
+    const marker = lower(idea.example).slice(0, 24);
+    if (marker && !lower(text).includes(marker)) text = `${text} ${idea.example}`;
+  }
+  return text;
 }
 
 function hasWholeWord(haystack, word) {
@@ -970,36 +981,85 @@ export function scienceKeyIdea(attempt = {}) {
   return clip(attempt.topic || 'This science idea', 40);
 }
 
+function catalogAsIdea(text, attempt) {
+  const node = findCatalogNode(catalogForAttempt(attempt), text);
+  if (!node?.explanation) return null;
+  return {
+    label: node.label,
+    purpose: String(node.role || '').toLowerCase(),
+    what: node.explanation,
+    bodyShort: node.explanation,
+    bodyFull: node.explanation,
+  };
+}
+
+export function verifiedIdeaFor(text, attempt = {}, side = 'student') {
+  const cleaned = displayChoice(text);
+  if (!cleaned || isTrueFalseToken(cleaned) || isNoPick(cleaned) || isPlaceholderBlank(cleaned)) {
+    return null;
+  }
+  const fromStudent = lookupStudentIdea(cleaned);
+  const fromCorrect = lookupCorrectIdea(cleaned, cleaned, '');
+  const fromCatalog = catalogAsIdea(cleaned, attempt);
+  if (side === 'correct') return fromCorrect || fromStudent || fromCatalog;
+  return fromStudent || fromCorrect || fromCatalog;
+}
+
+function statementScience(attempt, band) {
+  const prompt = norm(attempt.prompt || attempt.question || '');
+  const topic = attempt.topic || '';
+  const idea =
+    lookupCorrectIdea(prompt, prompt, topic) || lookupStudentIdea(prompt);
+  const taught = ideaBody(idea, band);
+  if (taught) return { idea, text: taught };
+  const claim = unpackScienceClaim(prompt, topic);
+  if (claim?.fact) {
+    const text =
+      band === 'micro' || band === 'simple' ? firstSentence(claim.fact) : claim.fact;
+    return {
+      idea: { label: scienceKeyIdea(attempt), what: claim.fact, purpose: 'the science in this statement' },
+      text,
+    };
+  }
+  const how = questionJob(attempt)?.rightHow;
+  if (how) {
+    const text = band === 'micro' || band === 'simple' ? firstSentence(how) : how;
+    return { idea: { what: how }, text };
+  }
+  return { idea: null, text: '' };
+}
+
+/**
+ * Ground a scientific description in verified curriculum facts.
+ * Do not guess a function or example for an unknown option.
+ */
+export function canDescribeScientifically(text, attempt = {}, side = 'student') {
+  const raw = norm(text);
+  if (!raw) return false;
+  if (isNoPick(raw) || isPlaceholderBlank(raw)) return false;
+  if (isTrueFalseToken(raw)) return Boolean(statementScience(attempt, 'medium').text);
+  return Boolean(verifiedIdeaFor(raw, attempt, side));
+}
+
+function descriptionCard(title, idea, body, band) {
+  const example =
+    band === 'micro' || band === 'simple' ? '' : norm(idea?.example || '');
+  return {
+    title,
+    concept: idea?.label || firstSentence(idea?.what || body) || '',
+    scientificDescription: body,
+    function: idea?.purpose || idea?.usedFor || '',
+    example,
+  };
+}
+
 function selectedConceptBlock(attempt, band) {
   const wrong = displayChoice(attempt.studentAnswer);
   if (isTrueFalseToken(wrong)) {
-    if (isAffirmative(wrong)) {
-      return band === 'micro' || band === 'simple'
-        ? 'True means you are saying the whole sentence is a real science fact.'
-        : 'True means you are accepting the whole sentence as a science fact. We use True when the naming and the process in the sentence actually match.';
-    }
-    return band === 'micro' || band === 'simple'
-      ? 'False means you are saying this sentence is not a real science fact.'
-      : 'False means you are saying the sentence is not a true science fact. We use False when a key part of the claim does not hold.';
+    return statementScience(attempt, band).text;
   }
-
-  const idea = lookupStudentIdea(wrong);
-  const extraMeet = norm(attempt.extraMeet || '');
-  const taught = ideaBody(idea, band);
-  if (taught) {
-    return extraMeet && band === 'rich' ? `${taught} ${firstSentence(extraMeet)}` : taught;
-  }
-  const node = findCatalogNode(catalogForAttempt(attempt), wrong);
-  if (node?.explanation) {
-    return band === 'micro' || band === 'simple'
-      ? `${node.explanation}`
-      : `${node.explanation}`;
-  }
-  const purpose = conceptPurpose(wrong, attempt, 'student');
-  if (purpose) {
-    return `${wrong} is mainly about ${purpose}.`;
-  }
-  return `${wrong || 'This option'} is a plant or science idea of its own.`;
+  const idea = verifiedIdeaFor(wrong, attempt, 'student');
+  return ideaBody(idea, band);
 }
 
 function correctConceptBlock(attempt, band) {
@@ -1007,75 +1067,135 @@ function correctConceptBlock(attempt, band) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const claim = unpackScienceClaim(prompt, attempt.topic);
   const job = questionJob(attempt);
-  const correctIdea = lookupCorrectIdea(right, prompt, attempt.topic);
 
   if (isTrueFalseToken(right)) {
-    const fact = claim?.fact || job.rightHow || scienceKeyIdea(attempt);
+    const fact = firstSentence(claim?.fact || job.rightHow || scienceKeyIdea(attempt));
     if (isAffirmative(right)) {
       return band === 'micro' || band === 'simple'
-        ? `The sentence holds. ${firstSentence(fact)}`
-        : `The statement is true because the science in it holds. ${firstSentence(fact)}`;
+        ? `The statement is scientifically true. ${fact}`
+        : `The statement is scientifically true. The specific claim that holds is: ${fact}`;
     }
     return band === 'micro' || band === 'simple'
-      ? `The sentence does not hold. ${firstSentence(fact)}`
-      : `The statement is false because a key part of the claim is not how the process works. ${firstSentence(fact)}`;
+      ? `A key claim in the sentence does not hold. ${fact}`
+      : `A key scientific claim in the sentence does not hold. The scientifically correct process is: ${fact}`;
   }
 
-  const taught = ideaBody(correctIdea, band);
-  if (taught) return taught;
-  const node = findCatalogNode(catalogForAttempt(attempt), right);
-  if (node?.explanation) return node.explanation;
-  if (job.rightHow) return job.rightHow;
-  const purpose = conceptPurpose(right, attempt, 'correct');
-  if (purpose) return `${right} is mainly about ${purpose}.`;
-  return `${right} is the idea this question is testing.`;
+  const idea = verifiedIdeaFor(right, attempt, 'correct');
+  return ideaBody(idea, band);
 }
 
-function comparisonBlock(attempt, band) {
+function scientificSimilarity(studentIdea, correctIdea, attempt) {
+  const blob = lower(
+    `${studentIdea?.label || ''} ${studentIdea?.purpose || ''} ${attempt.studentAnswer || ''} ${correctIdea?.label || ''} ${correctIdea?.purpose || ''} ${attempt.correctAnswer || ''} ${attempt.topic || ''}`,
+  );
+  if (/helium|oxygen|nitrogen|hydrogen|carbon dioxide|co2|\bgas/.test(blob)) {
+    return 'Both are real gases, but they perform different scientific jobs.';
+  }
+  if (/leaf|flower|plant|seed|root|water storage|reproduc/.test(blob)) {
+    return 'Both concepts involve structures found in plants, but they perform different biological functions.';
+  }
+  return 'Both are real science ideas, but they do different jobs.';
+}
+
+function buildComparison(attempt, band) {
+  const studentIdea = isTrueFalseToken(attempt.studentAnswer)
+    ? statementScience(attempt, band).idea
+    : verifiedIdeaFor(attempt.studentAnswer, attempt, 'student');
+  const correctIdea = isTrueFalseToken(attempt.correctAnswer)
+    ? statementScience(attempt, band).idea
+    : verifiedIdeaFor(attempt.correctAnswer, attempt, 'correct');
   const studentPurpose =
-    conceptPurpose(attempt.studentAnswer, attempt, 'student') || 'a different plant idea';
+    conceptPurpose(attempt.studentAnswer, attempt, 'student') ||
+    studentIdea?.purpose ||
+    '';
   const correctPurpose =
     conceptPurpose(attempt.correctAnswer, attempt, 'correct') ||
+    correctIdea?.purpose ||
     questionJob(attempt)?.purpose ||
-    'the idea this question is testing';
-  const idea = lookupStudentIdea(attempt.studentAnswer);
-  const distinction =
-    idea?.mismatch ||
-    `one is about ${studentPurpose}, while the other is about ${correctPurpose}`;
+    '';
+  const job = questionJob(attempt);
+  const asking = job?.asking || scienceKeyIdea(attempt);
+  const claim = unpackScienceClaim(attempt.prompt || attempt.question, attempt.topic);
 
   if (isTrueFalseToken(attempt.studentAnswer) && isTrueFalseToken(attempt.correctAnswer)) {
-    const part = unpackScienceClaim(
-      attempt.prompt || attempt.question,
-      attempt.topic,
-    );
-    const fact = firstSentence(part?.fact || '');
-    const wrong = displayChoice(attempt.studentAnswer);
+    const fact = firstSentence(claim?.fact || '');
+    const similarity = 'The sentence is a scientific claim. True and False judge whether that claim holds.';
+    let difference = '';
+    let whyCorrectAnswerFits = '';
     if (isAffirmative(attempt.correctAnswer)) {
-      return band === 'micro' || band === 'simple'
-        ? fact || 'The sentence is true.'
-        : `You chose ${wrong}, but the sentence is true. ${fact}`;
+      difference =
+        claim?.rejectFalse ||
+        `The specific claim that makes the sentence true is: ${fact}`;
+      whyCorrectAnswerFits = `The question asks whether this science sentence holds, and that naming/process is accurate.`;
+    } else {
+      difference = `The specific claim that does not hold is the part that disagrees with: ${fact}`;
+      whyCorrectAnswerFits = `The question asks whether this science sentence holds, and that claim does not.`;
     }
-    return band === 'micro' || band === 'simple'
-      ? fact || 'The sentence is not true.'
-      : `You chose ${wrong}, but the sentence is not true. ${fact}`;
+    const body =
+      band === 'micro' || band === 'simple'
+        ? difference
+        : `${similarity} ${difference}`;
+    return {
+      similarity,
+      difference,
+      wrongConcept: isAffirmative(attempt.studentAnswer)
+        ? 'judging the sentence true'
+        : 'judging the sentence false',
+      correctConcept: isAffirmative(attempt.correctAnswer)
+        ? 'the sentence is scientifically true'
+        : 'the sentence is scientifically false',
+      whyCorrectAnswerFits,
+      body,
+    };
   }
 
-  const body = `The important difference is ${distinction}.`;
-  if (band === 'micro') return clip(body, 180);
-  return body;
+  const similarity = scientificSimilarity(studentIdea, correctIdea, attempt);
+  const difference =
+    studentIdea?.mismatch ||
+    `one is about ${studentPurpose}, while the other is about ${correctPurpose}`;
+  const whyCorrectAnswerFits = `Because the question asks about ${asking}, ${correctPurpose} is the relevant concept.`;
+  const arrows =
+    studentPurpose && correctPurpose
+      ? `${shortConceptLabel(attempt.studentAnswer, 36) || 'Your answer'} → ${studentPurpose}. ${shortConceptLabel(attempt.correctAnswer, 36) || 'Correct answer'} → ${correctPurpose}.`
+      : '';
+  const body =
+    band === 'micro'
+      ? `The scientific difference is ${difference}.`
+      : `${similarity} ${arrows} So the scientific difference is ${difference}.`.replace(/\s+/g, ' ').trim();
+  return {
+    similarity,
+    difference,
+    wrongConcept: studentPurpose,
+    correctConcept: correctPurpose,
+    whyCorrectAnswerFits,
+    body,
+  };
 }
 
-function connectionBlock(attempt, band) {
+function connectionBlock(attempt, band, comparison) {
   const job = questionJob(attempt);
   const asking = job?.asking || scienceKeyIdea(attempt);
   const studentPurpose =
-    conceptPurpose(attempt.studentAnswer, attempt, 'student') || 'your pick';
+    comparison?.wrongConcept ||
+    conceptPurpose(attempt.studentAnswer, attempt, 'student') ||
+    'your pick';
   const correctPurpose =
-    conceptPurpose(attempt.correctAnswer, attempt, 'correct') || job?.purpose || 'the quiz idea';
-  if (band === 'micro' || band === 'simple') {
-    return `The question is about ${asking}. That matches ${correctPurpose}, not ${studentPurpose}.`;
+    comparison?.correctConcept ||
+    conceptPurpose(attempt.correctAnswer, attempt, 'correct') ||
+    job?.purpose ||
+    'the quiz idea';
+  if (isTrueFalseToken(attempt.studentAnswer) && isTrueFalseToken(attempt.correctAnswer)) {
+    const claim = unpackScienceClaim(attempt.prompt || attempt.question, attempt.topic);
+    const fact = firstSentence(claim?.fact || asking);
+    if (isAffirmative(attempt.correctAnswer)) {
+      return `The question asks whether this science sentence holds. ${fact} That is why True matches.`;
+    }
+    return `The question asks whether this science sentence holds. ${fact} That is why False matches.`;
   }
-  return `The question is asking about ${asking}. That is why ${correctPurpose} matches, while ${studentPurpose} does not.`;
+  if (band === 'micro' || band === 'simple') {
+    return `The question asks about ${asking}. That matches ${correctPurpose}, not ${studentPurpose}.`;
+  }
+  return `The question asks about ${asking}. ${correctPurpose} answers that job. ${studentPurpose} is a real science idea, but it is not what this question is asking.`;
 }
 
 function checkQuestion(attempt) {
@@ -1116,11 +1236,6 @@ export function formatLessonSpeech(lesson) {
   if (!lesson?.sections?.length) return lesson?.fullText || '';
   return lesson.sections
     .map((s) => {
-      if (s.id === 'difference') {
-        const a = s.studentPurpose ? `Your answer: ${s.studentPurpose}. ` : '';
-        const b = s.correctPurpose ? `Correct answer: ${s.correctPurpose}. ` : '';
-        return `${s.title}. ${a}${b}${s.body}`.replace(/\s+/g, ' ').trim();
-      }
       const quote = s.quote ? `${s.quote}. ` : '';
       return `${s.title}. ${quote}${s.body}`.replace(/\s+/g, ' ').trim();
     })
@@ -1128,14 +1243,14 @@ export function formatLessonSpeech(lesson) {
 }
 
 /**
- * Five labeled sections. Each part has one job. The correct option is named once.
+ * Five labeled sections. Describe both answers as science first, then compare.
  */
 export function composeFiveStepLesson(attempt = {}, voice = {}) {
   const band = voiceBand(voice);
   const selected = selectedConceptBlock(attempt, band);
   const correct = correctConceptBlock(attempt, band);
-  const comparison = comparisonBlock(attempt, band);
-  const connection = connectionBlock(attempt, band);
+  const comparison = buildComparison(attempt, band);
+  const connection = connectionBlock(attempt, band, comparison);
   const check = checkQuestion(attempt);
   const studentQuote = isTrueFalseToken(attempt.studentAnswer)
     ? displayChoice(attempt.studentAnswer)
@@ -1143,6 +1258,28 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
   const correctQuote = isTrueFalseToken(attempt.correctAnswer)
     ? displayChoice(attempt.correctAnswer)
     : shortConceptLabel(attempt.correctAnswer, 72);
+  const studentIdea = isTrueFalseToken(attempt.studentAnswer)
+    ? statementScience(attempt, band).idea
+    : verifiedIdeaFor(attempt.studentAnswer, attempt, 'student');
+  const correctIdea = isTrueFalseToken(attempt.correctAnswer)
+    ? statementScience(attempt, band).idea
+    : verifiedIdeaFor(attempt.correctAnswer, attempt, 'correct');
+
+  const wrongAnswerDescription = descriptionCard('Your Answer', studentIdea, selected, band);
+  const correctAnswerDescription = descriptionCard(
+    'Correct Answer',
+    correctIdea,
+    correct,
+    band,
+  );
+  const scientificComparison = {
+    title: 'Scientific Comparison',
+    similarity: comparison.similarity,
+    difference: comparison.difference,
+    wrongConcept: comparison.wrongConcept,
+    correctConcept: comparison.correctConcept,
+    whyCorrectAnswerFits: comparison.whyCorrectAnswerFits,
+  };
 
   const sections = [
     {
@@ -1150,19 +1287,28 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
       title: 'YOUR ANSWER',
       quote: studentQuote,
       body: selected,
+      concept: wrongAnswerDescription.concept,
+      function: wrongAnswerDescription.function,
+      example: wrongAnswerDescription.example,
     },
     {
       id: 'correct_answer',
       title: 'CORRECT ANSWER',
       quote: correctQuote,
       body: correct,
+      concept: correctAnswerDescription.concept,
+      function: correctAnswerDescription.function,
+      example: correctAnswerDescription.example,
     },
     {
       id: 'difference',
-      title: "WHAT'S THE DIFFERENCE?",
-      studentPurpose: conceptPurpose(attempt.studentAnswer, attempt, 'student'),
-      correctPurpose: conceptPurpose(attempt.correctAnswer, attempt, 'correct'),
-      body: comparison,
+      title: 'SCIENTIFIC COMPARISON',
+      similarity: comparison.similarity,
+      wrongConcept: comparison.wrongConcept,
+      correctConcept: comparison.correctConcept,
+      studentPurpose: comparison.wrongConcept,
+      correctPurpose: comparison.correctConcept,
+      body: comparison.body,
     },
     {
       id: 'connection',
@@ -1176,7 +1322,20 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
     },
   ];
 
-  let packed = { selected, correct, comparison, connection, check, sections, band };
+  let packed = {
+    selected,
+    correct,
+    comparison: comparison.body,
+    connection,
+    check,
+    sections,
+    band,
+    wrongAnswerDescription,
+    correctAnswerDescription,
+    scientificComparison,
+    questionConnection: connection,
+    interactiveCheck: check,
+  };
   packed.fullText = formatLessonSpeech(packed);
   const rightRaw = displayChoice(attempt.correctAnswer);
   if (rightRaw && rightRaw.length >= 12 && countPhrase(packed.fullText, rightRaw) > 2) {
@@ -1224,17 +1383,21 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
   if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
-  return composeFiveStepLesson(
-    {
-      prompt,
-      question: prompt,
-      studentAnswer,
-      correctAnswer,
-      topic,
-      hint: input.hint,
-    },
-    voice,
-  );
+  const attempt = {
+    prompt,
+    question: prompt,
+    studentAnswer,
+    correctAnswer,
+    topic,
+    hint: input.hint,
+  };
+  if (
+    !canDescribeScientifically(studentAnswer, attempt, 'student') ||
+    !canDescribeScientifically(correctAnswer, attempt, 'correct')
+  ) {
+    return null;
+  }
+  return composeFiveStepLesson(attempt, voice);
 }
 
 export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {
