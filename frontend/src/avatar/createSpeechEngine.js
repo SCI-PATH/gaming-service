@@ -31,6 +31,8 @@ export function createSpeechEngine({
   let currentUtter = null;
   let fullText = '';
   let words = [];
+  let speakGen = 0;
+  let keepAliveTimer = null;
 
   // Warm voice list in some browsers
   if (supported) {
@@ -40,10 +42,19 @@ export function createSpeechEngine({
     };
   }
 
+  function clearKeepAlive() {
+    if (keepAliveTimer) {
+      window.clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+  }
+
   function stop() {
+    speakGen += 1;
     cancelled = true;
     speaking = false;
     currentUtter = null;
+    clearKeepAlive();
     try {
       window.speechSynthesis?.cancel();
     } catch {
@@ -53,7 +64,8 @@ export function createSpeechEngine({
 
   /**
    * Speak text aloud. Highlights each word via onWord.
-   * @returns {Promise<void>}
+   * Long text is split into Chrome-safe chunks without cancel() between them.
+   * @returns {Promise<{ spoken: boolean, reason: string }>}
    */
   function speak(text, { rate = 0.95, pitch = 1.05, volume = 1 } = {}) {
     if (!supported) {
@@ -68,26 +80,20 @@ export function createSpeechEngine({
 
     stop();
     cancelled = false;
+    const gen = speakGen;
     fullText = clean;
     words = clean.split(/\s+/).filter(Boolean);
 
     return new Promise((resolve) => {
-      // cancel() can mute next utterance in Chrome — tiny delay
       window.setTimeout(() => {
-        if (cancelled) {
+        if (cancelled || gen !== speakGen) {
           resolve({ spoken: false, reason: 'cancelled' });
           return;
         }
 
-        const utter = new window.SpeechSynthesisUtterance(clean);
-        const voice = pickVoice();
-        if (voice) utter.voice = voice;
-        utter.rate = rate;
-        utter.pitch = pitch;
-        utter.volume = volume;
-        utter.lang = voice?.lang || 'en-US';
-        currentUtter = utter;
-
+        const chunks = splitForTts(clean);
+        let chunkIndex = 0;
+        let settled = false;
         let wordIndex = 0;
         let lastWordForViseme = '';
         let phoneIdx = 0;
@@ -96,7 +102,6 @@ export function createSpeechEngine({
         function armVisemesForWord(word) {
           lastWordForViseme = word;
           phoneIdx = 0;
-          // Lightweight phone stream for external listeners (avatar also runs its own)
           const letters = String(word || '')
             .toLowerCase()
             .replace(/[^a-z]/g, '');
@@ -105,8 +110,7 @@ export function createSpeechEngine({
         }
 
         const fallBackTick = window.setInterval(() => {
-          // Fallback if browser skips boundary events
-          if (!speaking || cancelled) return;
+          if (!speaking || cancelled || gen !== speakGen) return;
           if (wordIndex < words.length) {
             const w = words[wordIndex];
             onWord?.({
@@ -120,7 +124,6 @@ export function createSpeechEngine({
           }
         }, Math.max(180, 220 / rate));
 
-        // Sub-word viseme ticks while a word is active
         const phoneTick = window.setInterval(() => {
           if (!speaking || cancelled || !phoneSeq.length) return;
           phoneIdx = (phoneIdx + 1) % Math.max(phoneSeq.length, 1);
@@ -132,70 +135,128 @@ export function createSpeechEngine({
           });
         }, Math.max(55, 70 / rate));
 
-        utter.onstart = () => {
-          speaking = true;
-          onStart?.({ text: fullText, words });
-          if (words[0]) {
-            onWord?.({
-              word: words[0],
-              index: 0,
-              total: words.length,
-              text: fullText,
-            });
-            armVisemesForWord(words[0]);
-            wordIndex = 1;
+        const keepAlive = window.setInterval(() => {
+          try {
+            if (window.speechSynthesis?.speaking) window.speechSynthesis.resume();
+          } catch {
+            /* ignore */
           }
-        };
-
-        utter.onboundary = (event) => {
-          if (event.name !== 'word' && event.name !== 'Word') return;
-          // Prefer boundary indices when available
-          const slice = fullText.slice(event.charIndex || 0);
-          const w = slice.split(/\s+/)[0] || '';
-          if (!w) return;
-          // Count words by char index
-          const prefix = fullText.slice(0, event.charIndex || 0);
-          const idx = prefix.trim() ? prefix.trim().split(/\s+/).length : 0;
-          wordIndex = Math.min(idx + 1, words.length);
-          const bare = w.replace(/[.,!?;:]+$/, '');
-          onWord?.({
-            word: bare,
-            index: Math.min(idx, words.length - 1),
-            total: words.length,
-            text: fullText,
-          });
-          armVisemesForWord(bare);
-        };
+        }, 5000);
 
         const finish = (reason) => {
+          if (settled) return;
+          settled = true;
           window.clearInterval(fallBackTick);
           window.clearInterval(phoneTick);
-          speaking = false;
-          currentUtter = null;
-          onViseme?.({ viseme: 'rest', word: '', charIndex: 0 });
-          onEnd?.({ reason, text: fullText });
+          window.clearInterval(keepAlive);
+          // A superseded speak() must not wipe the new utterance's state
+          if (gen === speakGen) {
+            speaking = false;
+            currentUtter = null;
+            onViseme?.({ viseme: 'rest', word: '', charIndex: 0 });
+            onEnd?.({ reason, text: fullText });
+          }
           resolve({ spoken: reason === 'end', reason });
         };
 
-        utter.onend = () => finish(cancelled ? 'cancelled' : 'end');
-        utter.onerror = (e) => {
-          if (e?.error === 'interrupted' || e?.error === 'canceled') {
+        function queueChunk() {
+          if (cancelled || gen !== speakGen) {
             finish('cancelled');
             return;
           }
-          onError?.(e?.error || 'speech error');
-          finish('error');
-        };
+          if (chunkIndex >= chunks.length) {
+            finish('end');
+            return;
+          }
+          const chunk = chunks[chunkIndex];
+          const utter = new window.SpeechSynthesisUtterance(chunk);
+          const voice = pickVoice();
+          if (voice) utter.voice = voice;
+          utter.rate = rate;
+          utter.pitch = pitch;
+          utter.volume = volume;
+          utter.lang = voice?.lang || 'en-US';
+          currentUtter = utter;
+          let chunkAdvanced = false;
 
-        try {
-          window.speechSynthesis.speak(utter);
-        } catch (err) {
-          window.clearInterval(fallBackTick);
-          window.clearInterval(phoneTick);
-          onError?.(err instanceof Error ? err.message : 'speak failed');
-          finish('error');
+          const advance = () => {
+            if (chunkAdvanced) return;
+            chunkAdvanced = true;
+            chunkIndex += 1;
+            window.setTimeout(queueChunk, 50);
+          };
+
+          utter.onstart = () => {
+            speaking = true;
+            if (chunkIndex === 0) {
+              onStart?.({ text: fullText, words });
+              if (words[0]) {
+                onWord?.({
+                  word: words[0],
+                  index: 0,
+                  total: words.length,
+                  text: fullText,
+                });
+                armVisemesForWord(words[0]);
+                wordIndex = 1;
+              }
+            }
+            try {
+              window.speechSynthesis.resume();
+            } catch {
+              /* ignore */
+            }
+          };
+
+          utter.onboundary = (event) => {
+            if (event.name !== 'word' && event.name !== 'Word') return;
+            const prior = chunks.slice(0, chunkIndex).join(' ');
+            const slice = chunk.slice(event.charIndex || 0);
+            const w = slice.split(/\s+/)[0] || '';
+            if (!w) return;
+            const prefix = `${prior} ${chunk.slice(0, event.charIndex || 0)}`;
+            const idx = prefix.trim() ? prefix.trim().split(/\s+/).length : 0;
+            wordIndex = Math.min(idx + 1, words.length);
+            const bare = w.replace(/[.,!?;:]+$/, '');
+            onWord?.({
+              word: bare,
+              index: Math.min(idx, words.length - 1),
+              total: words.length,
+              text: fullText,
+            });
+            armVisemesForWord(bare);
+          };
+
+          utter.onend = () => {
+            if (cancelled || gen !== speakGen) {
+              finish('cancelled');
+              return;
+            }
+            advance();
+          };
+          utter.onerror = (e) => {
+            if (e?.error === 'interrupted' || e?.error === 'canceled') {
+              if (cancelled || gen !== speakGen) {
+                finish('cancelled');
+                return;
+              }
+              advance();
+              return;
+            }
+            onError?.(e?.error || 'speech error');
+            finish('error');
+          };
+
+          try {
+            window.speechSynthesis.speak(utter);
+          } catch (err) {
+            onError?.(err instanceof Error ? err.message : 'speak failed');
+            finish('error');
+          }
         }
-      }, 60);
+
+        queueChunk();
+      }, 140);
     });
   }
 
@@ -231,7 +292,7 @@ export function createSpeechEngine({
      */
     tick() {
       try {
-        if (window.speechSynthesis?.speaking && window.speechSynthesis.paused) {
+        if (window.speechSynthesis?.speaking) {
           window.speechSynthesis.resume();
         }
       } catch {
@@ -242,7 +303,107 @@ export function createSpeechEngine({
 }
 
 /**
- * Turn a mind map into short, student-friendly narration chunks.
+ * Chrome/Edge often drop long SpeechSynthesis utterances after the first
+ * sentence. Split on sentence boundaries into short chunks.
+ * @param {string} text
+ * @param {number} [maxLen]
+ * @returns {string[]}
+ */
+export function splitForTts(text, maxLen = 180) {
+  const clean = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return [];
+  const limit = Math.max(80, Number(maxLen) || 180);
+  const sentences = clean
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const source = sentences.length ? sentences : [clean];
+  /** @type {string[]} */
+  const chunks = [];
+  let buf = '';
+  for (const sentence of source) {
+    if (sentence.length > limit) {
+      if (buf) {
+        chunks.push(buf.trim());
+        buf = '';
+      }
+      let rest = sentence;
+      while (rest.length > limit) {
+        let cut = rest.lastIndexOf(' ', limit);
+        if (cut < 40) cut = limit;
+        chunks.push(rest.slice(0, cut).trim());
+        rest = rest.slice(cut).trim();
+      }
+      if (rest) buf = rest;
+      continue;
+    }
+    const next = buf ? `${buf} ${sentence}` : sentence;
+    if (next.length <= limit) {
+      buf = next;
+    } else {
+      if (buf) chunks.push(buf.trim());
+      buf = sentence;
+    }
+  }
+  if (buf) chunks.push(buf.trim());
+  return chunks.length ? chunks : [clean];
+}
+
+const WEAK_MAP_LINE =
+  /^(see the lesson key idea|the idea in this farm question|your pick|that choice|the correct idea|the better idea|science)$/i;
+
+function speakableMapLine(value, max = 420) {
+  const t = clip(value, max);
+  if (!t || WEAK_MAP_LINE.test(t)) return '';
+  return t.replace(/[.…]+$/u, '').trim();
+}
+
+function buildMissCardScript(branch, index = 0) {
+  if (!branch) return '';
+  const miss = branch.index || index + 1;
+  const topic = speakableMapLine(branch.topic || branch.label, 80);
+  const question = speakableMapLine(branch.prompt || branch.question, 420);
+  const wrong = speakableMapLine(branch.studentAnswer, 180);
+  const right = speakableMapLine(branch.correctAnswer, 180);
+  const key = speakableMapLine(
+    branch.keyConcept || branch.key_concept,
+    280,
+  );
+  const look = speakableMapLine(
+    branch.keyExplain ||
+      branch.key_concept_explain ||
+      branch.rightExplain,
+    520,
+  );
+  const why = speakableMapLine(branch.why || branch.why_wrong, 400);
+  const farm = speakableMapLine(branch.farmLink || branch.farm_link, 280);
+
+  const bits = [`Miss ${miss}${topic ? `, about ${topic}` : ''}.`];
+  if (question) {
+    bits.push(
+      `The question was: ${/[.!?]$/.test(question) ? question : `${question}.`}`,
+    );
+  }
+  if (wrong) bits.push(`You picked ${wrong}.`);
+  if (right) bits.push(`The correct idea is ${right}.`);
+  if (key && key.toLowerCase() !== String(right).toLowerCase()) {
+    bits.push(`Key idea: ${key}.`);
+  }
+  if (look && look.toLowerCase() !== String(key).toLowerCase()) {
+    bits.push(`Let's look. ${look}`);
+  } else if (why) {
+    bits.push(why);
+  }
+  if (farm && farm.toLowerCase() !== String(look).toLowerCase()) {
+    bits.push(farm);
+  }
+  return bits.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Turn a mind map into student-friendly narration that reads each card.
  * Returns segments with focus targets so the map can highlight while speaking.
  * @returns {{ text: string, kind: string, branchId?: string|null, highlights: string[] }[]}
  */
@@ -265,37 +426,37 @@ export function buildMindMapNarration(map) {
     kind: 'intro',
     branchId: null,
     highlights: rootTerms,
-    text: `Hi, I'm Sage, your farm science mentor. You have ${n} incorrect answer${n === 1 ? '' : 's'} on this mind map. Explore any card while I talk — the map still works.`,
+    text: `Hi, I'm Sage, your farm science mentor. You have ${n} incorrect answer${n === 1 ? '' : 's'} on this mind map. I'll read every card. Explore while I talk — the map still works.`,
   });
 
   if (map.bigPicture || map.summary) {
-    const overviewText = String(map.bigPicture || map.summary);
-    parts.push({
-      kind: 'overview',
-      branchId: null,
-      highlights: uniqueHighlightTerms([
-        overviewText,
-        map.centralIdea,
-        map.topic,
-        map.root,
-      ]),
-      text: overviewText,
-    });
+    const overviewText = speakableMapLine(map.bigPicture || map.summary, 360);
+    if (overviewText) {
+      parts.push({
+        kind: 'overview',
+        branchId: null,
+        highlights: uniqueHighlightTerms([
+          overviewText,
+          map.centralIdea,
+          map.topic,
+          map.root,
+        ]),
+        text: overviewText,
+      });
+    }
   }
 
   branches.forEach((b, i) => {
     const miss = b.index || i + 1;
     const topic = b.topic || b.label || 'Science';
     const q = b.prompt || b.question || '';
-    const wrong = b.studentAnswer || 'your pick';
-    const right = b.correctAnswer || 'the correct idea';
+    const wrong = b.studentAnswer || '';
+    const right = b.correctAnswer || '';
     const why = b.why || b.why_wrong || '';
     const key = b.keyExplain || b.key_concept_explain || b.keyConcept || '';
     const branchId = b.id || `miss-${i}`;
-
-    let line = `Exam lock, miss ${miss}.`;
-    if (why) line += ` ${clip(why, 400)}`;
-    else line += ` You picked ${clip(wrong, 50)}. The scoring idea is ${clip(right, 50)}.`;
+    const line = buildMissCardScript(b, i);
+    if (!line) return;
 
     parts.push({
       kind: 'branch',
@@ -322,7 +483,7 @@ export function buildMindMapNarration(map) {
     kind: 'outro',
     branchId: null,
     highlights: [],
-    text: 'Say that exam line once in your own voice. Tap a card if you want the lock again.',
+    text: "That's the whole map. Tap a card if you want me to read that miss again.",
   });
 
   return parts;
@@ -394,17 +555,11 @@ export function buildMissCardNarration(branch) {
   if (!branch) return null;
   const miss = branch.index || '';
   const topic = branch.topic || 'Science';
-  const wrong = branch.studentAnswer || 'that choice';
-  const right = branch.correctAnswer || 'the better idea';
+  const wrong = branch.studentAnswer || '';
+  const right = branch.correctAnswer || '';
   const why = branch.why || '';
   const farm = branch.farmLink || branch.farm_link || '';
-  const text = [
-    why
-      ? clip(why, 400)
-      : `Let's look at miss ${miss}. You chose ${clip(wrong, 80)}.`,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const text = buildMissCardScript(branch);
 
   return {
     kind: 'branch',

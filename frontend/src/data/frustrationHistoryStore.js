@@ -5,7 +5,11 @@
  */
 import { studentStorageKey } from './mockStudents.js';
 import { frustrationLevelFromScore } from './frustrationModel.js';
-import { getCurriculumTitle, topicDisplayName } from './curriculumTopics.js';
+import {
+  chapterDisplayName,
+  chapterIdFromTopicId,
+  resolveChapterFromEngine,
+} from './curriculumTopics.js';
 
 const BASE_KEY = 'scipath_frustration_history';
 const VERSION = 1;
@@ -79,13 +83,34 @@ function clampScore(n) {
   return Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 }
 
+function clipPrompt(value, max = 220) {
+  const t = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return null;
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1).trim()}…`;
+}
+
 function isGenericTopic(value) {
   const t = String(value || '').trim().toLowerCase();
   return !t || t === 'science' || t === 'general science' || t === 'general';
 }
 
 function sampleTopicId(row) {
-  return String(row?.topicId || row?.topic || '').trim();
+  return String(row?.chapterId || row?.chapter_id || row?.topicId || row?.topic || '').trim();
+}
+
+function sampleMatchesChapter(row, filterId) {
+  const wanted = String(filterId || '').trim();
+  if (!wanted) return true;
+  const raw = sampleTopicId(row);
+  if (raw === wanted) return true;
+  const wantedChapter = chapterIdFromTopicId(wanted) || (/^G[6-9]_C\d+$/i.test(wanted) ? wanted.toUpperCase() : '');
+  const rowChapter =
+    chapterIdFromTopicId(raw) ||
+    chapterIdFromTopicId(row?.chapterId || row?.chapter_id);
+  return Boolean(wantedChapter && rowChapter && wantedChapter === rowChapter);
 }
 
 /**
@@ -145,6 +170,15 @@ export function recordFrustrationSample(sample = {}) {
     avgTimeSec: timeSec,
     incorrect: isCorrect ? 0 : 1,
     topicId: String(sample.topicId || sample.topic || '').trim() || null,
+    chapterId:
+      resolveChapterFromEngine(sample).chapterId ||
+      chapterIdFromTopicId(sample.topicId || sample.topic) ||
+      null,
+    chapter_name: String(sample.chapter_name || sample.chapterName || '').trim() || null,
+    prompt: clipPrompt(sample.prompt || sample.question),
+    questionType: String(sample.questionType || sample.question_type || '').trim() || null,
+    options: Array.isArray(sample.options) ? sample.options.slice(0, 8) : undefined,
+    isCorrect: Boolean(sample.isCorrect),
   });
   data.points = data.points.slice(-48);
 
@@ -153,7 +187,7 @@ export function recordFrustrationSample(sample = {}) {
     const prev = data.topics[topic] || {
       topic,
       topicId: topic,
-      title: topicDisplayName(topic, topic),
+      title: chapterDisplayName(topic, sample.chapter_name || topic),
       n: 0,
       avgScore: score,
       answered: 0,
@@ -167,7 +201,17 @@ export function recordFrustrationSample(sample = {}) {
     if (!isCorrect) prev.misses += 1;
     prev.lastScore = score;
     prev.level = frustrationLevelFromScore(prev.avgScore);
-    prev.title = topicDisplayName(topic, prev.title || topic);
+    const chapter = resolveChapterFromEngine({
+      ...sample,
+      topicId: topic,
+      topic,
+    });
+    prev.chapterId = chapter.chapterId || prev.chapterId || chapterIdFromTopicId(topic);
+    prev.chapter_name = chapter.chapterName || prev.chapter_name || sample.chapter_name;
+    prev.title = chapterDisplayName(
+      prev.chapterId || topic,
+      prev.chapter_name || prev.title || topic,
+    );
     data.topics[topic] = prev;
   }
 
@@ -222,7 +266,7 @@ export function frustrationDaySeries(count = 14, live = null, filters = {}) {
 function daysFromSamples(samples = [], topicId = '') {
   const byDay = new Map();
   for (const sample of samples || []) {
-    if (topicId && sampleTopicId(sample) !== topicId) continue;
+    if (topicId && !sampleMatchesChapter(sample, topicId)) continue;
     const key = dayKey(sample.at || Date.now());
     const prev = byDay.get(key) || { date: key, n: 0, score: 0, answered: 0 };
     const n = prev.n + 1;
@@ -237,7 +281,7 @@ function daysFromSamples(samples = [], topicId = '') {
 
 function applyLiveToDays(days, live, topicId = '') {
   if (!shouldApplyLive(live)) return days;
-  if (topicId && live.topicId && live.topicId !== topicId) return days;
+  if (topicId && live.topicId && !sampleMatchesChapter(live, topicId)) return days;
   const today = dayKey();
   const existing = days.find((row) => row.date === today);
   if (existing) {
@@ -263,7 +307,7 @@ function applyLiveToDays(days, live, topicId = '') {
 function filterSamples(samples = [], filters = {}) {
   const { topicId, fromMs, toMs } = normalizeFilters(filters);
   return (samples || []).filter((sample) => {
-    if (topicId && sampleTopicId(sample) !== topicId) return false;
+    if (topicId && !sampleMatchesChapter(sample, topicId)) return false;
     const at = Number(sample.at);
     if (fromMs != null && Number.isFinite(at) && at < fromMs) return false;
     if (toMs != null && Number.isFinite(at) && at > toMs) return false;
@@ -387,59 +431,139 @@ export function buildFrustrationChartModel(live = null, filters = {}) {
 export function listFrustrationTopics() {
   const data = loadFrustrationHistory();
   const ids = new Set();
-  for (const key of Object.keys(data.topics || {})) {
-    if (!isGenericTopic(key)) ids.add(key);
+  const add = (raw, extra = {}) => {
+    const chapter = resolveChapterFromEngine({ ...extra, topicId: raw, topic: raw });
+    const id = chapter.chapterId || String(raw || '').trim();
+    if (!id || isGenericTopic(id)) return;
+    ids.add(id);
+  };
+  for (const [key, row] of Object.entries(data.topics || {})) {
+    add(key, row);
   }
   for (const sample of data.samples || []) {
-    const id = sampleTopicId(sample);
-    if (!isGenericTopic(id)) ids.add(id);
+    add(sampleTopicId(sample), sample);
   }
   for (const point of data.points || []) {
-    const id = sampleTopicId(point);
-    if (!isGenericTopic(id)) ids.add(id);
+    add(sampleTopicId(point), point);
   }
   return [...ids]
     .sort((a, b) =>
-      topicDisplayName(a, a).localeCompare(topicDisplayName(b, b)),
+      chapterDisplayName(a, a).localeCompare(chapterDisplayName(b, b)),
     )
     .map((topicId) => ({
       topicId,
-      title: getCurriculumTitle(topicId) || topicDisplayName(topicId, topicId),
+      title: chapterDisplayName(topicId, topicId),
     }));
 }
 
 export function frustrationByTopic(misconceptions = []) {
   const data = loadFrustrationHistory();
-  const map = { ...data.topics };
+  const map = {};
 
-  for (const m of misconceptions || []) {
-    const topic = String(m.topicId || m.topic || '').trim();
-    if (!topic || isGenericTopic(topic)) continue;
-    const misses = Number(m.missCount) || (m.attempts || []).length || 0;
-    const prev = map[topic] || {
-      topic,
-      topicId: topic,
-      title: topicDisplayName(topic, topic),
-      n: 0,
-      avgScore: 0,
-      answered: 0,
-      misses: 0,
-      lastScore: 0,
-    };
-    prev.misses = Math.max(prev.misses, misses);
-    if (!prev.n && misses) {
-      prev.avgScore = Math.min(100, 28 + misses * 14);
-      prev.level = frustrationLevelFromScore(prev.avgScore);
+  const merge = (rawId, row = {}) => {
+    const chapter = resolveChapterFromEngine({
+      ...row,
+      topicId: rawId,
+      topic: rawId,
+    });
+    const key = chapter.chapterId || String(rawId || '').trim();
+    if (!key || isGenericTopic(key)) return;
+    const title =
+      chapter.label ||
+      chapterDisplayName(key, row.chapter_name || row.title || key);
+    const prev = map[key];
+    const n = Number(row.n) || 0;
+    const avgScore = Number(row.avgScore) || 0;
+    const misses = Number(row.misses) || 0;
+    const answered = Number(row.answered) || 0;
+    if (!prev) {
+      map[key] = {
+        topic: title,
+        topicId: key,
+        title,
+        chapterId: key,
+        chapter_name: chapter.chapterName || row.chapter_name || '',
+        n,
+        avgScore,
+        answered,
+        misses,
+        lastScore: Number(row.lastScore) || avgScore,
+        level: frustrationLevelFromScore(avgScore),
+      };
+      return;
     }
-    prev.title = topicDisplayName(topic, prev.title || topic);
-    map[topic] = prev;
+    const tn = (prev.n || 0) + n;
+    if (tn) {
+      prev.avgScore = Math.round(
+        ((prev.avgScore || 0) * (prev.n || 0) + avgScore * n) / tn,
+      );
+    }
+    prev.n = tn;
+    prev.misses = (prev.misses || 0) + misses;
+    prev.answered = (prev.answered || 0) + answered;
+    prev.title = title || prev.title;
+    prev.topic = prev.title;
+    prev.chapter_name = chapter.chapterName || prev.chapter_name;
+    prev.level = frustrationLevelFromScore(prev.avgScore);
+  };
+
+  for (const [key, row] of Object.entries(data.topics || {})) {
+    merge(key, row);
+  }
+
+  const liveByChapter = {};
+  for (const m of misconceptions || []) {
+    const attempt = (m.attempts || []).find(
+      (a) => a?.chapter_name || a?.chapter_id || a?.topicId,
+    ) || m.attempts?.[0] || {};
+    const chapter = resolveChapterFromEngine({
+      ...m,
+      ...attempt,
+      topicId: m.topicId || m.topic,
+      topic: m.topicId || m.topic,
+    });
+    const key = chapter.chapterId || String(m.topicId || m.topic || '').trim();
+    if (!key || isGenericTopic(key)) continue;
+    const misses = Number(m.missCount) || (m.attempts || []).length || 0;
+    const prev = liveByChapter[key] || { misses: 0, title: chapter.label, chapter };
+    prev.misses += misses;
+    prev.title = chapter.label || prev.title;
+    prev.chapter = chapter;
+    liveByChapter[key] = prev;
+  }
+
+  for (const [key, live] of Object.entries(liveByChapter)) {
+    const prev = map[key];
+    if (prev) {
+      prev.misses = Math.max(prev.misses || 0, live.misses || 0);
+      prev.title = live.title || prev.title;
+      prev.topic = prev.title;
+      if (!prev.n && live.misses) {
+        prev.avgScore = Math.min(100, 28 + live.misses * 14);
+        prev.level = frustrationLevelFromScore(prev.avgScore);
+      }
+      continue;
+    }
+    map[key] = {
+      topic: live.title,
+      topicId: key,
+      title: live.title,
+      chapterId: key,
+      chapter_name: live.chapter?.chapterName || '',
+      n: 0,
+      avgScore: Math.min(100, 28 + live.misses * 14),
+      answered: 0,
+      misses: live.misses,
+      lastScore: 0,
+      level: frustrationLevelFromScore(Math.min(100, 28 + live.misses * 14)),
+    };
   }
 
   return Object.values(map)
     .filter((row) => row.topic)
     .map((row) => ({
       ...row,
-      topic: topicDisplayName(row.topicId || row.topic, row.title || row.topic),
+      topic: chapterDisplayName(row.topicId || row.chapterId, row.chapter_name || row.title),
     }))
     .sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0) || (b.misses || 0) - (a.misses || 0))
     .slice(0, 8);
@@ -449,7 +573,7 @@ export function frustrationPerformancePoints(filters = {}) {
   const { topicId, fromMs, toMs } = normalizeFilters(filters);
   return loadFrustrationHistory()
     .points.filter((p) => {
-      if (topicId && sampleTopicId(p) !== topicId) return false;
+      if (topicId && !sampleMatchesChapter(p, topicId)) return false;
       const at = Number(p.at);
       if (fromMs != null && Number.isFinite(at) && at < fromMs) return false;
       if (toMs != null && Number.isFinite(at) && at > toMs) return false;
@@ -524,6 +648,11 @@ export function appendFrustrationSample(sample = {}) {
     signals: Array.isArray(sample.signals) ? sample.signals.slice(0, 8) : [],
     topicId,
     topic: topicId,
+    chapterId:
+      resolveChapterFromEngine(sample).chapterId ||
+      chapterIdFromTopicId(topicId) ||
+      null,
+    chapter_name: String(sample.chapter_name || sample.chapterName || '').trim() || null,
     at: Date.now(),
   };
   store.samples = [...store.samples, next].slice(-MAX_SAMPLES);

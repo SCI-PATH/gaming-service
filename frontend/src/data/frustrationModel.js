@@ -50,6 +50,8 @@ export const FRUSTRATION_CONFIG = Object.freeze({
   /** A single incorrect answer contributes at most this many points */
   singleMistakeCap: 10,
   agentOpenScore: 61,
+  /** Same bar as Sage: high frustration at end of farm → redo the lesson */
+  lessonRetryScore: 61,
   consecutiveWrongSoft: 2,
   consecutiveWrongHard: 3,
   retrySoft: 2,
@@ -545,4 +547,17 @@ export function shouldOpenFrustrationAgent(result) {
     result.score >= threshold &&
     result.signals.length >= FRUSTRATION_CONFIG.minSignalsForHigh
   );
+}
+
+/**
+ * End-of-level gate: high frustration means the student should learn the
+ * chapter again instead of unlocking the next lesson.
+ */
+export function shouldRetryLessonAfterFarm(scoreOrLevel) {
+  const n = Number(scoreOrLevel);
+  if (Number.isFinite(n)) {
+    return n >= (FRUSTRATION_CONFIG.lessonRetryScore ?? 61);
+  }
+  const level = String(scoreOrLevel || '').toLowerCase().replace(/\s+/g, '_');
+  return level === 'high' || level === 'very_high';
 }

@@ -1,6 +1,9 @@
 /**
  * Lightweight SVG charts for the student dashboard (no chart library).
  */
+import {
+  farmQuestionTypeLabel,
+} from '../assessmentEngine/assessmentQuizSession.js';
 
 function pickTickIndices(n) {
   if (n <= 0) return [];
@@ -129,7 +132,7 @@ export function TopicBarChart({ rows = [] }) {
   if (!rows.length) {
     return (
       <p className="research-empty">
-        Answer farm questions to see which science topics feel easier or harder.
+        Answer farm questions to see which science chapters feel easier or harder.
       </p>
     );
   }
@@ -142,7 +145,7 @@ export function TopicBarChart({ rows = [] }) {
         const tone =
           score >= 61 ? 'high' : score >= 31 ? 'moderate' : 'low';
         return (
-          <li key={row.topic}>
+          <li key={row.topicId || row.topic}>
             <div className="dash-bar-meta">
               <strong>{row.topic}</strong>
               <span>
@@ -191,131 +194,145 @@ export function AccuracyRing({ correct = 0, incorrect = 0 }) {
   );
 }
 
-export function FrustrationPerformanceChart({ points = [] }) {
-  const width = 640;
-  const height = 260;
-  const pad = { l: 56, r: 18, t: 36, b: 44 };
-  const innerW = width - pad.l - pad.r;
-  const innerH = height - pad.t - pad.b;
-  const pts = (points || []).filter(
-    (p) => p && p.score != null && p.accuracyPct != null,
-  );
+export function FrustrationPerformanceChart({
+  points = [],
+  misconceptions = [],
+}) {
+  const rows = buildQuizRoundRows(points, misconceptions);
 
-  const xy = pts.map((p, i) => ({
-    ...p,
-    i,
-    x: pad.l + (Math.max(0, Math.min(100, p.accuracyPct)) / 100) * innerW,
-    y: pad.t + innerH - (Math.max(0, Math.min(100, p.score)) / 100) * innerH,
-    mood: moodForScore(p.score),
-  }));
-
-  const path = xy
-    .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-    .join(' ');
-
-  if (!xy.length) {
+  if (!rows.length) {
     return (
       <p className="research-empty">
-        After a few farm questions, this playground fills with faces that show
-        how each quiz felt.
+        Play a farm quiz and each question will show up here: the type, the
+        question, how it felt, and whether you got it right.
       </p>
     );
   }
 
   return (
-    <div className="dash-feel-board">
-      <svg
-        className="dash-scatter-chart dash-feel-chart"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="How quizzes felt versus how many questions you got right"
-      >
-        <rect
-          x={pad.l}
-          y={pad.t}
-          width={innerW}
-          height={innerH / 2}
-          className="dash-feel-zone is-high"
-        />
-        <rect
-          x={pad.l}
-          y={pad.t + innerH / 2}
-          width={innerW}
-          height={innerH / 2}
-          className="dash-feel-zone is-low"
-        />
-        <line
-          x1={pad.l + innerW / 2}
-          x2={pad.l + innerW / 2}
-          y1={pad.t}
-          y2={pad.t + innerH}
-          className="dash-chart-guide"
-        />
-        <text x={pad.l + 8} y={pad.t + 16} className="dash-feel-hint">
-          Tough round 😣
-        </text>
-        <text
-          x={pad.l + innerW - 8}
-          y={pad.t + innerH - 10}
-          textAnchor="end"
-          className="dash-feel-hint is-good"
+    <div className="dash-quiz-rounds-wrap">
+    <ol className="dash-quiz-rounds" aria-label="Recent farm questions">
+      {rows.map((row) => (
+        <li
+          key={row.at || row.i}
+          className={`dash-quiz-round is-${row.mood.band}${row.latest ? ' is-latest' : ''}`}
         >
-          Nailed it! 🌟
-        </text>
-        {path ? <path d={path} className="dash-feel-path" fill="none" /> : null}
-        {xy.map((p) => (
-          <g key={p.at || p.i}>
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r="14"
-              className={`dash-feel-blob is-${p.mood.band}`}
-            />
-            <text
-              x={p.x}
-              y={p.y + 5}
-              textAnchor="middle"
-              className="dash-feel-emoji"
+          <span className="dash-quiz-round-face" aria-hidden>
+            {row.mood.emoji}
+          </span>
+          <div className="dash-quiz-round-body">
+            <div className="dash-quiz-round-meta">
+              <em className="dash-quiz-round-type">{row.typeLabel}</em>
+              <strong>
+                Question {row.n}
+                {row.latest ? ' · latest' : ''}
+              </strong>
+              <span>
+                {row.correct === true
+                  ? 'Got it right'
+                  : row.correct === false
+                    ? 'Missed'
+                    : `Felt ${row.mood.label.toLowerCase()}`}
+              </span>
+            </div>
+            {row.prompt ? (
+              <p className="dash-quiz-round-prompt">{row.prompt}</p>
+            ) : null}
+            <div
+              className="dash-quiz-round-meter"
+              role="img"
+              aria-label={`How hard it felt: ${row.feel} out of 100`}
             >
-              {p.mood.emoji}
-            </text>
-            <title>
-              {p.mood.label}: frustration {Math.round(p.score)} · quiz{' '}
-              {Math.round(p.accuracyPct)}%
-            </title>
-          </g>
-        ))}
-        <text x={12} y={pad.t + 14} className="dash-chart-axis">
-          Stuck
-        </text>
-        <text x={14} y={pad.t + 32} className="dash-feel-axis-emoji">
-          😤
-        </text>
-        <text x={14} y={pad.t + innerH / 2 + 6} className="dash-feel-axis-emoji">
-          😐
-        </text>
-        <text x={8} y={pad.t + innerH - 8} className="dash-chart-axis">
-          Calm
-        </text>
-        <text x={14} y={pad.t + innerH + 10} className="dash-feel-axis-emoji">
-          😊
-        </text>
-        <text
-          x={width / 2}
-          y={height - 10}
-          textAnchor="middle"
-          className="dash-chart-label"
-        >
-          Quiz stars → more right answers
-        </text>
-      </svg>
-      <ul className="dash-feel-legend" aria-hidden>
-        <li className="is-low">😊 Calm 0–30</li>
-        <li className="is-moderate">😐 A bit stuck 31–60</li>
-        <li className="is-high">😣 Whoa 61–100</li>
-      </ul>
+              <div
+                className={`dash-quiz-round-fill is-${row.mood.band}`}
+                style={{ width: `${Math.max(8, row.feel)}%` }}
+              />
+            </div>
+            <p className="dash-quiz-round-stats">
+              Felt {row.mood.label.toLowerCase()} · {row.feel} / 100
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+    <p className="dash-quiz-round-types-note">
+      Types: MCQ · True / False · Fill in the blanks · Typed answer
+    </p>
     </div>
   );
+}
+
+function buildQuizRoundRows(points = [], misconceptions = []) {
+  const attempts = (misconceptions || []).flatMap((m) =>
+    (m.attempts || []).map((a) => ({
+      at: Number(a.at) || 0,
+      prompt: a.prompt || a.question || '',
+      questionType: a.questionType || a.question_type || '',
+      options: a.options || [],
+      used: false,
+    })),
+  );
+
+  const scored = (points || []).filter((p) => p && p.score != null).slice(-8);
+  return scored.map((p, i, list) => {
+    const fromPoint = String(p.prompt || p.question || '').trim();
+    let prompt = fromPoint;
+    let questionType = p.questionType || p.question_type || '';
+    let options = Array.isArray(p.options) ? p.options : [];
+    const looksMissed = p.isCorrect === false || p.incorrect === 1;
+    if (!prompt || !questionType) {
+      const at = Number(p.at) || 0;
+      const hit =
+        attempts.find(
+          (a) => !a.used && a.at && at && Math.abs(a.at - at) < 8000,
+        ) ||
+        (looksMissed
+          ? attempts.find((a) => !a.used && a.prompt)
+          : null);
+      if (hit) {
+        hit.used = true;
+        prompt = prompt || String(hit.prompt || '').trim();
+        questionType = questionType || hit.questionType;
+        if (!options.length && Array.isArray(hit.options)) options = hit.options;
+      }
+    }
+    const mood = moodForScore(p.score);
+    const correct =
+      typeof p.isCorrect === 'boolean'
+        ? p.isCorrect
+        : p.incorrect === 1
+          ? false
+          : p.incorrect === 0
+            ? true
+            : null;
+    const typeLabel =
+      farmQuestionTypeLabel({
+        questionType,
+        question_type: questionType,
+        prompt,
+        options,
+      }) || 'Question';
+    return {
+      ...p,
+      i,
+      n: i + 1,
+      latest: i === list.length - 1,
+      mood,
+      prompt: clipQuestionLine(prompt),
+      typeLabel,
+      correct,
+      feel: Math.max(0, Math.min(100, Math.round(Number(p.score) || 0))),
+    };
+  });
+}
+
+function clipQuestionLine(text, max = 160) {
+  const t = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return '';
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1).trim()}…`;
 }
 
 function moodForScore(score) {

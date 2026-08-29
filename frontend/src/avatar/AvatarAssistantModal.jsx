@@ -225,6 +225,7 @@ export default function AvatarAssistantModal({
   const captureBaseRef = useRef('');
   const autoFetchedRef = useRef(false);
   const narratedMapKeyRef = useRef('');
+  const mapNarrateTimerRef = useRef(0);
   const mutedRef = useRef(false);
   /** Always points at latest sendMessage (mic stop-to-send). */
   const sendMessageRef = useRef(null);
@@ -594,7 +595,7 @@ export default function AvatarAssistantModal({
     ttsRef.current = tts;
     setTtsSupported(tts.supported);
 
-    const tick = window.setInterval(() => tts.tick(), 12000);
+    const tick = window.setInterval(() => tts.tick(), 5000);
 
     return () => {
       capture.stop();
@@ -709,6 +710,7 @@ export default function AvatarAssistantModal({
   const narrateMindMap = useCallback(
     async (map) => {
       if (!map || mutedRef.current || voiceMuted) return;
+      if (narratingRef.current) return;
       const key = `${map.missCount}|${(map.sourceAttempts || map.branches || [])
         .map((a) => a.prompt || a.question || a.topic)
         .join('|')}`;
@@ -731,7 +733,7 @@ export default function AvatarAssistantModal({
             break;
           }
           applySpeechFocus(seg);
-          const res = await ttsRef.current.speak(seg.text);
+          const res = await speakText(seg.text);
           if (
             narrationSessionRef.current !== session ||
             res?.reason === 'cancelled' ||
@@ -748,17 +750,25 @@ export default function AvatarAssistantModal({
         }
       }
     },
-    [applySpeechFocus, voiceMuted],
+    [applySpeechFocus, speakText, voiceMuted],
   );
 
   const handleMapChange = useCallback(
     (map) => {
       if (!map || !mapVisible) return;
-      window.setTimeout(() => {
+      if (narratingRef.current) return;
+      window.clearTimeout(mapNarrateTimerRef.current);
+      const startWhenIdle = () => {
+        if (narratingRef.current || mutedRef.current || voiceMuted) return;
+        if (ttsRef.current?.speaking) {
+          mapNarrateTimerRef.current = window.setTimeout(startWhenIdle, 350);
+          return;
+        }
         narrateMindMap(map);
-      }, 2200);
+      };
+      mapNarrateTimerRef.current = window.setTimeout(startWhenIdle, 500);
     },
-    [mapVisible, narrateMindMap],
+    [mapVisible, narrateMindMap, voiceMuted],
   );
 
   const handleMissSelect = useCallback(
@@ -815,6 +825,7 @@ export default function AvatarAssistantModal({
       focusTermsRef.current = [];
       narratingRef.current = false;
       narratedMapKeyRef.current = '';
+      window.clearTimeout(mapNarrateTimerRef.current);
       abortRef.current?.abort();
       speechRef.current?.stop();
       speechRef.current?.resetText?.();
@@ -1042,7 +1053,10 @@ export default function AvatarAssistantModal({
       ? `${opener} ${spokenChoices}.`
       : opener;
     window.setTimeout(() => {
-      if (!mutedRef.current) speakText(spokenOpen);
+      if (mutedRef.current) return;
+      // Map tour already reads every card; don't start A–D then cancel it.
+      if (sessionMap && wantsWrongMap) return;
+      speakText(spokenOpen);
     }, 350);
 
     const t = window.setTimeout(() => inputRef.current?.focus(), 120);

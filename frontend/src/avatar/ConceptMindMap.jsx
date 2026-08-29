@@ -84,9 +84,7 @@ function toDisplayBranches(map) {
           : 'no pick yet'),
       correctAnswer:
         safeScienceLine(b.correctAnswer || b.correct_answer, null) ||
-        (String(b.prompt || b.question || '').trim()
-          ? 'see the idea in this farm question'
-          : 'see the lesson key idea'),
+        'the idea in this farm question',
       why: safeScienceLine(b.why || b.why_wrong, '') || '',
       keyConcept:
         safeScienceLine(

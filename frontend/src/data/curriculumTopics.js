@@ -1041,6 +1041,95 @@ export function chapterIdFromTopicId(topicId) {
   return match ? match[1].toUpperCase() : "";
 }
 
+const CHAPTER_BY_ID = new Map();
+const CHAPTER_BY_TITLE = new Map();
+for (const topic of CURRICULUM_TOPICS) {
+  const chapterId = chapterIdFromTopicId(topic.topicId);
+  if (!chapterId || CHAPTER_BY_ID.has(chapterId)) continue;
+  const meta = {
+    chapterId,
+    chapter: topic.chapter,
+    chapterTitle: topic.chapterTitle,
+    grade: topic.grade,
+  };
+  CHAPTER_BY_ID.set(chapterId, meta);
+  const titleKey = String(topic.chapterTitle || "")
+    .trim()
+    .toLowerCase();
+  if (titleKey && !CHAPTER_BY_TITLE.has(titleKey)) {
+    CHAPTER_BY_TITLE.set(titleKey, meta);
+  }
+}
+
+export function getChapterMeta(topicIdOrChapterId) {
+  const id = String(topicIdOrChapterId || "").trim();
+  if (!id) return null;
+  const topic = TOPIC_BY_ID.get(id);
+  if (topic) {
+    const chapterId = chapterIdFromTopicId(topic.topicId);
+    return CHAPTER_BY_ID.get(chapterId) || {
+      chapterId,
+      chapter: topic.chapter,
+      chapterTitle: topic.chapterTitle,
+      grade: topic.grade,
+    };
+  }
+  const chapterId = chapterIdFromTopicId(id) || (/^G[6-9]_C\d+$/i.test(id) ? id.toUpperCase() : "");
+  return chapterId ? CHAPTER_BY_ID.get(chapterId) || null : null;
+}
+
+export function getChapterMetaByTitle(chapterName) {
+  const key = String(chapterName || "")
+    .trim()
+    .toLowerCase();
+  if (!key) return null;
+  return CHAPTER_BY_TITLE.get(key) || null;
+}
+
+/**
+ * Official assessment-engine chapter title (e.g. "Plant Diversity"),
+ * not the skill/curriculumTitle used on farm launch cards.
+ */
+export function chapterDisplayName(topicIdOrChapterId, fallback = "") {
+  const engineName = String(fallback || "").trim();
+  const meta =
+    getChapterMeta(topicIdOrChapterId) || getChapterMetaByTitle(engineName);
+  if (meta?.chapterTitle) {
+    return `Ch.${meta.chapter}: ${meta.chapterTitle}`;
+  }
+  if (engineName && !/^G[6-9]_C\d+/i.test(engineName)) return engineName;
+  return String(topicIdOrChapterId || engineName || "").trim();
+}
+
+/** Resolve chapter id + official name from an IAE quiz / attempt payload. */
+export function resolveChapterFromEngine(source = {}) {
+  const topicId = pickCanonicalTopicId(
+    source.chapter_id,
+    source.chapterId,
+    source.topicId,
+    source.topic_id,
+    source.served_topic_id,
+    source.topic,
+  );
+  const engineName = String(
+    source.chapter_name || source.chapterName || source.chapter || "",
+  ).trim();
+  const meta =
+    getChapterMeta(source.chapter_id || source.chapterId || topicId) ||
+    getChapterMetaByTitle(engineName);
+  const chapterId =
+    meta?.chapterId ||
+    chapterIdFromTopicId(source.chapter_id || source.chapterId || topicId) ||
+    "";
+  const chapterName = engineName || meta?.chapterTitle || "";
+  return {
+    chapterId,
+    chapterName,
+    chapter: meta?.chapter || null,
+    label: chapterDisplayName(chapterId || topicId, chapterName),
+  };
+}
+
 export function isCurriculumTopicId(value) {
   const id = String(value || "").trim();
   if (TOPIC_BY_ID.has(id)) return true;

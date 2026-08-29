@@ -191,6 +191,9 @@ export function buildLearningPathReturnUrl({
   nextLessonId,
   nextChapterTitle,
   unlockedLabels,
+  retryLesson = false,
+  frustrationScore = null,
+  frustrationLevel = '',
 } = {}) {
   const launch = readStoredLaunch();
   const app = getScipathAppUrl();
@@ -206,10 +209,24 @@ export function buildLearningPathReturnUrl({
   url.searchParams.set('level', String(Math.max(1, Number(levelId) || 1)));
   const title = chapterTitle || launch.chapterTitle;
   if (title) url.searchParams.set('chapterTitle', title);
-  const nextId = nextLessonId || launch.nextLessonId;
-  if (nextId) url.searchParams.set('nextLessonId', nextId);
-  const nextTitle = nextChapterTitle || launch.nextChapterTitle;
-  if (nextTitle) url.searchParams.set('nextTitle', nextTitle);
+  const retry = Boolean(retryLesson);
+  if (retry) {
+    url.searchParams.set('retryLesson', '1');
+  } else {
+    const nextId = nextLessonId || launch.nextLessonId;
+    if (nextId) url.searchParams.set('nextLessonId', nextId);
+    const nextTitle = nextChapterTitle || launch.nextChapterTitle;
+    if (nextTitle) url.searchParams.set('nextTitle', nextTitle);
+  }
+  if (Number.isFinite(Number(frustrationScore))) {
+    url.searchParams.set(
+      'frustrationScore',
+      String(Math.round(Number(frustrationScore))),
+    );
+  }
+  if (frustrationLevel) {
+    url.searchParams.set('frustrationLevel', String(frustrationLevel));
+  }
   const labels = Array.isArray(unlockedLabels) ? unlockedLabels : newlyUnlockedLabels(levelId);
   if (labels.length) url.searchParams.set('unlocked', labels.join(','));
   return url.toString();

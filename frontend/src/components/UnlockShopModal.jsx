@@ -15,6 +15,7 @@ export default function UnlockShopModal({
   performance,
   onClose,
   returnToLearningPath = false,
+  retryLesson = false,
   chapterTitle = '',
   nextChapterTitle = '',
 }) {
@@ -70,7 +71,11 @@ export default function UnlockShopModal({
         <header className="unlock-shop-head">
           <div>
             <p className="unlock-shop-kicker">
-              {chapterTitle
+              {retryLesson
+                ? chapterTitle
+                  ? `Try this chapter again · ${chapterTitle}`
+                  : 'Try this lesson again'
+                : chapterTitle
                 ? `Chapter complete · ${chapterTitle}`
                 : 'Level complete'}
             </p>
@@ -89,10 +94,14 @@ export default function UnlockShopModal({
         </header>
 
         <p className="unlock-shop-hint">
-          {returnToLearningPath
+          {returnToLearningPath && retryLesson
+            ? 'This farm felt tough. After the shop you will go back to the lesson and learn it again before the next chapter unlocks.'
+            : returnToLearningPath
             ? `Bought items will appear on your next chapter farm. After this shop you return to the learning path${
                 nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ''
               }.`
+            : retryLesson
+            ? 'This farm felt tough. After the shop you will play this same level again so you can keep practicing.'
             : 'Prices adapt to how this level went: stronger quiz results raise prices; higher support need lowers them so unlocks stay reachable. Bought items appear on your next farm — no extra quests for them.'}
         </p>
 
@@ -140,7 +149,13 @@ export default function UnlockShopModal({
             className="unlock-shop-continue"
             onClick={onClose}
           >
-            {returnToLearningPath ? 'Return to Learning Path' : 'Continue to Forest'}
+            {returnToLearningPath
+              ? retryLesson
+                ? 'Learn this lesson again'
+                : 'Go to the next lesson'
+              : retryLesson
+                ? 'Play this level again'
+                : 'Continue to Forest'}
           </button>
         </footer>
       </div>

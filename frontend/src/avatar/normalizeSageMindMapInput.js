@@ -462,6 +462,8 @@ export function extractTypedCorrectAnswer(source = {}) {
     q.correct_answer,
     grade?.ideal_answer,
     grade?.idealAnswer,
+    grade?.grade?.ideal_answer,
+    grade?.grade?.idealAnswer,
     grade?.model_answer,
     grade?.correct_answer,
     grade?.correctAnswer,
@@ -520,7 +522,9 @@ function typedCompleteness(source, isCorrect) {
 }
 
 function stripChoiceLetterPrefix(text) {
-  return compactSpaces(text).replace(/^(?:option\s*)?[A-Da-d][.)]\s+/, '');
+  return compactSpaces(text)
+    .replace(/^(?:option\s*)?\(?[A-Da-d]\)?\s*[.)]\s+/i, '')
+    .replace(/^(?:option\s*)?[A-Da-d]\s*[—–\-:]+\s+/i, '');
 }
 
 function letterOnlyIndex(text) {
@@ -535,7 +539,7 @@ function resolveChoiceToOptionText(trimmed, options) {
   if (idx >= 0 && options[idx]) {
     return optionText(options[idx]) || compactSpaces(options[idx]?.text);
   }
-  const lead = trimmed.match(/^[A-Da-d][.)]\s+(.+)$/);
+  const lead = trimmed.match(/^[A-Da-d](?:[.)]|[\s]*[—–\-:]+)\s+(.+)$/);
   if (lead) return compactSpaces(lead[1]);
   return trimmed;
 }

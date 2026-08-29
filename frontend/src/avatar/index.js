@@ -42,6 +42,7 @@ export { fetchAiMindMap } from './fetchAiMindMap.js';
 export { default as SageAvatar } from './SageAvatar.jsx';
 export {
   createSpeechEngine,
+  splitForTts,
   buildMindMapNarration,
   buildMissCardNarration,
 } from './createSpeechEngine.js';

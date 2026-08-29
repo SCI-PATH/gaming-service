@@ -98,10 +98,17 @@ export function extractQuestionFacts(questionData) {
     options: freeText ? [] : options.map((o) => o.text),
     correctIndex,
     correctAnswer: freeText
-      ? normalized.correctAnswer || questionData.correctAnswer || null
-      : questionData.correctAnswer || correct?.text || null,
+      ? normalized.correctAnswer ||
+        questionData.correctAnswer ||
+        questionData.grade?.ideal_answer ||
+        questionData.gradePayload?.ideal_answer ||
+        null
+      : normalized.correctAnswer ||
+        questionData.correctAnswer ||
+        correct?.text ||
+        null,
     acceptedAnswers: freeText ? normalized.acceptedAnswers : undefined,
-    studentAnswer: freeText ? normalized.studentAnswer || null : undefined,
+    studentAnswer: normalized.studentAnswer || (freeText ? null : undefined),
     completeness: typed ? normalized.completeness : undefined,
     missingKeywords: typed ? normalized.missingKeywords : undefined,
   };
@@ -115,7 +122,9 @@ export function buildMissAttempt(questionData, selectedText = null) {
       questionData?.studentAnswer ??
       questionData?.blanks ??
       selectedText,
-    correctAnswer: questionData?.correctAnswer,
+    correctAnswer:
+      questionData?.sageAssessment?.correctAnswer ||
+      questionData?.correctAnswer,
     acceptedAnswers: questionData?.acceptedAnswers,
     grade: questionData?.grade || questionData?.gradePayload,
     completeness: questionData?.completeness,
@@ -128,14 +137,17 @@ export function buildMissAttempt(questionData, selectedText = null) {
   const fillIn = normalized.questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
   const typed = normalized.questionType === SAGE_QUESTION_TYPES.TYPED_ANSWER;
   const freeText = fillIn || typed;
-  const studentAnswer = freeText
-    ? normalized.studentAnswer ||
-      (typeof selectedText === 'string' ? selectedText.trim() : '') ||
-      '(timed out / no selection)'
-    : selectedText || '(timed out / no selection)';
-  const correctAnswer = freeText
-    ? normalized.correctAnswer || null
-    : safeScienceLine(facts?.correctAnswer, null);
+  const studentAnswer =
+    normalized.studentAnswer ||
+    (typeof selectedText === 'string' ? selectedText.trim() : '') ||
+    '(timed out / no selection)';
+  const correctAnswer =
+    normalized.correctAnswer ||
+    (freeText
+      ? questionData?.grade?.ideal_answer ||
+        questionData?.gradePayload?.ideal_answer ||
+        null
+      : safeScienceLine(facts?.correctAnswer, null));
 
   if (!facts || !facts.prompt) {
     return {
@@ -153,6 +165,11 @@ export function buildMissAttempt(questionData, selectedText = null) {
       completeness: typed ? normalized.completeness : undefined,
       missingKeywords: typed ? normalized.missingKeywords : undefined,
       hint: questionData?.hint || null,
+      chapter_name: questionData?.chapter_name || questionData?.chapter || null,
+      chapter_id:
+        questionData?.chapter_id ||
+        questionData?.chapterId ||
+        null,
       at: Date.now(),
     };
   }
@@ -173,6 +190,16 @@ export function buildMissAttempt(questionData, selectedText = null) {
     missingKeywords: typed ? normalized.missingKeywords : undefined,
     hint: facts.hint,
     grade: facts.grade,
+    chapter_name:
+      questionData?.chapter_name ||
+      questionData?.chapter ||
+      facts.chapter_name ||
+      null,
+    chapter_id:
+      questionData?.chapter_id ||
+      questionData?.chapterId ||
+      facts.chapter_id ||
+      null,
     at: Date.now(),
   };
 }
@@ -409,13 +436,21 @@ export function buildPersonalizedMindMap({
         friendlyWrongAnswer(a.studentAnswer, 80) ||
         a.studentAnswer ||
         'no pick yet';
+    const fromGrade =
+      a.grade?.ideal_answer ||
+      a.grade?.idealAnswer ||
+      a.canonicalCorrectAnswer ||
+      '';
     const cleanRight = freeText
       ? safeScienceLine(a.correctAnswer, null) ||
+        safeScienceLine(fromGrade, null) ||
         a.correctAnswer ||
-        'see the lesson key idea'
+        scienceKeyIdea(a) ||
+        'the idea in this farm question'
       : shortConceptLabel(a.correctAnswer, 48) ||
         safeScienceLine(a.correctAnswer, null) ||
-        'see the lesson key idea';
+        scienceKeyIdea(a) ||
+        'the idea in this farm question';
     const related = catalogRelated(t, cleanRight, usedRelated);
     const conceptual = {
       ...a,

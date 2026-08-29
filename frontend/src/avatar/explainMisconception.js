@@ -266,6 +266,20 @@ export function unpackScienceClaim(prompt, topic = '') {
       rejectFalse: 'Calling food-making “respiration” mixes up two processes.',
     };
   }
+  if (/charg/i.test(blob) && /rub|friction|transfer/i.test(blob)) {
+    return {
+      fact: 'When two objects are rubbed together, electrons can move from one surface to the other. That transfer of charge can leave one object positive and the other negative.',
+      rejectFalse:
+        'Rubbing does not create charge from nothing — electrons move from one object to the other.',
+    };
+  }
+  if (/capacitor|store.{0,40}(static |electric )?charg/i.test(blob)) {
+    return {
+      fact: 'A capacitor stores electrical energy by holding opposite charges on two plates separated by an insulator.',
+      rejectFalse:
+        'A resistor opposes current; it does not store charge the way a capacitor does.',
+    };
+  }
   return null;
 }
 
@@ -336,6 +350,22 @@ const STUDENT_WORLD_IDEAS = [
       'Hydrogen is the lightest element; in plants it arrives as part of water, not as a balloon-style gas the leaf “breathes in” to make food.',
     mismatch:
       'Leaves do not take in hydrogen gas the way they take in carbon dioxide for photosynthesis.',
+  },
+  {
+    test: /\bresistor\b/,
+    label: 'resistor',
+    purpose: 'opposing the flow of electric current',
+    what: 'A resistor is a circuit part that opposes the flow of electric current.',
+    means: 'It resists charge flow; it does not store charge.',
+    usedFor: 'Resistors control how much current can pass in a circuit.',
+    how: 'Electrical energy passing through a resistor is often changed into heat.',
+    example: 'A dimmer or a heating element uses resistance, not charge storage.',
+    bodyShort:
+      'A resistor opposes electric current. It does not store electrical charge.',
+    bodyFull:
+      'A resistor is a circuit component that opposes the flow of electric current. That opposition can change electrical energy into heat. Storing charge is the job of a capacitor, not a resistor.',
+    mismatch:
+      'Resisting current is not the same job as storing electrical charge.',
   },
   {
     test: /store water|storing water|leaves that store|leaves to store|water in leaves|succulent|fleshy leaf/,
@@ -658,6 +688,20 @@ export function lookupStudentIdea(wrong) {
 }
 
 const CORRECT_WORLD_IDEAS = [
+  {
+    test: /\bcapacitor\b/,
+    label: 'capacitor',
+    purpose: 'storing electrical charge',
+    what: 'A capacitor stores electrical energy as separated electric charge.',
+    means: 'Opposite charges collect on two plates with an insulator between them.',
+    usedFor: 'It holds charge for a time and can release it later in a circuit.',
+    how: 'The plates store opposite charges; that stored charge is electrical energy.',
+    example: 'A camera flash can draw stored charge from a capacitor.',
+    bodyShort:
+      'A capacitor stores electrical charge on two plates separated by an insulator.',
+    bodyFull:
+      'A capacitor stores electrical energy by holding opposite charges on two plates separated by an insulator. That stored charge can later flow in a circuit. A resistor does not do this job — it opposes current instead of storing charge.',
+  },
   {
     test: /carbon dioxide|co2|co₂/,
     what: 'Carbon dioxide is a gas found in air.',
@@ -1051,8 +1095,14 @@ export function questionJob(attempt = {}) {
       };
     }
     return {
-      verbPhrase: `match “${clip(right, 48)}”`,
-      rightHow: `This question is asking for ${right}. ${clip(prompt, 110)}`,
+      verbPhrase: 'match the science job in the question',
+      asking: claim?.fact
+        ? firstSentence(claim.fact)
+        : stemIntent(prompt).asking,
+      rightHow:
+        claim?.fact ||
+        hint ||
+        stemIntent(prompt).asking,
     };
   }
   return {
@@ -1128,9 +1178,13 @@ function fiveStepClip(band) {
   return 640;
 }
 
-/** Strip MCQ letters like "B." so we never shout the option key. */
+/** Strip MCQ letters like "B." or "C — Capacitor" so we never shout the option key. */
 export function displayChoice(text) {
-  return norm(String(text || '').replace(/^\(?[A-Da-d]\)?[.)]\s+/, ''));
+  return norm(
+    String(text || '')
+      .replace(/^(?:option\s*)?\(?[A-Da-d]\)?\s*[.)]\s+/i, '')
+      .replace(/^(?:option\s*)?[A-Da-d]\s*[—–\-:]+\s+/i, ''),
+  );
 }
 
 export function shortConceptLabel(text, max = 42) {
@@ -1396,9 +1450,19 @@ export function scienceKeyIdea(attempt = {}) {
   if (idea?.what) return firstSentence(idea.what);
   if (claim?.fact) return firstSentence(claim.fact);
   const job = questionJob(attempt);
-  if (job?.purpose) return job.purpose;
-  if (job?.rightHow) return firstSentence(job.rightHow);
-  if (right && !isTrueFalseToken(right)) return clip(right, 48);
+  if (job?.purpose && !/^this question is asking for /i.test(job.purpose)) {
+    return job.purpose;
+  }
+  if (job?.asking && !/^this question is asking for /i.test(job.asking)) {
+    return firstSentence(job.asking);
+  }
+  if (
+    job?.rightHow &&
+    !/^this question is asking for /i.test(job.rightHow) &&
+    !/^[A-D]\s*[—–-]/.test(job.rightHow)
+  ) {
+    return firstSentence(job.rightHow);
+  }
   return clip(attempt.topic || 'This science idea', 40);
 }
 

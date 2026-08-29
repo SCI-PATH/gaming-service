@@ -19,7 +19,8 @@ import {
 } from '../data/frustrationHistoryStore.js';
 import { evaluateStudentState } from './evaluateStudentState.js';
 import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
-import { pickCanonicalTopicId } from '../data/curriculumTopics.js';
+import { chapterIdFromTopicId, pickCanonicalTopicId } from '../data/curriculumTopics.js';
+import { farmQuestionType } from '../assessmentEngine/assessmentQuizSession.js';
 import {
   emptyPreferences,
   extractLearningPreferences,
@@ -29,7 +30,6 @@ import {
   usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
   buildSageAssessment,
-} from './normalizeSageMindMapInput.js';
 } from './normalizeSageMindMapInput.js';
 import { recordIncorrectMindMap } from './mindMapHistoryStore.js';
 import { classifyPerformanceTier } from './performanceTier.js';
@@ -223,6 +223,21 @@ export function useBehavioralTelemetry({
         lastCorrectAnswer: attempt.correctAnswer,
         lastOptions: attempt.options || [],
         hint: attempt.hint || prev.hint || null,
+        chapter_name:
+          questionData?.chapter_name ||
+          questionData?.chapter ||
+          attempt.chapter_name ||
+          prev.chapter_name ||
+          null,
+        chapter_id:
+          chapterIdFromTopicId(
+            questionData?.chapter_id ||
+              questionData?.chapterId ||
+              attempt.chapter_id ||
+              topic,
+          ) ||
+          prev.chapter_id ||
+          null,
       };
       misconceptionsRef.current.set(topic, next);
       const list = listMisconceptions();
@@ -416,6 +431,8 @@ export function useBehavioralTelemetry({
         signals: fr.signals || [],
         topicId,
         topic: topicId,
+        chapterId: chapterIdFromTopicId(topicId) || null,
+        chapter_id: chapterIdFromTopicId(topicId) || null,
       });
     },
     [levelId],
@@ -883,6 +900,15 @@ export function useBehavioralTelemetry({
         launchTopicId ||
         null;
       const topic = topicId;
+      const chapterId =
+        chapterIdFromTopicId(
+          questionData?.chapter_id ||
+            questionData?.chapterId ||
+            topicId,
+        ) || null;
+      const chapterName =
+        String(questionData?.chapter_name || questionData?.chapter || '').trim() ||
+        null;
       if (questionData) lastQuizDataRef.current = questionData;
 
       pushBehaviorEvent({
@@ -966,6 +992,13 @@ export function useBehavioralTelemetry({
           level: snapCorrect.frustration_level,
           topic,
           topicId: topic,
+          chapterId,
+          chapter_id: chapterId,
+          chapter_name: chapterName,
+          prompt: questionData?.prompt || questionData?.question || null,
+          question: questionData?.prompt || questionData?.question || null,
+          questionType: farmQuestionType(questionData) || questionData?.questionType || null,
+          options: Array.isArray(questionData?.options) ? questionData.options : undefined,
           isCorrect: true,
           timeSec: elapsedSec,
           hints: usedHint ? 1 : 0,
@@ -1102,6 +1135,13 @@ export function useBehavioralTelemetry({
         level: snap.frustration_level,
         topic,
         topicId: topic,
+        chapterId,
+        chapter_id: chapterId,
+        chapter_name: chapterName,
+        prompt: questionData?.prompt || questionData?.question || null,
+        question: questionData?.prompt || questionData?.question || null,
+        questionType: farmQuestionType(questionData) || questionData?.questionType || null,
+        options: Array.isArray(questionData?.options) ? questionData.options : undefined,
         isCorrect: false,
         timeSec: elapsedSec,
         hints: usedHint ? 1 : 0,

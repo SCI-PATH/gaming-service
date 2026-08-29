@@ -587,6 +587,33 @@ describe('five-step teaching order', () => {
     assert.match(lesson.comparison, /true|two seed|naming/i);
   });
 
+  it('does not dump C — Capacitor as the mind-map key idea', () => {
+    const attempt = {
+      prompt: 'What device is used to store static electric charges?',
+      studentAnswer: 'A — Resistor',
+      correctAnswer: 'C — Capacitor',
+      questionType: 'MCQ',
+      options: ['Resistor', 'Switch', 'Capacitor', 'Wire'],
+      topic: 'Static Electricity',
+    };
+    const key = scienceKeyIdea(attempt);
+    assert.equal(/C — Capacitor|asking for C/i.test(key), false);
+    assert.match(key, /capacitor|store|charg/i);
+  });
+
+  it('uses charge-transfer science for a thin typed miss, not a placeholder', () => {
+    const key = scienceKeyIdea({
+      prompt:
+        'Describe the process of how charges are transferred when two objects are rubbed against each other.',
+      studentAnswer: 'Um',
+      correctAnswer: '',
+      questionType: 'ShortAnswer',
+      topic: 'Static Electricity',
+    });
+    assert.equal(/see the lesson key idea/i.test(key), false);
+    assert.match(key, /electron|charg|rub/i);
+  });
+
   it('does not generate local scientific teaching fields — Grok owns those', () => {
     const turn = composeTutorTurn({
       studentMessage: 'why?',

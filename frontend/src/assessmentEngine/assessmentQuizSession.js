@@ -121,7 +121,14 @@ export function asQuestionType(value) {
   ) {
     return 'TrueFalse';
   }
-  if (normalized === 'shortanswer') return 'ShortAnswer';
+  if (
+    normalized === 'shortanswer' ||
+    normalized === 'typedanswer' ||
+    normalized === 'typed' ||
+    normalized === 'freeform'
+  ) {
+    return 'ShortAnswer';
+  }
   if (
     normalized === 'multiblank' ||
     normalized === 'fillintheblank' ||
@@ -131,6 +138,45 @@ export function asQuestionType(value) {
     return 'MultiBlank';
   }
   return undefined;
+}
+
+/** Farm quiz type for dashboard rows: MCQ | TrueFalse | MultiBlank | ShortAnswer */
+export function farmQuestionType(source = {}) {
+  const typed =
+    asQuestionType(source.questionType) ||
+    asQuestionType(source.question_type) ||
+    asQuestionType(source.type);
+  if (typed) return typed;
+  const options = Array.isArray(source.options) ? source.options : [];
+  const labels = options.map((opt) => {
+    if (opt == null) return '';
+    if (typeof opt === 'string') return opt.trim().toLowerCase();
+    return String(opt.text || opt.label || opt.value || '').trim().toLowerCase();
+  });
+  if (
+    labels.length === 2 &&
+    labels.includes('true') &&
+    labels.includes('false')
+  ) {
+    return 'TrueFalse';
+  }
+  if (options.length >= 2) return 'MCQ';
+  const prompt = String(source.prompt || source.question || '');
+  if (/_{3,}|\(\s*\)|blank/i.test(prompt)) return 'MultiBlank';
+  if (options.length === 0 && prompt) return 'ShortAnswer';
+  return undefined;
+}
+
+export function farmQuestionTypeLabel(typeOrSource) {
+  const kind =
+    typeof typeOrSource === 'string' || !typeOrSource
+      ? asQuestionType(typeOrSource) || farmQuestionType({ questionType: typeOrSource })
+      : farmQuestionType(typeOrSource);
+  if (kind === 'MCQ') return 'MCQ';
+  if (kind === 'TrueFalse') return 'True / False';
+  if (kind === 'MultiBlank') return 'Fill in the blanks';
+  if (kind === 'ShortAnswer') return 'Typed answer';
+  return '';
 }
 
 function asPromptString(value) {
@@ -356,6 +402,14 @@ export function mapAssessmentQuestion(rawQuestion) {
       getCurrentStudent()?.topicId,
       getCurrentStudent()?.topic_id,
     ) || null;
+  const chapterId =
+    chapterIdFromTopicId(
+      q.chapter_id ||
+        payload.chapter_id ||
+        topicId ||
+        getCurrentStudent()?.chapterId ||
+        getCurrentStudent()?.chapter_id,
+    ) || null;
 
   const mapped = {
     id,
@@ -381,6 +435,8 @@ export function mapAssessmentQuestion(rawQuestion) {
       null,
     chapter: chapterName,
     chapter_name: chapterName,
+    chapter_id: chapterId,
+    chapterId,
     skill,
     sub_concept: subConcept,
     remoteGrade: true,

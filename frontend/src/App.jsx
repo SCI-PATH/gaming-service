@@ -67,6 +67,7 @@ import {
   loadFarmRun,
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
+import { shouldRetryLessonAfterFarm } from './data/frustrationModel.js';
 import {
   getChapterLaunch,
   isLearningPathLinked,
@@ -1326,18 +1327,32 @@ export default function App() {
       setShopOpen(false);
       emitUnlockShopClose();
       const launch = getChapterLaunch();
+      const frustrationScore = Number(telemetrySession.frustrationScore) || 0;
+      const frustrationLevel = telemetrySession.frustrationLevel || 'low';
+      const retryLesson =
+        shouldRetryLessonAfterFarm(frustrationScore) ||
+        shouldRetryLessonAfterFarm(frustrationLevel);
       returnToLearningPath({
         lessonId: launch.lessonId,
         levelId,
         chapterTitle: launch.chapterTitle,
-        nextLessonId: launch.nextLessonId,
-        nextChapterTitle: launch.nextChapterTitle,
+        nextLessonId: retryLesson ? '' : launch.nextLessonId,
+        nextChapterTitle: retryLesson ? '' : launch.nextChapterTitle,
+        retryLesson,
+        frustrationScore,
+        frustrationLevel,
         unlockedLabels: newlyUnlockedLabels(levelId).length
           ? newlyUnlockedLabels(levelId)
           : ownedUnlockLabels(),
       });
     },
-    [farm.levelId, farm.earnings, farm.currentMoney],
+    [
+      farm.levelId,
+      farm.earnings,
+      farm.currentMoney,
+      telemetrySession.frustrationScore,
+      telemetrySession.frustrationLevel,
+    ],
   );
 
   const handleShopClose = useCallback(() => {
@@ -1348,7 +1363,12 @@ export default function App() {
       });
       return;
     }
-    const nextLevelId = Math.max(1, (farm.levelId || 1) + 1);
+    const retryLesson =
+      shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
+      shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel);
+    const nextLevelId = retryLesson
+      ? Math.max(1, farm.levelId || 1)
+      : Math.max(1, (farm.levelId || 1) + 1);
     const cash = Math.max(
       0,
       Number(farm.earnings ?? farm.currentMoney) || 0,
@@ -1390,6 +1410,8 @@ export default function App() {
     farm.currentMoney,
     refreshChallenges,
     handleReturnToLearningPath,
+    telemetrySession.frustrationScore,
+    telemetrySession.frustrationLevel,
   ]);
 
   useEffect(() => {
@@ -1580,6 +1602,10 @@ export default function App() {
             performance={shopPerformance}
             onClose={handleShopClose}
             returnToLearningPath={pathLinked}
+            retryLesson={
+              shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
+              shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
+            }
             chapterTitle={chapterLaunch.chapterTitle}
             nextChapterTitle={chapterLaunch.nextChapterTitle}
           />

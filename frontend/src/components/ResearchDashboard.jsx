@@ -15,7 +15,7 @@ import {
 } from '../data/frustrationHistoryStore.js';
 import { buildSageDashboardAdvice } from '../data/sageDashboardAdvice.js';
 import { frustrationLevelFromScore } from '../data/frustrationModel.js';
-import { topicDisplayName } from '../data/curriculumTopics.js';
+import { chapterDisplayName, chapterIdFromTopicId } from '../data/curriculumTopics.js';
 import SageAvatar from '../avatar/SageAvatar.jsx';
 import { createSpeechEngine } from '../avatar/createSpeechEngine.js';
 import { friendlyStudentName } from '../avatar/kidFriendlySpeech.js';
@@ -95,6 +95,10 @@ export default function ResearchDashboard({
   }, [lessonFingerprint, liveScore]);
 
   const launchTopicId = student?.topicId || student?.topic_id || null;
+  const launchChapterId =
+    chapterIdFromTopicId(
+      student?.chapterId || student?.chapter_id || launchTopicId,
+    ) || launchTopicId;
   const chartFilters = useMemo(
     () => ({
       topicId: topicFilter,
@@ -115,7 +119,7 @@ export default function ResearchDashboard({
           correct,
           incorrect,
           accuracyPct,
-          topicId: launchTopicId,
+          topicId: launchChapterId,
         },
         chartFilters,
       ),
@@ -126,7 +130,7 @@ export default function ResearchDashboard({
       correct,
       incorrect,
       accuracyPct,
-      launchTopicId,
+      launchChapterId,
       chartFilters,
       historyTick,
     ],
@@ -134,17 +138,18 @@ export default function ResearchDashboard({
 
   const topicOptions = useMemo(() => {
     const rows = listFrustrationTopics();
-    if (
-      launchTopicId &&
-      !rows.some((row) => row.topicId === launchTopicId)
-    ) {
+    const launchId = launchChapterId;
+    if (launchId && !rows.some((row) => row.topicId === launchId)) {
       rows.unshift({
-        topicId: launchTopicId,
-        title: topicDisplayName(launchTopicId, launchTopicId),
+        topicId: launchId,
+        title: chapterDisplayName(
+          launchId,
+          student?.chapterTitle || launchId,
+        ),
       });
     }
     return rows;
-  }, [historyTick, misconceptions, launchTopicId]);
+  }, [historyTick, misconceptions, launchChapterId, student?.chapterTitle]);
 
   const topicRows = useMemo(
     () => frustrationByTopic(misconceptions),
@@ -166,7 +171,7 @@ export default function ResearchDashboard({
           accuracyPct,
           retries: metrics.retries ?? summary.ddaMisses ?? 0,
           avgTimeSec: metrics.avgTimeSec,
-          topicId: launchTopicId,
+          topicId: launchChapterId,
         },
       ];
     }
@@ -181,7 +186,7 @@ export default function ResearchDashboard({
     topicFilter,
     datePreset,
     customDate,
-    launchTopicId,
+    launchChapterId,
     historyTick,
   ]);
   const streak = useMemo(() => learningStreak(), [historyTick]);
@@ -346,12 +351,12 @@ export default function ResearchDashboard({
 
       <section className="dash-filters" aria-label="Filter frustration charts">
         <label className="dash-filter">
-          <span>Topic</span>
+          <span>Chapter</span>
           <select
             value={topicFilter}
             onChange={(e) => setTopicFilter(e.target.value)}
           >
-            <option value="">All topics</option>
+            <option value="">All chapters</option>
             {topicOptions.map((row) => (
               <option key={row.topicId} value={row.topicId}>
                 {row.title}
@@ -410,7 +415,7 @@ export default function ResearchDashboard({
       </section>
       {topicFilter || customDate || datePreset !== 'all' ? (
         <p className="dash-filter-summary">
-          Showing {topicFilter ? topicDisplayName(topicFilter, topicFilter) : 'all topics'}
+          Showing {topicFilter ? chapterDisplayName(topicFilter, topicFilter) : 'all chapters'}
           {customDate
             ? ` on ${customDate}`
             : datePreset === 'today'
@@ -443,7 +448,7 @@ export default function ResearchDashboard({
 
         <article className="research-panel">
           <header className="research-panel-head">
-            <h3>Frustration by topic</h3>
+            <h3>Frustration by chapter</h3>
             <p>Higher bars mean that chapter felt heavier</p>
           </header>
           <TopicBarChart rows={topicRows} />
@@ -500,18 +505,20 @@ export default function ResearchDashboard({
 
       <article className="research-panel research-panel-full dash-feel-panel">
         <header className="research-panel-head">
-          <h3>How quizzes felt</h3>
+          <h3>Recent questions</h3>
           <p>
-            Each face is a recent quiz. Right = more stars. Up = it felt harder.
-            Follow the dotted path to see your journey.
+            Each line is one farm question. The badge is the type: MCQ, True /
+            False, Fill in the blanks, or Typed answer.
           </p>
         </header>
-        {perfPoints.some((p) => p.accuracyPct != null) ? (
-          <FrustrationPerformanceChart points={perfPoints} />
+        {perfPoints.some((p) => p.score != null) ? (
+          <FrustrationPerformanceChart
+            points={perfPoints}
+            misconceptions={misconceptions}
+          />
         ) : (
           <p className="research-empty">
-            Play a few farm questions and this playground fills with faces —
-            calm, a bit stuck, or whoa — next to your quiz stars.
+            Play a few farm questions and they will show up here.
           </p>
         )}
         <ul className="dash-insights">
@@ -531,7 +538,7 @@ export default function ResearchDashboard({
           </li>
           {stickyTopic ? (
             <li>
-              Stickiest topic right now: <strong>{stickyTopic}</strong>
+              Stickiest chapter right now: <strong>{stickyTopic}</strong>
             </li>
           ) : null}
         </ul>
@@ -611,5 +618,5 @@ function performanceInsight(points, retries, avgTime) {
   if (Number.isFinite(Number(avgTime)) && Number(avgTime) >= 25) {
     return 'Longer answer times often travel with a higher frustration score. A short pause can bring both down.';
   }
-  return 'Frustration score is the bridge between how you perform and how Sage helps you next.';
+  return 'When a quiz feels harder, Sage steps in. When it feels calm, the farm keeps going.';
 }
