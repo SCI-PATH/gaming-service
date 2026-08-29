@@ -107,6 +107,57 @@ function quizChoicesForMiss(miss) {
   return rows;
 }
 
+function sageFreezeExtras({
+  interventionFocus = {},
+  quiz = null,
+  telemetry = {},
+  displayName = '',
+  extras = {},
+} = {}) {
+  const assessment =
+    quiz?.sageAssessment ||
+    quiz?.questionData?.sageAssessment ||
+    telemetry?.lastSageAssessment ||
+    null;
+  return {
+    studentName: displayName,
+    farmQuestion:
+      assessment?.questionText ||
+      interventionFocus?.current_question ||
+      quiz?.prompt ||
+      quiz?.question ||
+      quiz?.questionData?.prompt ||
+      quiz?.questionData?.question ||
+      null,
+    lastWrong:
+      assessment?.studentAnswer ||
+      interventionFocus?.last_wrong_answer ||
+      telemetry?.lastWrongAnswer ||
+      quiz?.studentAnswer ||
+      quiz?.questionData?.studentAnswer ||
+      null,
+    correctAnswer:
+      assessment?.correctAnswer ||
+      interventionFocus?.correct_answer ||
+      telemetry?.lastCorrectAnswer ||
+      quiz?.correctAnswer ||
+      quiz?.questionData?.correctAnswer ||
+      null,
+    questionType:
+      assessment?.questionType ||
+      quiz?.questionType ||
+      quiz?.questionData?.questionType ||
+      null,
+    options:
+      assessment?.options ||
+      quiz?.options ||
+      quiz?.questionData?.options ||
+      [],
+    sageAssessment: assessment,
+    ...extras,
+  };
+}
+
 function ActiveMissQuiz({ miss }) {
   if (!miss) return null;
   const question = asQuestionText(miss.prompt || miss.question, 280);
@@ -802,24 +853,12 @@ export default function AvatarAssistantModal({
     };
     const frozen = freezeInterventionSession(frozenFocus, {
       sessionId: `open_${lastOpenSessionRef.current}`,
-      studentName: displayName,
-      farmQuestion:
-        interventionFocus?.current_question ||
-        quiz?.prompt ||
-        quiz?.question ||
-        quiz?.questionData?.prompt ||
-        quiz?.questionData?.question ||
-        null,
-      lastWrong:
-        interventionFocus?.last_wrong_answer ||
-        telemetry.lastWrongAnswer ||
-        null,
-      correctAnswer:
-        interventionFocus?.correct_answer ||
-        telemetry.lastCorrectAnswer ||
-        quiz?.correctAnswer ||
-        quiz?.questionData?.correctAnswer ||
-        null,
+      ...sageFreezeExtras({
+        interventionFocus,
+        quiz,
+        telemetry,
+        displayName,
+      }),
     });
     if (frozen && !frozen.correct_answer) {
       frozen.correct_answer =
@@ -829,13 +868,36 @@ export default function AvatarAssistantModal({
         null;
     }
     if (frozen?.evidence) {
+      const assessment =
+        frozen.evidence.sage_assessment ||
+        quiz?.sageAssessment ||
+        quiz?.questionData?.sageAssessment ||
+        telemetry.lastSageAssessment ||
+        null;
       frozen.evidence.frustration_score =
         telemetry.frustrationScore ?? m.frustration_score ?? null;
       frozen.evidence.question_type =
-        quiz?.questionType || quiz?.questionData?.questionType || null;
+        assessment?.questionType ||
+        quiz?.questionType ||
+        quiz?.questionData?.questionType ||
+        frozen.evidence.question_type ||
+        null;
       frozen.evidence.options =
-        quiz?.options || quiz?.questionData?.options || [];
+        (Array.isArray(assessment?.options) && assessment.options.length
+          ? assessment.options
+          : null) ||
+        quiz?.options ||
+        quiz?.questionData?.options ||
+        frozen.evidence.options ||
+        [];
       frozen.evidence.hint = quiz?.hint || quiz?.questionData?.hint || null;
+      if (assessment) frozen.evidence.sage_assessment = assessment;
+      if (assessment?.studentAnswer) {
+        frozen.evidence.last_wrong = assessment.studentAnswer;
+      }
+      if (assessment?.correctAnswer) {
+        frozen.evidence.correct_answer = assessment.correctAnswer;
+      }
     }
     performanceSessionRef.current = frozen;
     setTutorTurn(null);
@@ -1217,23 +1279,14 @@ export default function AvatarAssistantModal({
             null,
         },
         {
-          farmQuestion:
-            interventionFocus?.current_question ||
-            quiz?.prompt ||
-            quiz?.question ||
-            quiz?.questionData?.prompt ||
-            quiz?.questionData?.question ||
-            null,
-          lastWrong:
-            interventionFocus?.last_wrong_answer ||
-            telemetry.lastWrongAnswer ||
-            null,
-          correctAnswer:
-            interventionFocus?.correct_answer ||
-            telemetry.lastCorrectAnswer ||
-            quiz?.correctAnswer ||
-            quiz?.questionData?.correctAnswer ||
-            null,
+          ...sageFreezeExtras({
+            interventionFocus,
+            quiz,
+            telemetry,
+            displayName: friendlyStudentName(
+              student?.displayName || student?.username,
+            ),
+          }),
         },
       );
     }
@@ -1302,9 +1355,20 @@ export default function AvatarAssistantModal({
             mapForPayload,
         ),
         last_wrong_answer:
+          performanceSessionRef.current?.evidence?.sage_assessment
+            ?.studentAnswer ||
           performanceSessionRef.current?.evidence?.last_wrong ||
           interventionFocus?.last_wrong_answer ||
+          telemetry.lastSageAssessment?.studentAnswer ||
           telemetry.lastWrongAnswer ||
+          null,
+        correct_answer:
+          performanceSessionRef.current?.evidence?.sage_assessment
+            ?.correctAnswer ||
+          performanceSessionRef.current?.evidence?.correct_answer ||
+          interventionFocus?.correct_answer ||
+          telemetry.lastSageAssessment?.correctAnswer ||
+          telemetry.lastCorrectAnswer ||
           null,
       },
     });

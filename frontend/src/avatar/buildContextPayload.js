@@ -35,7 +35,7 @@ import {
 } from './sageTutorLoop.js';
 import {
   usesSageFreeTextAnswer,
-  normalizeSageMindMapInput,
+  buildSageAssessment,
 } from './normalizeSageMindMapInput.js';
 
 /**
@@ -112,7 +112,9 @@ export function buildContextPayload({
     mapPerceivedFromMode(mode);
 
   const questionText = asQuestionText(
-    quiz?.prompt ||
+    quiz?.sageAssessment?.questionText ||
+      quiz?.questionData?.sageAssessment?.questionText ||
+      quiz?.prompt ||
       quiz?.question ||
       quiz?.questionData?.prompt ||
       quiz?.questionData?.question ||
@@ -123,53 +125,41 @@ export function buildContextPayload({
     280,
   );
 
+  const persistedAssessment =
+    quiz?.sageAssessment ||
+    quiz?.questionData?.sageAssessment ||
+    telemetry.lastSageAssessment ||
+    null;
   const questionOptions =
+    persistedAssessment?.options ||
     quiz?.options ||
     quiz?.questionData?.options ||
     focusIn?.options ||
     [];
-  const questionType = detectQuestionType({
-    questionType:
-      quiz?.questionType ||
-      quiz?.questionData?.questionType ||
-      quiz?.question_type ||
-      quiz?.mode,
-    options: questionOptions,
-    prompt: questionText,
-    studentAnswer:
-      telemetry.lastWrongAnswer ||
-      quiz?.studentAnswer ||
-      quiz?.studentLastWrongAnswer ||
-      quiz?.selectedText ||
-      null,
-    correctAnswer:
-      quiz?.correctAnswer ||
-      quiz?.questionData?.correctAnswer ||
-      focusIn?.correct_answer ||
-      telemetry.lastCorrectAnswer ||
-      null,
-  });
-  const sageInput = normalizeSageMindMapInput({
+  const liveAssessment = buildSageAssessment({
     questionData: quiz?.questionData || quiz,
     questionType:
+      persistedAssessment?.questionType ||
       quiz?.questionType ||
       quiz?.questionData?.questionType ||
-      quiz?.question_type ||
-      questionType,
+      quiz?.question_type,
     prompt: questionText,
     question: questionText,
     selectedText:
+      persistedAssessment?.studentAnswer ||
       telemetry.lastWrongAnswer ||
       quiz?.studentLastWrongAnswer ||
       quiz?.selectedText ||
       null,
     studentAnswer:
+      persistedAssessment?.studentAnswer ||
       quiz?.studentAnswer ||
       telemetry.lastWrongAnswer ||
       quiz?.studentLastWrongAnswer ||
       quiz?.selectedText ||
       null,
     correctAnswer:
+      persistedAssessment?.correctAnswer ||
       quiz?.correctAnswer ||
       quiz?.questionData?.correctAnswer ||
       focusIn?.correct_answer ||
@@ -179,28 +169,32 @@ export function buildContextPayload({
       quiz?.acceptedAnswers || quiz?.questionData?.acceptedAnswers,
     grade: quiz?.grade || quiz?.questionData?.grade,
     isCorrect: false,
+    options: questionOptions,
     topic: quiz?.topic || quiz?.questionData?.topic,
     frustrationScore: telemetry.frustrationScore,
   });
+  const assessment = liveAssessment.studentAnswer || liveAssessment.correctAnswer
+    ? liveAssessment
+    : persistedAssessment || liveAssessment;
+  const questionType = assessment.questionType || detectQuestionType({
+    questionType:
+      persistedAssessment?.questionType ||
+      quiz?.questionType ||
+      quiz?.questionData?.questionType ||
+      quiz?.question_type,
+    options: assessment.options || questionOptions,
+    prompt: questionText,
+    studentAnswer: assessment.studentAnswer,
+    correctAnswer: assessment.correctAnswer,
+  });
   const sageFreeText =
-    usesSageFreeTextAnswer(sageInput.questionType) ||
-    usesSageFreeTextAnswer(questionType);
-  const lastWrong = sageFreeText
-    ? sageInput.studentAnswer ||
-      telemetry.lastWrongAnswer ||
-      quiz?.studentLastWrongAnswer ||
-      quiz?.selectedText ||
-      null
-    : sageInput.studentAnswer ||
-      friendlyWrongAnswer(
-        telemetry.lastWrongAnswer ||
-          quiz?.studentLastWrongAnswer ||
-          quiz?.selectedText ||
-          null,
-      );
+    usesSageFreeTextAnswer(questionType) ||
+    usesSageFreeTextAnswer(assessment.questionType);
+  const lastWrong = assessment.studentAnswer || null;
+  const knownCorrect = assessment.correctAnswer || null;
 
   const safeCorrect = (raw) => {
-    const s = asQuestionText(raw, 200);
+    const s = asQuestionText(raw, 280);
     if (!s) return null;
     if (/grading failed|model_not_found|error code|does not exist/i.test(s)) {
       return null;
@@ -208,15 +202,6 @@ export function buildContextPayload({
     return s;
   };
 
-  const knownCorrect = sageInput.correctAnswer ||
-    sageInput.canonicalCorrectAnswer ||
-    safeCorrect(
-      quiz?.correctAnswer ||
-        quiz?.questionData?.correctAnswer ||
-        focusIn?.correct_answer ||
-        telemetry.lastCorrectAnswer ||
-        null,
-    );
   const teachingSession =
     telemetry.teaching_session ||
     focusIn?.conversation_session?.teaching_session ||
@@ -451,13 +436,14 @@ export function buildContextPayload({
       ? {
           question_text: questionText,
           question_type: questionType,
-          options: sageFreeText ? [] : questionOptions,
+          options: sageFreeText ? [] : (assessment.options || questionOptions),
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
             safeCorrect(mindMapSummary?.correctAnswer) ||
             null,
           is_correct: false,
+          sage_assessment: assessment,
           mode: quiz?.mode || quiz?.questionData?.mode || null,
           hint: quiz?.hint || quiz?.questionData?.hint || null,
           topic:
@@ -470,7 +456,7 @@ export function buildContextPayload({
       : {
           question_text: asQuestionText(focus?.current_question, 280),
           question_type: questionType,
-          options: sageFreeText ? [] : questionOptions,
+          options: sageFreeText ? [] : (assessment.options || questionOptions),
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
@@ -478,6 +464,7 @@ export function buildContextPayload({
             safeCorrect(mindMapSummary?.correctAnswer) ||
             null,
           is_correct: false,
+          sage_assessment: assessment,
           mode: null,
           topic: focus?.concept_topic || mindMapSummary?.topic || null,
         },

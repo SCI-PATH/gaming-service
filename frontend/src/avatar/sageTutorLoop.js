@@ -10,8 +10,7 @@
 import { shortConceptLabel } from './explainMisconception.js';
 import {
   usesSageFreeTextAnswer,
-  normalizeSageMindMapInput,
-  formatGroundTruthChoice,
+  buildSageAssessment,
 } from './normalizeSageMindMapInput.js';
 import { friendlyStudentName, sanitizeKidSpeech } from './kidFriendlySpeech.js';
 
@@ -78,16 +77,20 @@ export function detectQuestionType(input = {}) {
     explicit === 'fillblank' ||
     explicit === 'fillintheblanks'
   ) {
-    return 'MultiBlank';
+    return 'FillInTheBlank';
   }
   if (
     explicit === 'shortanswer' ||
     explicit === 'typedanswer' ||
     explicit === 'typed' ||
-    explicit === 'answertyping'
+    explicit === 'answertyping' ||
+    explicit === 'constructedresponse' ||
+    explicit === 'freetext' ||
+    explicit === 'openended'
   ) {
     return 'ShortAnswer';
   }
+  if (explicit === 'cloze') return 'FillInTheBlank';
 
   const opts = Array.isArray(input.options) ? input.options.map(optionText) : [];
   if (
@@ -98,12 +101,24 @@ export function detectQuestionType(input = {}) {
   }
   if (opts.length >= 3) return 'MCQ';
   const prompt = String(input.prompt || input.questionText || input.question || '');
-  if (/_{3,}|fill in|blank/i.test(prompt)) return 'MultiBlank';
+  if (/_{2,}|\{\{blank\}\}|\[blank\]|fill in|blank/i.test(prompt)) {
+    return 'FillInTheBlank';
+  }
   if (
     /^(true|false|t|f|yes|no)$/i.test(norm(input.studentAnswer)) &&
     /^(true|false|t|f|yes|no)$/i.test(norm(input.correctAnswer))
   ) {
     return 'TrueFalse';
+  }
+  const student = norm(input.studentAnswer);
+  const correct = norm(input.correctAnswer);
+  const letterOnly = /^[A-Da-d]$/;
+  if (
+    opts.length < 2 &&
+    ((student.length > 12 && !letterOnly.test(student)) ||
+      (correct.length > 12 && !letterOnly.test(correct)))
+  ) {
+    return 'ShortAnswer';
   }
   return 'MCQ';
 }
@@ -290,7 +305,7 @@ function classifyMisconception(state) {
         'The student may be mixing a true fact from another process into this statement.',
     };
   }
-  if (qType === 'MultiBlank' || qType === 'FILL_IN_THE_BLANK') {
+  if (qType === 'MultiBlank' || qType === 'FILL_IN_THE_BLANK' || qType === 'FillInTheBlank') {
     return {
       type: 'blank_swap',
       description:
@@ -327,8 +342,12 @@ function interactionQuestion(state) {
 export function buildMisconceptionMindMap(state = {}, delivery = null) {
   const d = delivery || frustrationDelivery(state.frustrationScore);
   const complexity = d.mindMapComplexity;
-  const wrong = shortConceptLabel(state.studentAnswer, 36) || 'Your pick';
-  const right = shortConceptLabel(state.correctAnswer, 36) || 'Correct idea';
+  const wrong =
+    shortConceptLabel(state.studentConcept || state.studentAnswer, 36) ||
+    'Your pick';
+  const right =
+    shortConceptLabel(state.correctConcept || state.correctAnswer, 36) ||
+    'Correct idea';
   const topic = clip(state.topic, 40) || 'This idea';
   const distinction = clip(`${wrong} vs ${right}`, 90) || 'different jobs';
 
@@ -373,25 +392,42 @@ export function compactTeachingState(context = {}, session = {}) {
     focus.conversation_session?.teaching_session ||
     context.teaching_session ||
     {};
+  const persisted =
+    cq.sage_assessment ||
+    quiz.sageAssessment ||
+    quiz.sage_assessment ||
+    context.sage_assessment ||
+    prior.sageAssessment ||
+    null;
   const questionText =
+    persisted?.questionText ||
     cq.question_text ||
     cq.prompt ||
     focus.current_question ||
     session.evidence?.farm_question ||
     '';
-  const studentAnswer =
+  const options =
+    (Array.isArray(persisted?.options) && persisted.options.length
+      ? persisted.options
+      : null) ||
+    cq.options ||
+    quiz.options ||
+    prior.options ||
+    [];
+  const rawStudent =
+    persisted?.studentAnswer ||
     cq.student_last_wrong_answer ||
     focus.last_wrong_answer ||
     session.evidence?.last_wrong ||
     prior.studentAnswer ||
     '';
-  const correctAnswer =
+  const rawCorrect =
+    persisted?.correctAnswer ||
     cq.correct_answer ||
     focus.correct_answer ||
     session.evidence?.correct_answer ||
     prior.correctAnswer ||
     '';
-  const options = cq.options || quiz.options || prior.options || [];
   const topic =
     cq.topic ||
     focus.concept_topic ||
@@ -399,39 +435,43 @@ export function compactTeachingState(context = {}, session = {}) {
     prior.topic ||
     '';
   const questionType = detectQuestionType({
-    questionType: cq.question_type || cq.mode || quiz.questionType,
+    questionType:
+      persisted?.questionType ||
+      cq.question_type ||
+      cq.mode ||
+      quiz.questionType,
     options,
     prompt: questionText,
-    studentAnswer,
-    correctAnswer,
+    studentAnswer: rawStudent,
+    correctAnswer: rawCorrect,
   });
-  const sageInput = normalizeSageMindMapInput({
-    questionType: cq.question_type || cq.mode || quiz.questionType || questionType,
+  const assessment = buildSageAssessment({
+    questionType,
     prompt: questionText,
     question: questionText,
-    studentAnswer,
-    selectedText: studentAnswer,
-    correctAnswer,
+    studentAnswer: rawStudent,
+    selectedText: rawStudent,
+    correctAnswer: rawCorrect,
     acceptedAnswers: cq.accepted_answers || cq.acceptedAnswers || quiz.acceptedAnswers,
     options,
     topic,
     grade: cq.grade || quiz.grade,
-    completeness: cq.completeness || quiz.completeness,
-    missingKeywords: cq.missingKeywords || cq.missing_keywords,
-    accuracyScore: cq.accuracyScore || cq.accuracy_score,
-    errorCategory: cq.errorCategory || cq.error_category,
+    isCorrect: Boolean(cq.is_correct ?? cq.isCorrect ?? persisted?.isCorrect),
   });
   const sageFreeText =
-    usesSageFreeTextAnswer(sageInput.questionType) ||
+    usesSageFreeTextAnswer(assessment.questionType) ||
     usesSageFreeTextAnswer(questionType);
-  const normalizedStudent = sageInput.studentAnswer || studentAnswer;
-  const normalizedCorrect = sageInput.correctAnswer || correctAnswer;
-  const studentAnswerLabel = sageFreeText
-    ? normalizedStudent
-    : formatGroundTruthChoice(normalizedStudent, options) || normalizedStudent;
-  const correctAnswerLabel = sageFreeText
-    ? normalizedCorrect
-    : formatGroundTruthChoice(normalizedCorrect, options) || normalizedCorrect;
+  const normalizedStudent = assessment.studentAnswer || rawStudent;
+  const normalizedCorrect = assessment.correctAnswer || rawCorrect;
+  const studentAnswerLabel = normalizedStudent;
+  const correctAnswerLabel = normalizedCorrect;
+  const isCorrect = Boolean(
+    assessment.isCorrect ??
+      cq.is_correct ??
+      cq.isCorrect ??
+      persisted?.isCorrect ??
+      false,
+  );
   const snapshot = context.performance_snapshot || context.metrics || {};
   const frustrationScore = Number(
     context.frustration_score ??
@@ -447,14 +487,17 @@ export function compactTeachingState(context = {}, session = {}) {
     questionText,
     studentAnswer: normalizedStudent,
     studentAnswerLabel,
+    studentConcept: assessment.studentConcept || normalizedStudent,
     correctAnswer: normalizedCorrect,
     correctAnswerLabel,
-    isCorrect: Boolean(cq.is_correct ?? cq.isCorrect ?? false),
-    options: sageFreeText ? [] : options,
+    correctConcept: assessment.correctConcept || normalizedCorrect,
+    isCorrect,
+    options: sageFreeText ? [] : assessment.options?.length ? assessment.options : options,
     topic,
-    questionType,
-    completeness: sageInput.completeness,
-    missingKeywords: sageInput.missingKeywords,
+    questionType: assessment.questionType || questionType,
+    sageAssessment: assessment,
+    completeness: assessment.completeness,
+    missingKeywords: assessment.missingKeywords,
     hint: cq.hint || quiz.hint || prior.hint || null,
     verifiedKnowledge:
       cq.verified_knowledge || context.verified_knowledge || null,
@@ -737,6 +780,8 @@ function packTurn({
       questionType: state.questionType,
       studentAnswer: state.studentAnswer,
       correctAnswer: state.correctAnswer,
+      sageAssessment: state.sageAssessment || null,
+      options: state.options,
       topic: state.topic,
       questionText: state.questionText,
       hintLevel,
@@ -848,29 +893,29 @@ export function guardModelTutorReply(modelReply, localTurn, state = {}) {
 export function shouldEnterTutorLoop(session = {}, context = {}, studentMessage = '') {
   const state = compactTeachingState(context, session);
   if (!state.questionText && !state.correctAnswer) return false;
-  if (!state.studentAnswer && !state.correctAnswer) return false;
+  if (isPromptInjection(studentMessage)) return true;
+  // Question type is context only. Any miss with ground truth enters Grok teaching.
+  if (state.studentAnswer && state.correctAnswer && state.isCorrect !== true) {
+    return true;
+  }
   const phase = session.phase || 'behavior_probe';
   if (phase === 'behavior_probe' && !session.student_reason_key) {
-    if (isPromptInjection(studentMessage)) return true;
-    if (
-      /\b(explain|photosynthesis|helium|oxygen|carbon|hint|why (was|is) (it|that) wrong)\b/i.test(
-        studentMessage,
-      )
-    ) {
-      return true;
-    }
-    return false;
+    return /\b(explain|hint|why (was|is) (it|that) wrong|teach)\b/i.test(
+      String(studentMessage || ''),
+    );
   }
-  return true;
+  return Boolean(state.questionText && state.correctAnswer);
 }
 
 export function tutorLoopSystemAddon(context = {}) {
   const state = compactTeachingState(context, {});
   const delivery = frustrationDelivery(state.frustrationScore);
   const studentLabel =
-    state.studentAnswerLabel || clip(state.studentAnswer, 80) || 'none';
+    state.studentAnswerLabel || clip(state.studentAnswer, 280) || 'none';
   const correctLabel =
-    state.correctAnswerLabel || clip(state.correctAnswer, 80) || 'missing — do not invent';
+    state.correctAnswerLabel ||
+    clip(state.correctAnswer, 280) ||
+    'missing — do not invent';
   const optionLines = Array.isArray(state.options)
     ? state.options
         .map((opt, i) => `${String.fromCharCode(65 + i)}. ${typeof opt === 'string' ? opt : opt?.text || opt?.label || ''}`)

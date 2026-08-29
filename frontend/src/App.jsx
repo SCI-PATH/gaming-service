@@ -1672,7 +1672,7 @@ export default function App() {
         student={student}
         farm={farm}
         gameplay={gameplay}
-        quiz={quizPayload}
+        quiz={telemetrySession.lastSageQuiz || quizPayload || null}
         metrics={avatarTrigger?.metrics || behavioralMetrics}
         misconceptions={misconceptions}
         learningPrefs={learningPrefs}

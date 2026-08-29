@@ -271,8 +271,8 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     `Student reason key (if known): ${focus.student_reason_key || focus.conversation_session?.student_reason_key || 'pending — ask A–D probe'}.`,
     `Science concept in focus: ${concept} (always explain it through the Active farm question above).`,
     `Behavior diagnostic: ${focus.diagnostic_question || focus.diagnostic_prompt || 'Ask why the trigger hang-up is happening (A–D).'}`,
-    farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 220)}".` : null,
-    wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 100)}".` : null,
+    farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 280)}".` : null,
+    wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 280)}".` : null,
     correct
       ? `Teach the assessment-engine idea in CORRECT ANSWER, then why it fits THIS question. Never dump a letter key.`
       : null,

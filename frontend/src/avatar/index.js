@@ -25,10 +25,12 @@ export {
   extractTypedStudentAnswer,
   extractTypedCorrectAnswer,
   formatGroundTruthChoice,
+  buildSageAssessment,
   isFillInQuestionType,
   isTypedAnswerQuestionType,
   usesSageFreeTextAnswer,
   SAGE_QUESTION_TYPES,
+  SAGE_ASSESSMENT_TYPES,
 } from './normalizeSageMindMapInput.js';
 export {
   QUESTION_FORMATS,

@@ -28,6 +28,8 @@ import { buildPersonalizedMindMap, buildMissAttempt } from './buildMindMap.js';
 import {
   usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
+  buildSageAssessment,
+} from './normalizeSageMindMapInput.js';
 } from './normalizeSageMindMapInput.js';
 import { recordIncorrectMindMap } from './mindMapHistoryStore.js';
 import { classifyPerformanceTier } from './performanceTier.js';
@@ -1002,6 +1004,17 @@ export function useBehavioralTelemetry({
       consecutiveFailsRef.current += 1;
       levelRetriesRef.current += 1;
       firstAttemptCorrectStreakRef.current = 0;
+      const assessment = buildSageAssessment({
+        questionData,
+        selectedText,
+        studentAnswer: studentAnswer ?? selectedText,
+        correctAnswer:
+          correctAnswer || questionData?.correctAnswer || null,
+        acceptedAnswers: questionData?.acceptedAnswers,
+        grade: questionData?.grade || questionData?.gradePayload,
+        isCorrect: false,
+        options: questionData?.options,
+      });
       const sageInput = normalizeSageMindMapInput({
         questionData,
         selectedText,
@@ -1012,48 +1025,59 @@ export function useBehavioralTelemetry({
         grade: questionData?.grade || questionData?.gradePayload,
         isCorrect: false,
       });
-      const freeText = usesSageFreeTextAnswer(sageInput.questionType);
-      const analysisStudent = freeText
-        ? sageInput.studentAnswer || selectedText
-        : selectedText;
-      if (analysisStudent) lastWrongRef.current = analysisStudent;
-      const resolvedCorrect = freeText
-        ? sageInput.correctAnswer ||
-          correctAnswer ||
-          questionData?.correctAnswer ||
-          null
-        : correctAnswer ||
-          questionData?.correctAnswer ||
-          (typeof questionData?.correctIndex === 'number' &&
-          Array.isArray(questionData?.options)
-            ? questionData.options[questionData.correctIndex]
-            : null) ||
-          null;
+      const analysisStudent =
+        assessment.studentConcept || sageInput.studentAnswer || selectedText;
+      const grokStudent = assessment.studentAnswer || analysisStudent;
+      if (grokStudent) lastWrongRef.current = grokStudent;
+      const resolvedCorrect =
+        assessment.correctAnswer ||
+        sageInput.correctAnswer ||
+        correctAnswer ||
+        questionData?.correctAnswer ||
+        null;
       if (resolvedCorrect) lastCorrectRef.current = resolvedCorrect;
       const enrichedQuestion = questionData
         ? {
             ...questionData,
-            questionType: sageInput.questionType || questionData.questionType,
-            studentAnswer: freeText
-              ? analysisStudent
-              : questionData.studentAnswer,
+            questionType:
+              assessment.questionType ||
+              sageInput.questionType ||
+              questionData.questionType,
+            options: assessment.options.length
+              ? assessment.options
+              : questionData.options,
+            studentAnswer: grokStudent || analysisStudent,
             correctAnswer: resolvedCorrect || questionData.correctAnswer || null,
-            acceptedAnswers: freeText
-              ? sageInput.acceptedAnswers
+            sageAssessment: assessment,
+            acceptedAnswers: assessment.acceptedAnswers.length
+              ? assessment.acceptedAnswers
               : questionData.acceptedAnswers,
-            completeness: sageInput.completeness,
+            completeness: assessment.completeness || sageInput.completeness,
             missingKeywords: sageInput.missingKeywords,
             accuracyScore: sageInput.accuracyScore,
             errorCategory: sageInput.errorCategory,
             gradeFeedback: gradeFeedback || questionData.gradeFeedback || null,
           }
-        : questionData;
-      if (questionData) lastQuizDataRef.current = enrichedQuestion;
+        : {
+            prompt: assessment.questionText,
+            question: assessment.questionText,
+            questionType: assessment.questionType,
+            studentAnswer: grokStudent || analysisStudent,
+            correctAnswer: resolvedCorrect,
+            options: assessment.options,
+            sageAssessment: assessment,
+          };
+      if (enrichedQuestion) lastQuizDataRef.current = enrichedQuestion;
       setSession((prev) => ({
         ...prev,
         consecutiveFails: consecutiveFailsRef.current,
         lastWrongAnswer: lastWrongRef.current,
         lastCorrectAnswer: lastCorrectRef.current || prev.lastCorrectAnswer || null,
+        lastSageQuiz: lastQuizDataRef.current || prev.lastSageQuiz || null,
+        lastSageAssessment:
+          lastQuizDataRef.current?.sageAssessment ||
+          prev.lastSageAssessment ||
+          null,
         lastGradeFeedback: gradeFeedback || prev.lastGradeFeedback || null,
       }));
 
@@ -1426,6 +1450,8 @@ function emptySession() {
     frustrationSignals: [],
     lastWrongAnswer: null,
     lastCorrectAnswer: null,
+    lastSageQuiz: null,
+    lastSageAssessment: null,
     lastGradeFeedback: null,
     lastTriggerReason: null,
     lastInterventionMode: null,

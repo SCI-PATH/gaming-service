@@ -8,8 +8,8 @@ import {
 } from '../assessmentEngine/assessmentQuizSession.js';
 import {
   isFillInQuestionType,
-  usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
+  buildSageAssessment,
 } from '../avatar/normalizeSageMindMapInput.js';
 
 const TYPE_LABELS = {
@@ -156,8 +156,12 @@ function extractEngineCorrectAnswer(graded, questionData) {
           String(letter).toLowerCase() === String(token).toLowerCase(),
       );
       if (idx >= 0) {
-        const text = options[idx];
-        return typeof text === 'string' ? `${token}. ${text}` : String(token);
+        const raw = options[idx];
+        const text =
+          typeof raw === 'string'
+            ? raw
+            : String(raw?.text || raw?.label || raw?.value || '').trim();
+        return text ? `${token}. ${text}` : String(token);
       }
     }
     return String(token);
@@ -344,22 +348,25 @@ export default function ScienceQuizModal({
         const sageInput = normalizeSageMindMapInput({
           questionData: { ...questionData, questionType },
           selectedText,
-          studentAnswer,
+          studentAnswer: selectedText || serializeStudentAnswer(studentAnswer),
           selectedIndex,
           correctAnswer: engineCorrect || questionData.correctAnswer,
           isCorrect,
           grade: gradePayload,
+          options: questionData.options,
         });
-        const sageFreeText =
-          usesSageFreeTextAnswer(questionType) ||
-          usesSageFreeTextAnswer(questionData) ||
-          usesSageFreeTextAnswer(sageInput.questionType);
-        const sageStudent = sageFreeText
-          ? sageInput.studentAnswer || serializeStudentAnswer(studentAnswer)
-          : selectedText;
-        const sageCorrect = sageFreeText
-          ? sageInput.correctAnswer || engineCorrect || null
-          : engineCorrect || null;
+        const assessment = buildSageAssessment({
+          questionData: { ...questionData, questionType },
+          selectedText,
+          studentAnswer: selectedText || serializeStudentAnswer(studentAnswer),
+          selectedIndex,
+          correctAnswer: engineCorrect || questionData.correctAnswer,
+          isCorrect,
+          grade: gradePayload,
+          options: questionData.options,
+        });
+        const sageStudent = assessment.studentAnswer || sageInput.studentAnswer;
+        const sageCorrect = assessment.correctAnswer || sageInput.correctAnswer || engineCorrect || null;
         const rawFeedback = gradePayload?.feedback || null;
         const safeFeedback = isGradeStatusFeedback(rawFeedback)
           ? null
@@ -368,17 +375,20 @@ export default function ScienceQuizModal({
           isCorrect,
           selectedIndex,
           selectedText: sageStudent,
-          studentAnswer: sageFreeText ? sageStudent : studentAnswer,
+          studentAnswer: sageStudent,
           responseTimeMs,
           questionData: {
             ...questionData,
-            questionType,
-            correctAnswer:
-              sageCorrect || questionData.correctAnswer || null,
+            questionType: assessment.questionType || questionType,
+            options: assessment.options.length
+              ? assessment.options
+              : questionData.options,
+            correctAnswer: sageCorrect || questionData.correctAnswer || null,
             acceptedAnswers: isFillInQuestionType(questionType)
               ? sageInput.acceptedAnswers
               : undefined,
-            studentAnswer: sageFreeText ? sageStudent : questionData.studentAnswer,
+            studentAnswer: sageStudent,
+            sageAssessment: assessment,
             completeness: sageInput.completeness,
             missingKeywords: sageInput.missingKeywords,
             accuracyScore: sageInput.accuracyScore,
@@ -422,53 +432,52 @@ export default function ScienceQuizModal({
       isCorrect = false;
     }
 
-    const fallbackSage = normalizeSageMindMapInput({
+    const fallbackAssessment = buildSageAssessment({
       questionData: { ...questionData, questionType },
       selectedText,
-      studentAnswer,
+      studentAnswer: selectedText || serializeStudentAnswer(studentAnswer),
       selectedIndex,
       correctAnswer: questionData?.correctAnswer,
       isCorrect,
+      options: questionData?.options,
     });
-    const fallbackFreeText =
-      usesSageFreeTextAnswer(questionType) ||
-      usesSageFreeTextAnswer(questionData) ||
-      usesSageFreeTextAnswer(fallbackSage.questionType);
-    const fallbackStudent = fallbackFreeText
-      ? fallbackSage.studentAnswer || serializeStudentAnswer(studentAnswer) || selectedText
-      : selectedText;
+    const fallbackStudent =
+      fallbackAssessment.studentAnswer ||
+      serializeStudentAnswer(studentAnswer) ||
+      selectedText;
+    const fallbackCorrect =
+      fallbackAssessment.correctAnswer || questionData?.correctAnswer || null;
     onAnswerAttemptRef.current?.({
       isCorrect,
       selectedIndex,
       selectedText: fallbackStudent,
-      studentAnswer: fallbackFreeText ? fallbackStudent : studentAnswer,
+      studentAnswer: fallbackStudent,
       responseTimeMs,
-      questionData: fallbackFreeText
-        ? {
-            ...questionData,
-            questionType,
-            studentAnswer: fallbackStudent,
-            correctAnswer:
-              fallbackSage.correctAnswer || questionData?.correctAnswer || null,
-            acceptedAnswers: isFillInQuestionType(questionType)
-              ? fallbackSage.acceptedAnswers
-              : undefined,
-            completeness: fallbackSage.completeness,
-          }
-        : questionData,
+      questionData: {
+        ...questionData,
+        questionType: fallbackAssessment.questionType || questionType,
+        options: fallbackAssessment.options.length
+          ? fallbackAssessment.options
+          : questionData?.options,
+        studentAnswer: fallbackStudent,
+        correctAnswer: fallbackCorrect,
+        sageAssessment: fallbackAssessment,
+        acceptedAnswers: isFillInQuestionType(questionType)
+          ? fallbackAssessment.acceptedAnswers
+          : undefined,
+        completeness: fallbackAssessment.completeness,
+      },
       mode,
       timedOut: Boolean(timedOut),
-      correctAnswer: fallbackFreeText
-        ? fallbackSage.correctAnswer || null
-        : undefined,
+      correctAnswer: fallbackCorrect,
     });
     setResult({
       isCorrect,
       selectedIndex,
-      selectedText,
+      selectedText: fallbackStudent,
       responseTimeMs,
       timedOut: Boolean(timedOut),
-      correctAnswer: null,
+      correctAnswer: fallbackCorrect,
     });
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
     closeTimerRef.current = window.setTimeout(() => {

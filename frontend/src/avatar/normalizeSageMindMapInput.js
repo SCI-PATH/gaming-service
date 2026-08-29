@@ -16,6 +16,56 @@ export const SAGE_QUESTION_TYPES = {
   ShortAnswer: 'TYPED_ANSWER',
 };
 
+/** SAGE / Grok-facing types. Fill-in and typed stay distinct from MCQ. */
+export const SAGE_ASSESSMENT_TYPES = {
+  MCQ: 'MCQ',
+  TrueFalse: 'TrueFalse',
+  FillInTheBlank: 'FillInTheBlank',
+  ShortAnswer: 'ShortAnswer',
+};
+
+export function toSageAssessmentType(kind) {
+  const raw = String(kind || '')
+    .replace(/[_\s-]/g, '')
+    .toLowerCase();
+  if (
+    raw === 'multiblank' ||
+    raw === 'fillintheblank' ||
+    raw === 'fillblank' ||
+    raw === 'fillintheblanks' ||
+    raw === 'cloze'
+  ) {
+    return SAGE_ASSESSMENT_TYPES.FillInTheBlank;
+  }
+  if (
+    raw === 'shortanswer' ||
+    raw === 'typedanswer' ||
+    raw === 'typed' ||
+    raw === 'answertyping' ||
+    raw === 'constructedresponse' ||
+    raw === 'freetext' ||
+    raw === 'openended'
+  ) {
+    return SAGE_ASSESSMENT_TYPES.ShortAnswer;
+  }
+  if (raw === 'truefalse' || raw === 'tf' || raw === 'boolean') {
+    return SAGE_ASSESSMENT_TYPES.TrueFalse;
+  }
+  if (raw === 'mcq' || raw === 'multiplechoice') {
+    return SAGE_ASSESSMENT_TYPES.MCQ;
+  }
+  if (kind === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK) {
+    return SAGE_ASSESSMENT_TYPES.FillInTheBlank;
+  }
+  if (kind === SAGE_QUESTION_TYPES.TYPED_ANSWER) {
+    return SAGE_ASSESSMENT_TYPES.ShortAnswer;
+  }
+  if (kind === SAGE_QUESTION_TYPES.TrueFalse) {
+    return SAGE_ASSESSMENT_TYPES.TrueFalse;
+  }
+  return SAGE_ASSESSMENT_TYPES.MCQ;
+}
+
 const FILL_IN_ALIASES = new Set([
   'multiblank',
   'fillintheblank',
@@ -769,5 +819,46 @@ export function normalizeSageMindMapInput(source = {}) {
     frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
     options: options.map((opt) => opt.text).filter(Boolean),
     correctIndex,
+  };
+}
+
+/**
+ * One SAGE assessment object for every farm question type.
+ * MCQ letters become "C — Resistor" when options exist. True/False stays
+ * True/False. Fill-in and typed keep the student's actual text.
+ */
+export function buildSageAssessment(source = {}) {
+  const normalized = normalizeSageMindMapInput(source);
+  const questionType = toSageAssessmentType(normalized.questionType);
+  const options = Array.isArray(normalized.options) ? normalized.options : [];
+  const studentConcept = compactSpaces(normalized.studentAnswer);
+  const correctConcept = compactSpaces(
+    normalized.correctAnswer || normalized.canonicalCorrectAnswer,
+  );
+  const studentAnswer =
+    questionType === SAGE_ASSESSMENT_TYPES.MCQ
+      ? formatGroundTruthChoice(studentConcept, options) || studentConcept
+      : studentConcept;
+  const correctAnswer =
+    questionType === SAGE_ASSESSMENT_TYPES.MCQ
+      ? formatGroundTruthChoice(correctConcept, options) || correctConcept
+      : correctConcept;
+
+  return {
+    questionText: compactSpaces(normalized.question),
+    questionType,
+    studentAnswer,
+    correctAnswer,
+    isCorrect: Boolean(normalized.isCorrect),
+    options:
+      questionType === SAGE_ASSESSMENT_TYPES.MCQ ||
+      questionType === SAGE_ASSESSMENT_TYPES.TrueFalse
+        ? options
+        : [],
+    studentConcept,
+    correctConcept,
+    completeness: normalized.completeness || null,
+    missingKeywords: normalized.missingKeywords || [],
+    acceptedAnswers: normalized.acceptedAnswers || [],
   };
 }

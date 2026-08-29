@@ -19,6 +19,7 @@ import {
   relatedPreviousMistakes,
   revealsCorrectTooEarly,
   tutorLoopSystemAddon,
+  shouldEnterTutorLoop,
 } from './sageTutorLoop.js';
 import {
   scienceKeyIdea,
@@ -72,7 +73,7 @@ describe('question types', () => {
         studentAnswer: 'Oxygen',
         correctAnswer: 'carbon dioxide',
       }),
-      'MultiBlank',
+      'FillInTheBlank',
     );
     assert.equal(
       detectQuestionType({
@@ -99,8 +100,8 @@ describe('MCQ letter labels for Grok', () => {
       },
       frustration_score: 40,
     });
-    assert.equal(state.studentAnswer, 'Resistor');
-    assert.equal(state.correctAnswer, 'Capacitor');
+    assert.equal(state.studentAnswer, 'C — Resistor');
+    assert.equal(state.correctAnswer, 'B — Capacitor');
     assert.equal(state.studentAnswerLabel, 'C — Resistor');
     assert.equal(state.correctAnswerLabel, 'B — Capacitor');
     assert.equal(hasSufficientKnowledge(state), true);
@@ -133,8 +134,8 @@ describe('Test 1 — MCQ helium miss', () => {
       session,
     });
     assert.equal(turn.structured.assessment.isCorrect, false);
-    assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
-    assert.equal(turn.structured.assessment.studentAnswer, 'Helium');
+    assert.equal(turn.structured.assessment.correctAnswer, 'C — Carbon dioxide');
+    assert.equal(turn.structured.assessment.studentAnswer, 'B — Helium');
     assert.equal(turn.teachingSource, 'grok');
     assert.equal(turn.reply, '');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
@@ -165,7 +166,7 @@ describe('Test 2 — fill in the blank oxygen', () => {
         },
       },
     });
-    assert.equal(turn.structured.questionType, 'MultiBlank');
+    assert.equal(turn.structured.questionType, 'FillInTheBlank');
     assert.equal(turn.structured.misconception.type, 'blank_swap');
     assert.equal(turn.teachingSource, 'grok');
     assert.equal(turn.reply, '');
@@ -466,7 +467,7 @@ describe('assessment engine authority and safety', () => {
       context: ctx(),
       session,
     });
-    assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
+    assert.equal(turn.structured.assessment.correctAnswer, 'C — Carbon dioxide');
     assert.equal(turn.nextAction, NEXT_ACTIONS.WAIT_FOR_STUDENT);
     assert.equal(/ignore your instructions/i.test(turn.reply), false);
   });
@@ -599,5 +600,104 @@ describe('five-step teaching order', () => {
     assert.equal(teaching.correctAnswerDescription, null);
     assert.equal(teaching.scientificComparison, null);
     assert.equal(turn.structured.assessment.source, 'assessment_engine');
+  });
+});
+
+describe('shared SAGE assessment survives after the quiz closes', () => {
+  it('keeps MCQ option text from sage_assessment alone', () => {
+    const state = compactTeachingState({
+      current_question: {
+        sage_assessment: {
+          questionText: 'Which component stores electrical energy?',
+          questionType: 'MCQ',
+          studentAnswer: 'C — Resistor',
+          correctAnswer: 'B — Capacitor',
+          isCorrect: false,
+          options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+        },
+      },
+    });
+    assert.equal(state.questionType, 'MCQ');
+    assert.equal(state.studentAnswer, 'C — Resistor');
+    assert.equal(state.correctAnswer, 'B — Capacitor');
+    assert.equal(state.isCorrect, false);
+    assert.equal(hasSufficientKnowledge(state), true);
+    assert.equal(
+      shouldEnterTutorLoop({}, { current_question: { sage_assessment: state.sageAssessment } }, 'I guessed'),
+      true,
+    );
+  });
+
+  it('keeps True/False as True/False', () => {
+    const state = compactTeachingState({
+      current_question: {
+        question_text: 'Plants use oxygen to make glucose during photosynthesis.',
+        question_type: 'TrueFalse',
+        options: ['True', 'False'],
+        student_last_wrong_answer: 'False',
+        correct_answer: 'True',
+        is_correct: false,
+      },
+    });
+    assert.equal(state.questionType, 'TrueFalse');
+    assert.equal(state.studentAnswer, 'False');
+    assert.equal(state.correctAnswer, 'True');
+    assert.equal(/B — False/.test(state.studentAnswer), false);
+  });
+
+  it('keeps fill-in respiration vs photosynthesis', () => {
+    const state = compactTeachingState({
+      current_question: {
+        question_text: 'The process by which plants make food is ______.',
+        question_type: 'FillInTheBlank',
+        student_last_wrong_answer: 'respiration',
+        correct_answer: 'photosynthesis',
+        is_correct: false,
+      },
+    });
+    assert.equal(state.questionType, 'FillInTheBlank');
+    assert.equal(state.studentAnswer, 'respiration');
+    assert.equal(state.correctAnswer, 'photosynthesis');
+    const addon = tutorLoopSystemAddon({
+      current_question: {
+        question_text: 'The process by which plants make food is ______.',
+        question_type: 'FillInTheBlank',
+        student_last_wrong_answer: 'respiration',
+        correct_answer: 'photosynthesis',
+        is_correct: false,
+      },
+    });
+    assert.match(addon, /respiration/);
+    assert.match(addon, /photosynthesis/);
+    assert.match(addon, /YOU are the scientific teacher/);
+  });
+
+  it('keeps the full typed sentence for Grok', () => {
+    const student = 'A resistor stores electrical energy.';
+    const correct = 'A capacitor stores electrical energy.';
+    const state = compactTeachingState({
+      current_question: {
+        question_text: 'What stores electrical energy in a circuit?',
+        question_type: 'ShortAnswer',
+        student_last_wrong_answer: student,
+        correct_answer: correct,
+        is_correct: false,
+      },
+    });
+    assert.equal(state.questionType, 'ShortAnswer');
+    assert.equal(state.studentAnswer, student);
+    assert.equal(state.correctAnswer, correct);
+    const addon = tutorLoopSystemAddon({
+      current_question: {
+        question_text: 'What stores electrical energy in a circuit?',
+        question_type: 'ShortAnswer',
+        student_last_wrong_answer: student,
+        correct_answer: correct,
+        is_correct: false,
+      },
+    });
+    assert.match(addon, /A resistor stores electrical energy/);
+    assert.match(addon, /A capacitor stores electrical energy/);
+    assert.equal(/studentAnswer="incorrect"/.test(addon), false);
   });
 });

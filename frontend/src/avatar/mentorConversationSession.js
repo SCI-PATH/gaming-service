@@ -28,8 +28,6 @@ import {
 
   friendlyWhyOpened,
 
-  friendlyWrongAnswer,
-
   sanitizeKidSpeech,
 
 } from './kidFriendlySpeech.js';
@@ -92,22 +90,26 @@ export const GUIDANCE_LEVELS = {
 
 function tutorContextFromSession(session = {}) {
   const ev = session.evidence || {};
+  const assessment = ev.sage_assessment || session.sageAssessment || null;
   return (
     session.tutor_context || {
       current_question: {
-        question_text: ev.farm_question || '',
-        student_last_wrong_answer: ev.last_wrong || '',
-        correct_answer: ev.correct_answer || '',
+        question_text: assessment?.questionText || ev.farm_question || '',
+        student_last_wrong_answer:
+          assessment?.studentAnswer || ev.last_wrong || '',
+        correct_answer: assessment?.correctAnswer || ev.correct_answer || '',
         topic: session.concept_topic || '',
-        question_type: ev.question_type || null,
-        options: ev.options || [],
+        question_type: assessment?.questionType || ev.question_type || null,
+        options: assessment?.options || ev.options || [],
         hint: ev.hint || null,
+        is_correct: assessment?.isCorrect === true,
+        sage_assessment: assessment,
       },
       intervention_focus: {
         concept_topic: session.concept_topic,
-        last_wrong_answer: ev.last_wrong,
-        correct_answer: ev.correct_answer,
-        current_question: ev.farm_question,
+        last_wrong_answer: assessment?.studentAnswer || ev.last_wrong,
+        correct_answer: assessment?.correctAnswer || ev.correct_answer,
+        current_question: assessment?.questionText || ev.farm_question,
         conversation_session: {
           teaching_session: session.teaching_session || null,
           phase: session.phase,
@@ -119,6 +121,7 @@ function tutorContextFromSession(session = {}) {
       answer_history: ev.answer_history || [],
       student_profile: { display_name: session.student_name },
       teaching_session: session.teaching_session || null,
+      sage_assessment: assessment,
       force_insufficient_knowledge: Boolean(ev.force_insufficient_knowledge),
     }
   );
@@ -166,7 +169,11 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
   const farmQuestion = asQuestionText(
 
+      extras.sageAssessment?.questionText ||
+
       focus.current_question || extras.farmQuestion || null,
+
+    280,
 
     );
 
@@ -188,9 +195,11 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
     farm_question: farmQuestion,
 
-    last_wrong: friendlyWrongAnswer(
+    last_wrong: asQuestionText(
 
-      focus.last_wrong_answer ||
+      extras.sageAssessment?.studentAnswer ||
+
+        focus.last_wrong_answer ||
 
         focus.recent_wrong_answers?.[0] ||
 
@@ -198,13 +207,21 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
         null,
 
+      280,
+
     ),
 
     correct_answer: asQuestionText(
 
-      focus.correct_answer || extras.correctAnswer || null,
+      extras.sageAssessment?.correctAnswer ||
 
-      200,
+        focus.correct_answer ||
+
+        extras.correctAnswer ||
+
+        null,
+
+      280,
 
     ),
 
@@ -252,9 +269,16 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
     previous_mistakes: extras.previousMistakes || focus.previous_mistakes || [],
 
-    question_type: extras.questionType || focus.question_type || null,
+    question_type:
+      extras.sageAssessment?.questionType ||
+      extras.questionType ||
+      focus.question_type ||
+      null,
 
-    options: extras.options || focus.options || [],
+    options:
+      extras.sageAssessment?.options || extras.options || focus.options || [],
+
+    sage_assessment: extras.sageAssessment || focus.sage_assessment || null,
 
   };
 
@@ -1146,9 +1170,15 @@ export function sessionToFocusPatch(session) {
 
     spoken_opener: session.spoken_opener,
 
-    last_wrong_answer: session.evidence?.last_wrong || null,
+    last_wrong_answer:
+      session.evidence?.sage_assessment?.studentAnswer ||
+      session.evidence?.last_wrong ||
+      null,
 
-    correct_answer: session.evidence?.correct_answer || null,
+    correct_answer:
+      session.evidence?.sage_assessment?.correctAnswer ||
+      session.evidence?.correct_answer ||
+      null,
 
     current_question: session.evidence?.farm_question || null,
 

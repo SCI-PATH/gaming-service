@@ -9,7 +9,9 @@ import {
   extractFillInStudentAnswer,
   formatGroundTruthChoice,
   normalizeSageMindMapInput,
+  buildSageAssessment,
   SAGE_QUESTION_TYPES,
+  SAGE_ASSESSMENT_TYPES,
 } from './normalizeSageMindMapInput.js';
 import {
   scienceKeyIdea,
@@ -287,7 +289,7 @@ describe('compactTeachingState fill-in path', () => {
     });
     assert.equal(state.studentAnswer, 'oxygen');
     assert.equal(state.correctAnswer, 'carbon dioxide');
-    assert.equal(state.questionType, 'MultiBlank');
+    assert.equal(state.questionType, 'FillInTheBlank');
   });
 });
 
@@ -580,5 +582,76 @@ describe('SAGE tutor still teaches typed-answer misses', () => {
     assert.equal(turn.structured.assessment.correctAnswer, 'Carbon dioxide');
     assert.ok(turn.structured.mindMap.nodes.length >= 2);
     assert.equal(turn.nextAction !== 'INSUFFICIENT_KNOWLEDGE', true);
+  });
+});
+
+describe('buildSageAssessment — one object for every farm type', () => {
+  it('formats MCQ letters with option text', () => {
+    const assessment = buildSageAssessment({
+      questionType: 'MCQ',
+      question: 'Which component stores electrical energy?',
+      options: ['Switch', 'Capacitor', 'Resistor', 'Wire'],
+      studentAnswer: 'C',
+      correctAnswer: 'B',
+      isCorrect: false,
+    });
+    assert.equal(assessment.questionType, SAGE_ASSESSMENT_TYPES.MCQ);
+    assert.equal(assessment.studentAnswer, 'C — Resistor');
+    assert.equal(assessment.correctAnswer, 'B — Capacitor');
+    assert.equal(assessment.isCorrect, false);
+    assert.deepEqual(assessment.options, [
+      'Switch',
+      'Capacitor',
+      'Resistor',
+      'Wire',
+    ]);
+  });
+
+  it('keeps True/False tokens without letter prefixes', () => {
+    const assessment = buildSageAssessment({
+      questionType: 'TrueFalse',
+      question: 'Plants use oxygen to make glucose during photosynthesis.',
+      options: ['True', 'False'],
+      studentAnswer: 'False',
+      correctAnswer: 'True',
+      isCorrect: false,
+    });
+    assert.equal(assessment.questionType, SAGE_ASSESSMENT_TYPES.TrueFalse);
+    assert.equal(assessment.studentAnswer, 'False');
+    assert.equal(assessment.correctAnswer, 'True');
+    assert.equal(assessment.studentAnswer.includes('—'), false);
+  });
+
+  it('keeps fill-in text and does not turn it into an option letter', () => {
+    const assessment = buildSageAssessment({
+      questionType: 'MultiBlank',
+      question: 'The process by which plants make food is ______.',
+      studentAnswer: 'respiration',
+      correctAnswer: 'photosynthesis',
+      isCorrect: false,
+    });
+    assert.equal(assessment.questionType, SAGE_ASSESSMENT_TYPES.FillInTheBlank);
+    assert.equal(assessment.studentAnswer, 'respiration');
+    assert.equal(assessment.correctAnswer, 'photosynthesis');
+    assert.deepEqual(assessment.options, []);
+  });
+
+  it('keeps the full typed student sentence', () => {
+    const assessment = buildSageAssessment({
+      questionType: 'ShortAnswer',
+      question: 'What stores electrical energy?',
+      studentAnswer: 'A resistor stores electrical energy.',
+      correctAnswer: 'A capacitor stores electrical energy.',
+      isCorrect: false,
+    });
+    assert.equal(assessment.questionType, SAGE_ASSESSMENT_TYPES.ShortAnswer);
+    assert.equal(
+      assessment.studentAnswer,
+      'A resistor stores electrical energy.',
+    );
+    assert.equal(
+      assessment.correctAnswer,
+      'A capacitor stores electrical energy.',
+    );
   });
 });
