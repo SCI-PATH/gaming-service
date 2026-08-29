@@ -22,7 +22,11 @@ export {
   normalizeSageMindMapInput,
   extractFillInStudentAnswer,
   extractFillInCorrectAnswer,
+  extractTypedStudentAnswer,
+  extractTypedCorrectAnswer,
   isFillInQuestionType,
+  isTypedAnswerQuestionType,
+  usesSageFreeTextAnswer,
   SAGE_QUESTION_TYPES,
 } from './normalizeSageMindMapInput.js';
 export {

@@ -1,8 +1,9 @@
 /**
  * Shared SAGE mind-map input normalizer.
  *
- * MCQ, True/False, and Fill-in-the-Blank all emit the same analysis shape.
- * Fill-in-the-Blank is NEVER treated as an MCQ: no selectedOption / options[i].
+ * MCQ, True/False, Fill-in-the-Blank, and Typed Answer emit the same analysis
+ * shape. Fill-in-the-Blank is NEVER treated as an MCQ. Typed Answer is NEVER
+ * treated as Fill-in-the-Blank: the full student sentence is preserved.
  */
 import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import { isGradeStatusText } from './kidFriendlySpeech.js';
@@ -11,7 +12,8 @@ export const SAGE_QUESTION_TYPES = {
   MCQ: 'MCQ',
   TrueFalse: 'TrueFalse',
   FILL_IN_THE_BLANK: 'FILL_IN_THE_BLANK',
-  ShortAnswer: 'ShortAnswer',
+  TYPED_ANSWER: 'TYPED_ANSWER',
+  ShortAnswer: 'TYPED_ANSWER',
 };
 
 const FILL_IN_ALIASES = new Set([
@@ -20,6 +22,16 @@ const FILL_IN_ALIASES = new Set([
   'fillblank',
   'fillintheblanks',
   'cloze',
+]);
+
+const TYPED_ANSWER_ALIASES = new Set([
+  'shortanswer',
+  'typedanswer',
+  'typed',
+  'answertyping',
+  'constructedresponse',
+  'freetext',
+  'openended',
 ]);
 
 function compactSpaces(text) {
@@ -54,7 +66,9 @@ function explicitKind(raw) {
   if (FILL_IN_ALIASES.has(explicit)) {
     return SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
   }
-  if (explicit === 'shortanswer') return SAGE_QUESTION_TYPES.ShortAnswer;
+  if (TYPED_ANSWER_ALIASES.has(explicit)) {
+    return SAGE_QUESTION_TYPES.TYPED_ANSWER;
+  }
   return null;
 }
 
@@ -73,6 +87,18 @@ export function isFillInQuestionType(typeOrInput) {
     return detectSageQuestionKind(typeOrInput) === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
   }
   return explicitKind(typeOrInput) === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
+}
+
+export function isTypedAnswerQuestionType(typeOrInput) {
+  if (typeOrInput && typeof typeOrInput === 'object') {
+    return detectSageQuestionKind(typeOrInput) === SAGE_QUESTION_TYPES.TYPED_ANSWER;
+  }
+  return explicitKind(typeOrInput) === SAGE_QUESTION_TYPES.TYPED_ANSWER;
+}
+
+/** Fill-in and Typed Answer keep the student's own text (never MCQ options). */
+export function usesSageFreeTextAnswer(typeOrInput) {
+  return isFillInQuestionType(typeOrInput) || isTypedAnswerQuestionType(typeOrInput);
 }
 
 export function detectSageQuestionKind(input = {}) {
@@ -280,14 +306,17 @@ export function extractFillInCorrectAnswer(source = {}) {
     })
     .find(Boolean);
 
-  if (!acceptedAnswers.length && missed.length) {
-    acceptedAnswers = missed;
-  }
-  if (!acceptedAnswers.length && fromExpected) {
-    acceptedAnswers = listFromUnknown(fromExpected);
-  }
-  if (!acceptedAnswers.length && direct) {
-    acceptedAnswers = listFromUnknown(direct);
+  const expectedList = fromExpected ? listFromUnknown(fromExpected) : [];
+  if (!acceptedAnswers.length) {
+    if (expectedList.length && expectedList.length >= missed.length) {
+      acceptedAnswers = expectedList;
+    } else if (missed.length) {
+      acceptedAnswers = missed;
+    } else if (expectedList.length) {
+      acceptedAnswers = expectedList;
+    } else if (direct) {
+      acceptedAnswers = listFromUnknown(direct);
+    }
   }
 
   const uniqueAccepted = [];
@@ -306,6 +335,138 @@ export function extractFillInCorrectAnswer(source = {}) {
     canonicalCorrectAnswer: canonicalCorrectAnswer || correctAnswer || '',
     acceptedAnswers: uniqueAccepted,
   };
+}
+
+function listKeywords(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) {
+    return raw.map((item) => compactSpaces(item)).filter(Boolean);
+  }
+  if (typeof raw === 'object') {
+    return Object.values(raw)
+      .map((item) => compactSpaces(item))
+      .filter(Boolean);
+  }
+  return compactSpaces(raw)
+    .split(/\s*,\s*/)
+    .map((item) => compactSpaces(item))
+    .filter(Boolean);
+}
+
+/**
+ * Student's complete typed sentence. Preserve wording; do not lowercase,
+ * split on blanks, or rewrite into MCQ options.
+ */
+export function extractTypedStudentAnswer(source = {}) {
+  const q = source.questionData && typeof source.questionData === 'object'
+    ? source.questionData
+    : {};
+  const candidates = [
+    source.studentAnswer,
+    source.typedAnswer,
+    source.inputAnswer,
+    source.response,
+    source.selectedText,
+    q.studentAnswer,
+    q.typedAnswer,
+    q.inputAnswer,
+  ];
+
+  for (const value of candidates) {
+    if (value == null || value === '') continue;
+    if (Array.isArray(value)) {
+      const joined = value.map((item) => compactSpaces(item)).filter(Boolean).join(' ');
+      if (joined) return joined;
+      continue;
+    }
+    if (typeof value === 'object') continue;
+    const text = compactSpaces(value);
+    if (text) return text;
+  }
+  return '';
+}
+
+/**
+ * Model / ideal answer for Typed Answer. Never reads MCQ options.
+ */
+export function extractTypedCorrectAnswer(source = {}) {
+  const q = source.questionData && typeof source.questionData === 'object'
+    ? source.questionData
+    : {};
+  const grade =
+    source.grade ||
+    source.gradePayload ||
+    q.grade ||
+    q.gradePayload ||
+    null;
+
+  const direct = [
+    source.canonicalCorrectAnswer,
+    source.ideal_answer,
+    source.idealAnswer,
+    source.correctAnswer,
+    source.correct_answer,
+    q.ideal_answer,
+    q.idealAnswer,
+    q.correctAnswer,
+    q.correct_answer,
+    grade?.ideal_answer,
+    grade?.idealAnswer,
+    grade?.model_answer,
+    grade?.correct_answer,
+    grade?.correctAnswer,
+  ]
+    .map((value) => {
+      if (Array.isArray(value)) {
+        return value.map((item) => compactSpaces(item)).filter(Boolean).join(' ');
+      }
+      const cleaned = compactSpaces(value);
+      if (!cleaned || isGradeStatusText(cleaned)) return '';
+      return cleaned;
+    })
+    .find(Boolean);
+
+  return {
+    correctAnswer: direct || '',
+    canonicalCorrectAnswer: direct || '',
+    acceptedAnswers: direct ? [direct] : [],
+  };
+}
+
+function typedCompleteness(source, isCorrect) {
+  if (isCorrect) return 'correct';
+  const q = source.questionData && typeof source.questionData === 'object'
+    ? source.questionData
+    : {};
+  const grade =
+    source.grade ||
+    source.gradePayload ||
+    q.grade ||
+    q.gradePayload ||
+    {};
+  const score = Number(
+    source.accuracyScore ??
+      source.accuracy_score ??
+      grade.accuracy_score ??
+      grade.accuracyScore,
+  );
+  const missing = listKeywords(
+    source.missingKeywords ||
+      source.missing_keywords ||
+      grade.missing_keywords ||
+      grade.missingKeywords,
+  );
+  const category = String(
+    source.errorCategory ||
+      source.error_category ||
+      grade.error_category ||
+      grade.errorCategory ||
+      '',
+  ).toUpperCase();
+  if (category.includes('MISSING_KEYWORD') && missing.length) return 'partial';
+  if (Number.isFinite(score) && score >= 0.35 && score < 0.8) return 'partial';
+  if (source.completeness === 'partial' || q.completeness === 'partial') return 'partial';
+  return 'incorrect';
 }
 
 function extractChoiceStudentAnswer(source, options) {
@@ -405,6 +566,7 @@ function resolveTopic(source, prompt) {
  *   frustrationScore: number|null,
  *   options: string[],
  *   correctIndex: number,
+ *   misconception: string,
  * }}
  */
 export function normalizeSageMindMapInput(source = {}) {
@@ -449,25 +611,72 @@ export function normalizeSageMindMapInput(source = {}) {
     source.isCorrect ?? source.is_correct ?? q.isCorrect ?? false,
   );
 
-  if (
-    questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK ||
-    questionType === SAGE_QUESTION_TYPES.ShortAnswer
-  ) {
+  if (questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK) {
     const studentAnswer = extractFillInStudentAnswer(source);
     const correct = extractFillInCorrectAnswer(source);
     return {
-      questionType:
-        questionType === SAGE_QUESTION_TYPES.ShortAnswer
-          ? SAGE_QUESTION_TYPES.ShortAnswer
-          : SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK,
+      questionType: SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK,
       question,
       studentAnswer,
       correctAnswer: correct.correctAnswer,
       canonicalCorrectAnswer: correct.canonicalCorrectAnswer,
       acceptedAnswers: correct.acceptedAnswers,
       isCorrect,
+      completeness: isCorrect ? 'correct' : 'incorrect',
       topic,
       concept,
+      misconception: '',
+      verifiedKnowledge,
+      frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
+      options: [],
+      correctIndex: -1,
+    };
+  }
+
+  if (questionType === SAGE_QUESTION_TYPES.TYPED_ANSWER) {
+    const studentAnswer = extractTypedStudentAnswer(source);
+    const correct = extractTypedCorrectAnswer(source);
+    const completeness = typedCompleteness(source, isCorrect);
+    const grade =
+      source.grade ||
+      source.gradePayload ||
+      q.grade ||
+      q.gradePayload ||
+      {};
+    const missingKeywords = listKeywords(
+      source.missingKeywords ||
+        source.missing_keywords ||
+        grade.missing_keywords ||
+        grade.missingKeywords,
+    );
+    const accuracyScore = Number(
+      source.accuracyScore ??
+        source.accuracy_score ??
+        grade.accuracy_score ??
+        grade.accuracyScore,
+    );
+    const errorCategory = compactSpaces(
+      source.errorCategory ||
+        source.error_category ||
+        grade.error_category ||
+        grade.errorCategory ||
+        '',
+    );
+    return {
+      questionType: SAGE_QUESTION_TYPES.TYPED_ANSWER,
+      question,
+      studentAnswer,
+      correctAnswer: correct.correctAnswer,
+      canonicalCorrectAnswer: correct.canonicalCorrectAnswer,
+      acceptedAnswers: correct.acceptedAnswers,
+      isCorrect,
+      completeness,
+      missingKeywords,
+      accuracyScore: Number.isFinite(accuracyScore) ? accuracyScore : null,
+      errorCategory: errorCategory || null,
+      topic,
+      concept,
+      misconception: compactSpaces(source.misconception || q.misconception || ''),
       verifiedKnowledge,
       frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
       options: [],
@@ -492,8 +701,10 @@ export function normalizeSageMindMapInput(source = {}) {
     canonicalCorrectAnswer: correctAnswer,
     acceptedAnswers: correctAnswer ? [correctAnswer] : [],
     isCorrect,
+    completeness: isCorrect ? 'correct' : 'incorrect',
     topic,
     concept,
+    misconception: '',
     verifiedKnowledge,
     frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
     options: options.map((opt) => opt.text).filter(Boolean),

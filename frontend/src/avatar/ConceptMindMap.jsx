@@ -606,7 +606,16 @@ export default function ConceptMindMap({
               {b.lesson?.sections?.length ? (
                 compact && selected ? (
                   <SageLessonPanel sections={b.lesson.sections} lesson={b.lesson} />
-                ) : null
+                ) : (
+                  <>
+                    {b.keyConcept ? (
+                      <p className="mm-card-key">
+                        <span className="mm-card-kicker">Key idea</span>{' '}
+                        {b.keyConcept}
+                      </p>
+                    ) : null}
+                  </>
+                )
               ) : (
                 <>
                   {b.keyConcept ? (

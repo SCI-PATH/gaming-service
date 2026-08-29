@@ -26,7 +26,7 @@ import {
 } from './learningPreferences.js';
 import { buildPersonalizedMindMap, buildMissAttempt } from './buildMindMap.js';
 import {
-  isFillInQuestionType,
+  usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
 } from './normalizeSageMindMapInput.js';
 import { recordIncorrectMindMap } from './mindMapHistoryStore.js';
@@ -159,18 +159,22 @@ export function useBehavioralTelemetry({
         grade: questionData?.grade || questionData?.gradePayload,
         isCorrect: false,
       });
-      const fillIn = isFillInQuestionType(normalized.questionType);
+      const freeText = usesSageFreeTextAnswer(normalized.questionType);
       const attempt = buildMissAttempt(
-        fillIn
+        freeText
           ? {
               ...questionData,
               questionType: normalized.questionType,
               studentAnswer: normalized.studentAnswer,
               correctAnswer: normalized.correctAnswer,
               acceptedAnswers: normalized.acceptedAnswers,
+              completeness: normalized.completeness,
+              missingKeywords: normalized.missingKeywords,
+              accuracyScore: normalized.accuracyScore,
+              errorCategory: normalized.errorCategory,
             }
           : questionData,
-        fillIn ? normalized.studentAnswer || selectedText : selectedText,
+        freeText ? normalized.studentAnswer || selectedText : selectedText,
       );
       const topic =
         pickCanonicalTopicId(
@@ -1008,12 +1012,12 @@ export function useBehavioralTelemetry({
         grade: questionData?.grade || questionData?.gradePayload,
         isCorrect: false,
       });
-      const fillIn = isFillInQuestionType(sageInput.questionType);
-      const analysisStudent = fillIn
+      const freeText = usesSageFreeTextAnswer(sageInput.questionType);
+      const analysisStudent = freeText
         ? sageInput.studentAnswer || selectedText
         : selectedText;
       if (analysisStudent) lastWrongRef.current = analysisStudent;
-      const resolvedCorrect = fillIn
+      const resolvedCorrect = freeText
         ? sageInput.correctAnswer ||
           correctAnswer ||
           questionData?.correctAnswer ||
@@ -1030,13 +1034,17 @@ export function useBehavioralTelemetry({
         ? {
             ...questionData,
             questionType: sageInput.questionType || questionData.questionType,
-            studentAnswer: fillIn
+            studentAnswer: freeText
               ? analysisStudent
               : questionData.studentAnswer,
             correctAnswer: resolvedCorrect || questionData.correctAnswer || null,
-            acceptedAnswers: fillIn
+            acceptedAnswers: freeText
               ? sageInput.acceptedAnswers
               : questionData.acceptedAnswers,
+            completeness: sageInput.completeness,
+            missingKeywords: sageInput.missingKeywords,
+            accuracyScore: sageInput.accuracyScore,
+            errorCategory: sageInput.errorCategory,
             gradeFeedback: gradeFeedback || questionData.gradeFeedback || null,
           }
         : questionData;

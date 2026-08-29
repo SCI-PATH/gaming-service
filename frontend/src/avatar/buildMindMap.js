@@ -24,6 +24,7 @@ import {
 } from './explainMisconception.js';
 import {
   isFillInQuestionType,
+  isTypedAnswerQuestionType,
   normalizeSageMindMapInput,
   SAGE_QUESTION_TYPES,
 } from './normalizeSageMindMapInput.js';
@@ -42,7 +43,9 @@ const BRANCH_COLORS = [
 export function extractQuestionFacts(questionData) {
   if (!questionData) return null;
   const fillIn = isFillInQuestionType(questionData);
-  const options = fillIn
+  const typed = isTypedAnswerQuestionType(questionData);
+  const freeText = fillIn || typed;
+  const options = freeText
     ? []
     : (questionData.options || []).map((opt, idx) => {
         if (typeof opt === 'string') {
@@ -57,12 +60,12 @@ export function extractQuestionFacts(questionData) {
             Boolean(opt.isCorrect) || idx === questionData.correctIndex,
         };
       });
-  const correctIndex = fillIn
+  const correctIndex = freeText
     ? -1
     : typeof questionData.correctIndex === 'number'
       ? questionData.correctIndex
       : options.findIndex((o) => o.isCorrect);
-  const correct = fillIn
+  const correct = freeText
     ? null
     : (correctIndex >= 0 ? options[correctIndex] : null) ||
       options.find((o) => o.isCorrect) ||
@@ -74,6 +77,10 @@ export function extractQuestionFacts(questionData) {
     correctAnswer: questionData.correctAnswer,
     acceptedAnswers: questionData.acceptedAnswers,
     grade: questionData.grade || questionData.gradePayload,
+    completeness: questionData.completeness,
+    missingKeywords: questionData.missingKeywords,
+    accuracyScore: questionData.accuracyScore,
+    errorCategory: questionData.errorCategory,
   });
 
   return {
@@ -88,13 +95,15 @@ export function extractQuestionFacts(questionData) {
     hint: questionData.hint || null,
     grade: questionData.grade || null,
     questionType: normalized.questionType,
-    options: fillIn ? [] : options.map((o) => o.text),
+    options: freeText ? [] : options.map((o) => o.text),
     correctIndex,
-    correctAnswer: fillIn
+    correctAnswer: freeText
       ? normalized.correctAnswer || questionData.correctAnswer || null
       : questionData.correctAnswer || correct?.text || null,
-    acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
-    studentAnswer: fillIn ? normalized.studentAnswer || null : undefined,
+    acceptedAnswers: freeText ? normalized.acceptedAnswers : undefined,
+    studentAnswer: freeText ? normalized.studentAnswer || null : undefined,
+    completeness: typed ? normalized.completeness : undefined,
+    missingKeywords: typed ? normalized.missingKeywords : undefined,
   };
 }
 
@@ -109,18 +118,22 @@ export function buildMissAttempt(questionData, selectedText = null) {
     correctAnswer: questionData?.correctAnswer,
     acceptedAnswers: questionData?.acceptedAnswers,
     grade: questionData?.grade || questionData?.gradePayload,
+    completeness: questionData?.completeness,
+    missingKeywords: questionData?.missingKeywords,
+    accuracyScore: questionData?.accuracyScore,
+    errorCategory: questionData?.errorCategory,
     isCorrect: false,
   });
   const facts = extractQuestionFacts(questionData);
-  const fillIn =
-    normalized.questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK ||
-    normalized.questionType === SAGE_QUESTION_TYPES.ShortAnswer;
-  const studentAnswer = fillIn
+  const fillIn = normalized.questionType === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
+  const typed = normalized.questionType === SAGE_QUESTION_TYPES.TYPED_ANSWER;
+  const freeText = fillIn || typed;
+  const studentAnswer = freeText
     ? normalized.studentAnswer ||
       (typeof selectedText === 'string' ? selectedText.trim() : '') ||
       '(timed out / no selection)'
     : selectedText || '(timed out / no selection)';
-  const correctAnswer = fillIn
+  const correctAnswer = freeText
     ? normalized.correctAnswer || null
     : safeScienceLine(facts?.correctAnswer, null);
 
@@ -130,13 +143,15 @@ export function buildMissAttempt(questionData, selectedText = null) {
       topic: normalized.topic || questionData?.topic || 'Science',
       prompt: normalized.question || questionData?.prompt || 'a science challenge',
       questionType: normalized.questionType,
-      options: fillIn ? [] : [],
+      options: freeText ? [] : [],
       correctAnswer: correctAnswer,
       canonicalCorrectAnswer: normalized.canonicalCorrectAnswer || correctAnswer,
-      acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
-      studentAnswer: fillIn
+      acceptedAnswers: freeText ? normalized.acceptedAnswers : undefined,
+      studentAnswer: freeText
         ? normalized.studentAnswer || selectedText || '(no selection)'
         : selectedText || '(no selection)',
+      completeness: typed ? normalized.completeness : undefined,
+      missingKeywords: typed ? normalized.missingKeywords : undefined,
       hint: questionData?.hint || null,
       at: Date.now(),
     };
@@ -146,14 +161,16 @@ export function buildMissAttempt(questionData, selectedText = null) {
     topic: facts.topic,
     prompt: facts.prompt,
     questionType: normalized.questionType || facts.questionType,
-    options: fillIn ? [] : facts.options,
-    correctIndex: fillIn ? -1 : facts.correctIndex,
+    options: freeText ? [] : facts.options,
+    correctIndex: freeText ? -1 : facts.correctIndex,
     correctAnswer,
-    canonicalCorrectAnswer: fillIn
+    canonicalCorrectAnswer: freeText
       ? normalized.canonicalCorrectAnswer || correctAnswer
       : correctAnswer,
-    acceptedAnswers: fillIn ? normalized.acceptedAnswers : undefined,
+    acceptedAnswers: freeText ? normalized.acceptedAnswers : undefined,
     studentAnswer,
+    completeness: typed ? normalized.completeness || facts.completeness : undefined,
+    missingKeywords: typed ? normalized.missingKeywords : undefined,
     hint: facts.hint,
     grade: facts.grade,
     at: Date.now(),
@@ -375,15 +392,30 @@ export function buildPersonalizedMindMap({
     const color = BRANCH_COLORS[i % BRANCH_COLORS.length];
     const t = resolveTopicKey(a.topic) || a.topic || 'Science';
     topicsSeen.add(t);
-    const cleanWrong =
-      shortConceptLabel(a.studentAnswer, 48) ||
-      friendlyWrongAnswer(a.studentAnswer, 80) ||
-      a.studentAnswer ||
-      'no pick yet';
-    const cleanRight =
-      shortConceptLabel(a.correctAnswer, 48) ||
-      safeScienceLine(a.correctAnswer, null) ||
-      'see the lesson key idea';
+    const fillIn =
+      isFillInQuestionType(a.questionType) ||
+      isFillInQuestionType(a) ||
+      /_{2,}|\[\s*_{0,4}\s*\]/.test(String(a.prompt || a.question || ''));
+    const typed =
+      isTypedAnswerQuestionType(a.questionType) ||
+      isTypedAnswerQuestionType(a);
+    const freeText = fillIn || typed;
+    const cleanWrong = freeText
+      ? safeScienceLine(a.studentAnswer, null) ||
+        friendlyWrongAnswer(a.studentAnswer, typed ? 160 : 80) ||
+        a.studentAnswer ||
+        'no pick yet'
+      : shortConceptLabel(a.studentAnswer, 48) ||
+        friendlyWrongAnswer(a.studentAnswer, 80) ||
+        a.studentAnswer ||
+        'no pick yet';
+    const cleanRight = freeText
+      ? safeScienceLine(a.correctAnswer, null) ||
+        a.correctAnswer ||
+        'see the lesson key idea'
+      : shortConceptLabel(a.correctAnswer, 48) ||
+        safeScienceLine(a.correctAnswer, null) ||
+        'see the lesson key idea';
     const related = catalogRelated(t, cleanRight, usedRelated);
     const conceptual = {
       ...a,
@@ -405,7 +437,9 @@ export function buildPersonalizedMindMap({
           explainDepth: profile.explainDepth,
         });
     const keyIdea = lessonOk
-      ? lesson.studentAnswer.concept
+      ? lesson.comparisonFields?.keyScientificDifference ||
+        lesson.correctAnswer?.concept ||
+        scienceKeyIdea(conceptual)
       : scienceKeyIdea(conceptual);
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
 

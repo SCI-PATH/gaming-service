@@ -34,7 +34,7 @@ import {
   relatedPreviousMistakes,
 } from './sageTutorLoop.js';
 import {
-  isFillInQuestionType,
+  usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
 } from './normalizeSageMindMapInput.js';
 
@@ -182,10 +182,10 @@ export function buildContextPayload({
     topic: quiz?.topic || quiz?.questionData?.topic,
     frustrationScore: telemetry.frustrationScore,
   });
-  const fillIn =
-    isFillInQuestionType(sageInput.questionType) ||
-    isFillInQuestionType(questionType);
-  const lastWrong = fillIn
+  const sageFreeText =
+    usesSageFreeTextAnswer(sageInput.questionType) ||
+    usesSageFreeTextAnswer(questionType);
+  const lastWrong = sageFreeText
     ? sageInput.studentAnswer ||
       telemetry.lastWrongAnswer ||
       quiz?.studentLastWrongAnswer ||
@@ -207,7 +207,7 @@ export function buildContextPayload({
     return s;
   };
 
-  const knownCorrect = fillIn
+  const knownCorrect = sageFreeText
     ? sageInput.correctAnswer ||
       sageInput.canonicalCorrectAnswer ||
       safeCorrect(
@@ -458,7 +458,7 @@ export function buildContextPayload({
       ? {
           question_text: questionText,
           question_type: questionType,
-          options: fillIn ? [] : questionOptions,
+          options: sageFreeText ? [] : questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||
@@ -476,7 +476,7 @@ export function buildContextPayload({
       : {
           question_text: asQuestionText(focus?.current_question, 280),
           question_type: questionType,
-          options: fillIn ? [] : questionOptions,
+          options: sageFreeText ? [] : questionOptions,
           student_last_wrong_answer: lastWrong,
           correct_answer:
             knownCorrect ||

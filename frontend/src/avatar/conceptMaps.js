@@ -516,13 +516,19 @@ export function inferConceptFromText(text) {
   }
   if (/food chain|ecosystem|habitat/.test(lower)) return 'Ecology';
   if (/digest|stomach|intestin/.test(lower)) return 'Digestive System';
+  if (/main parts of a plant|parts of a plant include/.test(lower)) {
+    return 'Plant Biology';
+  }
   if (/photo|chloroph|carbon dioxide|glucose/.test(lower)) return 'Photosynthesis';
   if (/pollen|bee|pollinat/.test(lower)) return 'Pollination';
   if (/\bsoil\b|fertiliz/.test(lower)) return 'Soil Science';
   if (/water cycle|evapor|precip/.test(lower)) return 'Water Cycle';
-  if (/nutri|food energy/.test(lower)) return 'Nutrition';
-  if (/flower|anther|pistil|pollinat/.test(lower)) return 'Plant Biology';
+  if (/\bstem\b/.test(lower) && /support|transport|leaf|flower/.test(lower)) {
+    return 'Plant Biology';
+  }
+  if (/flower|anther|pistil/.test(lower)) return 'Plant Biology';
   if (/\broot\b|\bstem\b|\bleaf\b|plant part/.test(lower)) return 'Plant Biology';
+  if (/nutri|food energy/.test(lower)) return 'Nutrition';
   if (/\bplant/.test(lower)) return 'Plant Biology';
   return null;
 }

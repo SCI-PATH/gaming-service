@@ -5,6 +5,7 @@
  * Never invent a function or example. Never dump a one-line key.
  */
 import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
+import { isTypedAnswerQuestionType } from './normalizeSageMindMapInput.js';
 
 function clip(text, n = 220) {
   const s = String(text || '')
@@ -235,6 +236,30 @@ export function unpackScienceClaim(prompt, topic = '') {
       rejectFalse: 'A molecule or fossil is not a home.',
     };
   }
+  if (/main parts of a plant|parts of a plant include/i.test(blob)) {
+    return {
+      fact: 'The main parts of a plant are the roots, the stem, and the leaves. They work together in growth. Flowers and fruits are reproductive structures, and photosynthesis is a process in leaves — not a plant part.',
+      rejectFalse:
+        'Naming flowers, fruits, or photosynthesis in place of roots, stem, and leaves mixes organs and processes.',
+    };
+  }
+  if (/\bstem\b/i.test(blob) && /support|transport/i.test(blob)) {
+    return {
+      fact: 'The stem supports the plant body and transports water and nutrients between roots and leaves.',
+      rejectFalse:
+        'Flowers, seeds, fruits, and roots are other plant organs. They are not the stem jobs named in this sentence.',
+    };
+  }
+  if (
+    /plant/i.test(blob) &&
+    /diversity|vary widely|adapt to different/i.test(blob)
+  ) {
+    return {
+      fact: 'Plant species differ in their leaves and stems. Those organs can vary in shape and size, which helps plants live in different environments.',
+      rejectFalse:
+        'Flowers and seeds are about reproduction, not the body-part diversity this sentence is describing.',
+    };
+  }
   if (/respirat/i.test(blob) && /photosynth/i.test(blob)) {
     return {
       fact: 'Photosynthesis makes food using light. Respiration releases energy from food. They are different jobs.',
@@ -341,6 +366,51 @@ const STUDENT_WORLD_IDEAS = [
     how: 'After pollination, a flower can form a seed that holds a developing embryo.',
     example: 'A mango flower can lead to a fruit with a seed inside.',
     mismatch: 'Flowers making seeds is reproduction, not water storage.',
+  },
+  {
+    test: /\bflowers?\b|\bfruits?\b/,
+    label: 'flowers and fruits',
+    purpose: 'reproduction',
+    what: 'Flowers and fruits are reproductive structures.',
+    means: 'They are involved in making seeds and the next generation, not in being the three main body parts of the plant.',
+    usedFor: 'This is plant reproduction, not the root-stem-leaf body plan.',
+    how: 'After pollination, a flower can form a fruit that holds seeds.',
+    example: 'A mango flower can become a fruit with a seed inside.',
+    bodyShort:
+      'Flowers and fruits are reproductive structures. They are not the three main vegetative parts of the plant body.',
+    bodyFull:
+      'Flowers and fruits are reproductive structures in flowering plants. They are involved in seed formation. Roots, stem, and leaves are the main vegetative organs. Naming flowers or fruits in place of those organs mixes reproduction with the plant body plan.',
+    mismatch: 'Reproduction is not the same job as being a root, stem, or leaf.',
+  },
+  {
+    test: /photosynth/,
+    label: 'photosynthesis',
+    purpose: 'food-making in leaves',
+    what: 'Photosynthesis is the process green plants use to make food.',
+    means: 'It is a function that happens mainly in leaves, not a plant part you can point to like a root or a stem.',
+    usedFor: 'Leaves use this process to build sugar from light, water, and carbon dioxide.',
+    how: 'Chlorophyll in the leaf captures light so the plant can make glucose.',
+    example: 'A green leaf in sunlight is running photosynthesis.',
+    bodyShort:
+      'Photosynthesis is a process in leaves that makes food. It is not itself a plant organ like a root, stem, or leaf.',
+    bodyFull:
+      'Photosynthesis is how green plants make food in their leaves. It is a process, not a plant part. The main parts of a plant are roots, stem, and leaves. Putting photosynthesis in a blank that asks for a plant part mixes a function with an organ.',
+    mismatch: 'A process is not a plant organ.',
+  },
+  {
+    test: /\broots?\b/,
+    label: 'roots',
+    purpose: 'anchoring and taking in water',
+    what: 'Roots are plant organs that usually grow in the soil.',
+    means: 'They take in water and minerals and hold the plant in place.',
+    usedFor: 'Roots are one of the three main vegetative parts, together with the stem and the leaves.',
+    how: 'Water enters the plant through roots and can then move up the stem.',
+    example: 'A bean plant’s roots spread through the soil to take in water.',
+    bodyShort:
+      'Roots are plant organs that take in water and minerals from the soil.',
+    bodyFull:
+      'Roots are vegetative plant organs. They typically grow underground, take in water and minerals, and help hold the plant in place. They are one main plant part, together with the stem and the leaves.',
+    mismatch: 'A root is an organ, not a flower or a process.',
   },
   {
     test: /petal/,
@@ -670,13 +740,100 @@ const CORRECT_WORLD_IDEAS = [
     how: 'Leaves combine carbon dioxide and water using light to make glucose.',
     example: 'The sugar stored in a leaf after a sunny day started as glucose.',
   },
+  {
+    test: /\bsupport\b.{0,80}\btransport\b|\btransport\b.{0,80}\bsupport\b/,
+    label: 'stem support and transport',
+    purpose: 'holding the plant up and moving water and food',
+    what: 'The stem supports the plant and transports materials.',
+    means: 'Support keeps leaves and flowers in place. Transport moves water and nutrients through the stem.',
+    usedFor: 'These are two main jobs of the stem, not of flowers, seeds, fruits, or roots.',
+    how: 'The stem is a vegetative organ: it holds the shoot up and is a pathway for water and food.',
+    example: 'Water taken in by roots travels up the stem, while the stem holds the leaves in the light.',
+    bodyShort:
+      'The stem supports the plant body and transports water and nutrients between roots and leaves.',
+    bodyFull:
+      'The stem is a vegetative organ with more than one job. Support means it holds leaves and flowers up. Transport means it moves water and nutrients through the plant. Flowers, seeds, and fruits are reproductive structures, and roots take in water from soil — those are different organs and different jobs.',
+  },
+  {
+    test: /\bunbranched\b|\bbranched\b/,
+    label: 'branched and unbranched stems',
+    purpose: 'stem architecture',
+    what: 'Stems may be unbranched or branched.',
+    means: 'That describes the form of the stem, not a flower, seed, fruit, or root.',
+    usedFor: 'Stem form is part of how the shoot is built and held up.',
+    how: 'An unbranched stem stays as one main axis; a branched stem splits into side shoots.',
+    example: 'A palm has a mostly unbranched stem; a mango tree has a branched stem.',
+    bodyShort:
+      'Stems can be unbranched or branched. That is the form of the stem, not a reproductive organ.',
+    bodyFull:
+      'Unbranched and branched describe stem architecture. An unbranched stem stays as one main axis. A branched stem forms side shoots. That is about the stem itself, not flowers, seeds, fruits, or roots.',
+  },
+  {
+    test: /\broots?\b.{0,80}\bstems?\b.{0,80}\bleaves?\b|\bstems?\b.{0,80}\bleaves?\b.{0,80}\broots?\b|\bleaves?\b.{0,80}\broots?\b.{0,80}\bstems?\b/,
+    label: 'roots, stem, and leaves',
+    purpose: 'the main vegetative organs of the plant body',
+    what: 'The main parts of a plant are the roots, the stem, and the leaves.',
+    means: 'Those three organs work together in growth. Flowers and fruits are reproductive structures, and photosynthesis is a process — not a plant part.',
+    usedFor: 'Roots, stem, and leaves make up the plant body that supports growth.',
+    how: 'Roots take in water, the stem supports and transports, and leaves make food.',
+    example: 'A tomato plant is built from roots in the soil, a stem, and leaves in the light.',
+    bodyShort:
+      'The main parts of a plant are roots, stem, and leaves. They work together in growth. Flowers and fruits are for reproduction, and photosynthesis is a process in leaves, not a plant part.',
+    bodyFull:
+      'The main parts of a plant are the roots, the stem, and the leaves. Those vegetative organs work together so the plant can grow. Flowers and fruits are reproductive structures, not the three main body parts. Photosynthesis is a process that happens mainly in leaves — it is a function, not a plant organ.',
+  },
+  {
+    test: /leaves?.{0,80}stems?.{0,80}(shape|size|environment)|(shape|size).{0,60}(size|environment)/,
+    label: 'leaf and stem diversity',
+    purpose: 'how vegetative plant parts vary so species can live in different environments',
+    what: 'Leaves and stems are vegetative plant organs.',
+    means: 'In different species, those organs can vary widely in shape and size.',
+    usedFor: 'That morphological diversity helps plants adapt to different environments.',
+    how: 'Different leaf and stem forms suit different habitats.',
+    example: 'A rainforest leaf and a desert stem are both plant organs, shaped for different places.',
+    bodyShort:
+      'Leaves and stems are plant organs. Their shape and size can differ among species, which helps plants live in different environments.',
+    bodyFull:
+      'Leaves and stems are vegetative plant organs. Plant species can differ widely in the shape and size of those organs. That morphological diversity helps plants live in many environments. Flowers and seeds belong to reproduction, which is a different biological job.',
+  },
+  {
+    test: /\bleaves?\b/,
+    label: 'leaves',
+    purpose: 'light capture and food-making',
+    what: 'Leaves are plant organs that capture light.',
+    means: 'Most photosynthesis happens in the leaf.',
+    usedFor: 'Leaves are the main food-making surfaces of the plant.',
+    how: 'Chlorophyll in the leaf uses light to build sugar.',
+    example: 'A green crop leaf in sunlight is making food.',
+    bodyShort:
+      'Leaves are plant organs that capture light. Most photosynthesis happens in leaves.',
+    bodyFull:
+      'Leaves are vegetative plant organs. They capture light and are the main place where photosynthesis happens, so the plant can make food.',
+  },
+  {
+    test: /\bstems?\b/,
+    label: 'stems',
+    purpose: 'support and transport',
+    what: 'Stems are plant organs that hold the plant up.',
+    means: 'They support leaves and help move water and food.',
+    usedFor: 'Stems connect roots to leaves and flowers.',
+    how: 'Materials travel through the stem between roots and leaves.',
+    example: 'A sunflower stem holds the leaves up in the light.',
+    bodyShort:
+      'Stems are plant organs that support leaves and help move water and food.',
+    bodyFull:
+      'Stems are vegetative plant organs. They hold leaves in the light and help move water and food through the plant.',
+  },
 ];
 
 function lookupCorrectIdea(right, prompt = '', topic = '') {
   const r = lower(right);
   const hit = CORRECT_WORLD_IDEAS.find((row) => row.test.test(r));
   if (hit) return hit;
-  const blob = lower(`${right} ${prompt}`);
+  // Never scan the question text for fill-in lists — that steals
+  // unrelated labels (e.g. "leaf and stem diversity") from other misses.
+  if (looksLikeFillInList(right)) return null;
+  const blob = lower(`${right} ${prompt} ${topic}`);
   return CORRECT_WORLD_IDEAS.find((row) => row.test.test(blob)) || null;
 }
 
@@ -835,6 +992,37 @@ export function questionJob(attempt = {}) {
         'Dicotyledonous (dicot) plants have two cotyledons — seed leaves. The prefix “di-” means two.',
     };
   }
+  if (/main parts of a plant|parts of a plant include/.test(p)) {
+    return {
+      verbPhrase: 'name the main plant organs',
+      purpose: 'roots, stem, and leaves as the plant body',
+      asking: 'which organs are the main parts of a plant',
+      rightHow:
+        'The main parts of a plant are roots, stem, and leaves. Flowers and fruits are for reproduction, and photosynthesis is a leaf process, not a plant part.',
+    };
+  }
+  if (/\bstem\b/.test(p) && /support|transport/.test(p)) {
+    return {
+      verbPhrase: 'name the jobs of the stem',
+      purpose: 'stem support and transport',
+      asking: 'what the stem does to hold the plant up and move water and food',
+      rightHow:
+        'The stem supports leaves and flowers and transports water and nutrients through the plant.',
+    };
+  }
+  if (
+    /plant/i.test(p) &&
+    /diversity|vary widely|adapt to different/i.test(p)
+  ) {
+    return {
+      verbPhrase: 'name the plant parts that vary so species can live in different places',
+      purpose: 'plant morphological diversity',
+      asking:
+        'which plant organs vary in shape and size so plants can live in different environments',
+      rightHow:
+        'Leaves and stems are vegetative organs. Their shape and size can differ among species, and that diversity helps plants live in different environments.',
+    };
+  }
   if (claim?.fact) {
     return {
       verbPhrase: 'match the science idea in the sentence',
@@ -851,6 +1039,17 @@ export function questionJob(attempt = {}) {
     return { verbPhrase: 'match the science job in the question', rightHow: hint };
   }
   if (right) {
+    if (looksLikeFillInList(right) || /_{2,}|\[\s*_{0,4}\s*\]/.test(prompt)) {
+      return {
+        verbPhrase: 'name the science idea in the sentence',
+        asking: claim?.fact
+          ? firstSentence(claim.fact)
+          : 'the scientific idea named in this sentence',
+        rightHow:
+          claim?.fact ||
+          'Use the scientific idea in the sentence — not a related idea from another topic.',
+      };
+    }
     return {
       verbPhrase: `match “${clip(right, 48)}”`,
       rightHow: `This question is asking for ${right}. ${clip(prompt, 110)}`,
@@ -935,10 +1134,13 @@ export function displayChoice(text) {
 }
 
 export function shortConceptLabel(text, max = 42) {
+  const cleaned = displayChoice(text);
+  if (looksLikeFillInList(cleaned)) {
+    return clip(cleaned.replace(/\s*\|\s*/g, ' · '), max);
+  }
   const idea =
     lookupStudentIdea(text) || lookupCorrectIdea(text, text, '');
   if (idea?.label) return clip(idea.label, max);
-  const cleaned = displayChoice(text);
   if (!cleaned) return '';
   return clip(cleaned, max);
 }
@@ -962,10 +1164,229 @@ function conceptPurpose(text, attempt, side) {
   return '';
 }
 
+function looksLikeFillInList(text) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!s) return false;
+  if (s.includes('|') || s.includes('·') || s.includes('•')) return true;
+  const parts = s.split(/\s*,\s*/).filter(Boolean);
+  return parts.length >= 3 && parts.every((part) => part.trim().split(/\s+/).length <= 4);
+}
+
+function splitFillInTokens(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s*[|·•]\s*|\s*,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function classifyFillInPrompt(prompt = '') {
+  const p = lower(prompt);
+  if (!p) return null;
+  if (/main parts of a plant|parts of a plant include/.test(p)) {
+    return 'main_plant_parts';
+  }
+  if (
+    /\bstem\b/.test(p) &&
+    /multiple functions|support leaves|transporting/.test(p) &&
+    !/main parts/.test(p)
+  ) {
+    return 'stem_functions';
+  }
+  if (/diversity|vary widely|adapt to different/.test(p)) {
+    return 'plant_diversity';
+  }
+  return null;
+}
+
+function ideaFromFillInQuestion(attempt = {}, side = 'correct') {
+  if (isTypedAnswerQuestionType(attempt.questionType || attempt.question_type || attempt.type)) {
+    return null;
+  }
+  const prompt = attempt.prompt || attempt.question || attempt.questionText || '';
+  const fillIn =
+    looksLikeFillInList(attempt.correctAnswer) ||
+    looksLikeFillInList(attempt.studentAnswer) ||
+    /_{2,}|\[\s*_{0,4}\s*\]|fill.?in|blank/i.test(prompt);
+  if (!fillIn) return null;
+  const kind = classifyFillInPrompt(prompt);
+  if (side === 'correct') {
+    if (kind === 'main_plant_parts') {
+      return lookupCorrectIdea('roots stem leaves', '', '');
+    }
+    if (kind === 'stem_functions') {
+      return lookupCorrectIdea('support transport', '', '');
+    }
+    if (kind === 'plant_diversity') {
+      return lookupCorrectIdea('leaves stems shape size environments', '', '');
+    }
+  }
+  return null;
+}
+
+function ideaFromFillInStudentTokens(text, attempt = {}) {
+  if (isTypedAnswerQuestionType(attempt.questionType || attempt.question_type || attempt.type)) {
+    return null;
+  }
+  const prompt = attempt.prompt || attempt.question || '';
+  const kind = classifyFillInPrompt(prompt);
+  const blob = lower(`${text} ${splitFillInTokens(text).join(' ')}`);
+  if (kind === 'main_plant_parts' || kind === 'stem_functions') {
+    if (/flower|fruit|seed/.test(blob)) return lookupStudentIdea('flowers and fruits');
+    if (/photosynth/.test(blob)) return lookupStudentIdea('photosynthesis');
+    if (/\broots?\b/.test(blob)) return lookupStudentIdea('roots');
+  }
+  for (const part of splitFillInTokens(text)) {
+    const hit = lookupStudentIdea(part) || lookupCorrectIdea(part, '', '');
+    if (hit) return hit;
+  }
+  return null;
+}
+
+const TYPED_SUNLIGHT_ENERGY_IDEA = {
+  label: 'sunlight as energy',
+  purpose: 'the energy source plants use during photosynthesis',
+  what: 'Plants use sunlight as an energy source during photosynthesis.',
+  means: 'Light energy lets the leaf build food from carbon dioxide and water.',
+  usedFor: 'Sunlight is the energy input for food-making, not a raw material gas.',
+  how: 'Chlorophyll captures sunlight so the plant can make glucose.',
+  example: 'A green leaf in the sun is using light as energy to make food.',
+  bodyShort:
+    'Plants need sunlight because it gives them the energy to make food through photosynthesis.',
+  bodyFull:
+    'Plants use sunlight as an energy source during photosynthesis. Light energy lets the leaf make food. That is why plants need sunlight for photosynthesis.',
+};
+
+const TYPED_SUNLIGHT_FOOD_IDEA = {
+  label: 'sunlight and food-making',
+  purpose: 'the energy plants use to make food',
+  what: 'Plants use sunlight when they make food through photosynthesis.',
+  means: 'Sunlight provides the energy the leaf needs to build food.',
+  usedFor: 'Light energy powers photosynthesis.',
+  how: 'Chlorophyll in the leaf captures sunlight so the plant can make glucose.',
+  example: 'A green leaf in sunlight is using light energy to make food.',
+  bodyShort:
+    'You correctly identified that plants use sunlight when making food. Sunlight provides the energy needed for photosynthesis.',
+  bodyFull:
+    'You correctly identified that plants use sunlight when making food. Sunlight provides the energy needed for photosynthesis. That is an important correct idea.',
+};
+
+const TYPED_PHOTOSYNTHESIS_FULL_IDEA = {
+  label: 'photosynthesis',
+  purpose: 'making glucose from carbon dioxide and water using light',
+  what: 'Photosynthesis is the process by which plants use light energy to make glucose from carbon dioxide and water.',
+  means: 'Light is the energy source. Carbon dioxide and water are the raw materials.',
+  usedFor: 'This is how green plants make food in their leaves.',
+  how: 'The leaf takes in carbon dioxide and water, uses sunlight as energy, and builds glucose. Oxygen is usually given off.',
+  example: 'A crop leaf in the sun is taking in carbon dioxide and water to make food.',
+  bodyShort:
+    'Photosynthesis is how green plants make food from light, carbon dioxide, and water.',
+  bodyFull:
+    'Photosynthesis is the process by which plants use light energy to make glucose from carbon dioxide and water. Sunlight provides the energy, while carbon dioxide and water are used as raw materials.',
+};
+
+function typedMentions(text) {
+  const t = lower(text);
+  return {
+    oxygen: /\boxygen\b|\bo2\b/.test(t),
+    co2: /carbon dioxide|\bco2\b|co₂/.test(t),
+    water: /\bwater\b|\bh2o\b/.test(t),
+    sunlight: /sunlight|sun light|\blight energy\b/.test(t) || (/\bsun\b/.test(t) && /energy|food|photo/.test(t)),
+    light: /\blight\b/.test(t),
+    food: /\bfood\b|\bglucose\b|\bsugar\b/.test(t),
+    photosynthesis: /photosynth/.test(t),
+    respiration: /respirat|\bbreathe|\bbreathing/.test(t),
+    energy: /\benergy\b/.test(t),
+  };
+}
+
+function isTypedAttempt(attempt = {}) {
+  return isTypedAnswerQuestionType(
+    attempt.questionType || attempt.question_type || attempt.type,
+  );
+}
+
+function inferredTypedCorrect(attempt = {}) {
+  const direct = displayChoice(attempt.correctAnswer || attempt.correct_answer);
+  if (direct) return direct;
+  const prompt = lower(attempt.prompt || attempt.question || attempt.questionText || '');
+  if (/gas/.test(prompt) && /photosynth|take in/.test(prompt)) return 'carbon dioxide';
+  if (/what is photosynthesis|define photosynthesis/.test(prompt)) {
+    return 'Photosynthesis is the process by which plants use light energy to make glucose from carbon dioxide and water.';
+  }
+  if (/why.*sunlight|need sunlight/.test(prompt)) {
+    return 'Plants use sunlight as an energy source during photosynthesis.';
+  }
+  return '';
+}
+
+function isPartialTypedPhotosynthesis(attempt = {}) {
+  const m = typedMentions(attempt.studentAnswer || '');
+  const missing = Array.isArray(attempt.missingKeywords) ? attempt.missingKeywords : [];
+  const completeness = String(attempt.completeness || '').toLowerCase();
+  const prompt = lower(attempt.prompt || attempt.question || '');
+  const aboutPhotoDef = /what is photosynthesis|define photosynthesis/.test(prompt);
+  if (m.oxygen && /photosynth|take in|make food|respirat/.test(`${prompt} ${lower(attempt.studentAnswer || '')}`)) {
+    return false;
+  }
+  const hasCore = m.sunlight || m.light || m.energy || m.food || m.photosynthesis;
+  const missingRaw = !m.co2 || !m.water;
+  if (aboutPhotoDef && hasCore && missingRaw) return true;
+  if (completeness === 'partial' && hasCore && missingRaw) return true;
+  if (missing.length && hasCore && missingRaw && !m.oxygen) return true;
+  return false;
+}
+
+function ideaFromTypedText(text, attempt = {}, side = 'student') {
+  const cleaned = displayChoice(text);
+  if (!cleaned) return null;
+  const m = typedMentions(cleaned);
+  const prompt = lower(attempt.prompt || attempt.question || attempt.questionText || '');
+  const aboutGas = /gas/.test(prompt) && /photosynth|take in/.test(prompt);
+  const aboutPhoto = /photosynth|make food/.test(prompt);
+
+  if (side === 'student') {
+    if (m.oxygen && (aboutGas || aboutPhoto || m.food || m.respiration)) {
+      return lookupStudentIdea('oxygen');
+    }
+    if (/why.*sunlight|need sunlight/.test(prompt) && (m.sunlight || m.light || m.energy)) {
+      return TYPED_SUNLIGHT_ENERGY_IDEA;
+    }
+    if (isPartialTypedPhotosynthesis({ ...attempt, studentAnswer: cleaned })) {
+      return TYPED_SUNLIGHT_FOOD_IDEA;
+    }
+    return (
+      lookupStudentIdea(cleaned) ||
+      lookupCorrectIdea(cleaned, '', '') ||
+      (m.co2 ? lookupCorrectIdea('carbon dioxide', '', '') : null) ||
+      (m.photosynthesis ? lookupCorrectIdea('photosynthesis', '', '') : null) ||
+      ((m.sunlight || m.light) && (m.food || m.energy) ? TYPED_SUNLIGHT_ENERGY_IDEA : null)
+    );
+  }
+
+  if (/why.*sunlight|need sunlight/.test(prompt)) {
+    return TYPED_SUNLIGHT_ENERGY_IDEA;
+  }
+
+  if (m.co2 || /carbon dioxide|\bco2\b/.test(lower(inferredTypedCorrect(attempt) || cleaned))) {
+    const co2 = lookupCorrectIdea('carbon dioxide', '', '');
+    if (co2 && (aboutGas || m.co2)) return co2;
+  }
+  if (aboutPhoto && !aboutGas) return TYPED_PHOTOSYNTHESIS_FULL_IDEA;
+  return (
+    lookupCorrectIdea(cleaned, prompt, attempt.topic || '') ||
+    lookupCorrectIdea(inferredTypedCorrect(attempt), prompt, attempt.topic || '') ||
+    TYPED_PHOTOSYNTHESIS_FULL_IDEA
+  );
+}
+
 /** Short science idea for map "Key idea" — never just True/False. */
 export function scienceKeyIdea(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const right = displayChoice(attempt.correctAnswer);
+  const fillCorrect = ideaFromFillInQuestion(attempt, 'correct');
+  if (fillCorrect?.label) return fillCorrect.label;
   const claim = unpackScienceClaim(prompt, attempt.topic);
   if (isTrueFalseToken(right) && claim?.fact) return firstSentence(claim.fact);
   const idea = isTrueFalseToken(right)
@@ -998,11 +1419,33 @@ export function verifiedIdeaFor(text, attempt = {}, side = 'student') {
   if (!cleaned || isTrueFalseToken(cleaned) || isNoPick(cleaned) || isPlaceholderBlank(cleaned)) {
     return null;
   }
+  const fromTyped = isTypedAttempt(attempt)
+    ? ideaFromTypedText(cleaned, attempt, side)
+    : null;
   const fromStudent = lookupStudentIdea(cleaned);
   const fromCorrect = lookupCorrectIdea(cleaned, cleaned, '');
   const fromCatalog = catalogAsIdea(cleaned, attempt);
-  if (side === 'correct') return fromCorrect || fromStudent || fromCatalog;
-  return fromStudent || fromCorrect || fromCatalog;
+  const fromQuestion = ideaFromFillInQuestion(attempt, side);
+  const fromTokens = ideaFromFillInStudentTokens(cleaned, attempt);
+  const prompt = attempt.prompt || attempt.question || '';
+  const fillInPrompt = /_{2,}|\[\s*_{0,4}\s*\]|fill.?in|blank/i.test(prompt);
+  const fromPrompt =
+    side === 'correct' && (looksLikeFillInList(cleaned) || fillInPrompt)
+      ? unpackScienceClaim(prompt, attempt.topic)
+      : null;
+  const promptIdea = fromPrompt?.fact
+    ? {
+        label: 'the science in this sentence',
+        purpose: 'the process or structure this question is testing',
+        what: firstSentence(fromPrompt.fact),
+        bodyShort: firstSentence(fromPrompt.fact),
+        bodyFull: fromPrompt.fact,
+      }
+    : null;
+  if (side === 'correct') {
+    return fromTyped || fromQuestion || fromCorrect || fromCatalog || fromStudent || promptIdea;
+  }
+  return fromTyped || fromStudent || fromTokens || fromCorrect || fromCatalog;
 }
 
 function statementScience(attempt, band) {
@@ -1264,7 +1707,18 @@ function checkQuestion(attempt) {
     return 'Is helium mainly a balloon gas, or the gas plants take in to make food?';
   }
   if (/oxygen/.test(lower(attempt.studentAnswer)) && /photosynth/.test(prompt)) {
+    if (isTypedAttempt(attempt)) {
+      return 'During photosynthesis, is carbon dioxide used to make food, or is it the main gas used to release energy from food?';
+    }
     return 'Do plants mainly take in oxygen to make food, or give oxygen off?';
+  }
+  if (
+    isTypedAttempt(attempt) &&
+    /sunlight|make food/.test(lower(attempt.studentAnswer || '')) &&
+    /photosynth/.test(prompt) &&
+    !/gas/.test(prompt)
+  ) {
+    return 'Besides sunlight, can you remember one substance that plants need for photosynthesis?';
   }
   if (/water/.test(studentPurpose) && /reproduc/.test(correctPurpose)) {
     return 'If a plant produces seeds through its flowers, is this mainly related to water storage or reproduction?';
@@ -1315,9 +1769,42 @@ export function formatLessonSpeech(lesson) {
  * Define both answers scientifically, then compare. Never emit incomplete comparison.
  */
 export function composeFiveStepLesson(attempt = {}, voice = {}) {
+  const typedAttempt = isTypedAttempt(attempt)
+    ? {
+        ...attempt,
+        correctAnswer:
+          displayChoice(attempt.correctAnswer) || inferredTypedCorrect(attempt),
+      }
+    : attempt;
   const band = voiceBand(voice);
-  const student = completeConcept(attempt.studentAnswer, attempt, 'student', band);
-  const correctObj = completeConcept(attempt.correctAnswer, attempt, 'correct', band);
+  let student = completeConcept(typedAttempt.studentAnswer, typedAttempt, 'student', band);
+  let correctObj = completeConcept(typedAttempt.correctAnswer, typedAttempt, 'correct', band);
+  if (isTypedAttempt(typedAttempt) && isPartialTypedPhotosynthesis(typedAttempt)) {
+    const missing = [];
+    const m = typedMentions(typedAttempt.studentAnswer || '');
+    if (!m.co2) missing.push('carbon dioxide');
+    if (!m.water) missing.push('water');
+    const missingLine = missing.length
+      ? ` One important part is missing: plants also use ${missing.join(' and ')} as raw materials.`
+      : '';
+    student = {
+      ...student,
+      concept: TYPED_SUNLIGHT_FOOD_IDEA.label,
+      scientificDefinition:
+        band === 'micro' || band === 'simple'
+          ? `You're on the right track. Plants do use sunlight when making food through photosynthesis.${missingLine}`
+          : `You're on the right track. Plants do use sunlight when making food through photosynthesis. Sunlight provides the energy needed for photosynthesis.${missingLine}`,
+      scientificFunction: TYPED_SUNLIGHT_FOOD_IDEA.purpose,
+      example: TYPED_SUNLIGHT_FOOD_IDEA.example,
+    };
+    correctObj = {
+      ...correctObj,
+      concept: TYPED_PHOTOSYNTHESIS_FULL_IDEA.label,
+      scientificDefinition: ideaBody(TYPED_PHOTOSYNTHESIS_FULL_IDEA, band),
+      scientificFunction: TYPED_PHOTOSYNTHESIS_FULL_IDEA.purpose,
+      example: TYPED_PHOTOSYNTHESIS_FULL_IDEA.example,
+    };
+  }
   if (
     isVagueOrIncomplete(student.scientificDefinition) ||
     isVagueOrIncomplete(correctObj.scientificDefinition) ||
@@ -1340,7 +1827,18 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
     };
   }
 
-  const comparison = buildNamedComparison(student, correctObj, attempt);
+  const comparison = buildNamedComparison(student, correctObj, typedAttempt);
+  if (isTypedAttempt(typedAttempt) && isPartialTypedPhotosynthesis(typedAttempt) && comparison) {
+    comparison.keyScientificDifference =
+      'Your answer correctly identifies the role of sunlight, but it does not mention the other important inputs: carbon dioxide and water.';
+    comparison.whyCorrectAnswerFitsQuestion =
+      'Sunlight provides the energy, while carbon dioxide and water are used to produce glucose during photosynthesis.';
+    comparison.body = [
+      `${student.concept} ${student.scientificFunction}.`,
+      `${correctObj.concept} ${correctObj.scientificFunction}.`,
+      `The key scientific difference is: ${comparison.keyScientificDifference}`,
+    ].join(' ');
+  }
   if (!comparison || isVagueOrIncomplete(comparison.keyScientificDifference)) {
     return {
       insufficientKnowledge: true,
@@ -1359,7 +1857,7 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
   const selected = student.scientificDefinition;
   const correct = correctObj.scientificDefinition;
   const connection = comparison.whyCorrectAnswerFitsQuestion;
-  const check = checkQuestion(attempt);
+  const check = checkQuestion(typedAttempt);
 
   const wrongAnswerDescription = {
     title: student.title,
@@ -1510,7 +2008,13 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
   const studentAnswer = norm(
     input.studentAnswer || input.lastWrong || input.student_last_wrong_answer,
   );
-  const correctAnswer = norm(input.correctAnswer || input.correct_answer);
+  const typed = isTypedAnswerQuestionType(
+    input.questionType || input.question_type || input.type,
+  );
+  const correctAnswer = typed
+    ? norm(input.correctAnswer || input.correct_answer) ||
+      inferredTypedCorrect(input)
+    : norm(input.correctAnswer || input.correct_answer);
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
   if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
@@ -1521,6 +2025,9 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
     correctAnswer,
     topic,
     hint: input.hint,
+    questionType: input.questionType || input.question_type || input.type,
+    completeness: input.completeness,
+    missingKeywords: input.missingKeywords || input.missing_keywords,
   };
   if (
     !canDescribeScientifically(studentAnswer, attempt, 'student') ||

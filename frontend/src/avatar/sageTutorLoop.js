@@ -18,7 +18,7 @@ import {
   validateStructuredLesson,
 } from './explainMisconception.js';
 import {
-  isFillInQuestionType,
+  usesSageFreeTextAnswer,
   normalizeSageMindMapInput,
 } from './normalizeSageMindMapInput.js';
 import { friendlyStudentName, sanitizeKidSpeech } from './kidFriendlySpeech.js';
@@ -88,7 +88,14 @@ export function detectQuestionType(input = {}) {
   ) {
     return 'MultiBlank';
   }
-  if (explicit === 'shortanswer') return 'ShortAnswer';
+  if (
+    explicit === 'shortanswer' ||
+    explicit === 'typedanswer' ||
+    explicit === 'typed' ||
+    explicit === 'answertyping'
+  ) {
+    return 'ShortAnswer';
+  }
 
   const opts = Array.isArray(input.options) ? input.options.map(optionText) : [];
   if (
@@ -563,6 +570,9 @@ export function buildMisconceptionMindMap(state = {}, delivery = null) {
       correctAnswer: state.correctAnswer,
       topic: state.topic,
       hint: state.hint,
+      questionType: state.questionType,
+      completeness: state.completeness,
+      missingKeywords: state.missingKeywords,
     },
     { frustrationLevel: d.level },
   );
@@ -683,12 +693,18 @@ export function compactTeachingState(context = {}, session = {}) {
     options,
     topic,
     grade: cq.grade || quiz.grade,
+    completeness: cq.completeness || quiz.completeness,
+    missingKeywords: cq.missingKeywords || cq.missing_keywords,
+    accuracyScore: cq.accuracyScore || cq.accuracy_score,
+    errorCategory: cq.errorCategory || cq.error_category,
   });
-  const fillIn = isFillInQuestionType(sageInput.questionType) || isFillInQuestionType(questionType);
-  const normalizedStudent = fillIn
+  const sageFreeText =
+    usesSageFreeTextAnswer(sageInput.questionType) ||
+    usesSageFreeTextAnswer(questionType);
+  const normalizedStudent = sageFreeText
     ? sageInput.studentAnswer || studentAnswer
     : studentAnswer;
-  const normalizedCorrect = fillIn
+  const normalizedCorrect = sageFreeText
     ? sageInput.correctAnswer || correctAnswer
     : correctAnswer;
   const snapshot = context.performance_snapshot || context.metrics || {};
@@ -706,9 +722,11 @@ export function compactTeachingState(context = {}, session = {}) {
     questionText,
     studentAnswer: normalizedStudent,
     correctAnswer: normalizedCorrect,
-    options: fillIn ? [] : options,
+    options: sageFreeText ? [] : options,
     topic,
     questionType,
+    completeness: sageInput.completeness,
+    missingKeywords: sageInput.missingKeywords,
     hint: cq.hint || quiz.hint || prior.hint || null,
     verifiedKnowledge:
       cq.verified_knowledge || context.verified_knowledge || null,
