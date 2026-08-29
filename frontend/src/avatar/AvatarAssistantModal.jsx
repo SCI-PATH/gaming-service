@@ -781,12 +781,7 @@ export default function AvatarAssistantModal({
       if (!branch) return;
       setActiveMissId(branch.id || null);
       if (voiceMuted || mutedRef.current) return;
-      const segment = buildMissCardNarration(branch, {
-        frustrationLevel:
-          telemetry.frustrationLevel ||
-          localMap?.frustrationLevel ||
-          'moderate',
-      });
+      const segment = buildMissCardNarration(branch);
       if (!segment?.text) return;
 
       const session = narrationSessionRef.current + 1;
@@ -804,7 +799,7 @@ export default function AvatarAssistantModal({
         }
       }
     },
-    [applySpeechFocus, speakText, voiceMuted, telemetry.frustrationLevel, localMap],
+    [applySpeechFocus, speakText, voiceMuted],
   );
   useEffect(() => {
     if (!open) {

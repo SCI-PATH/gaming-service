@@ -81,8 +81,6 @@ export function looksLikeAnswerKeyRestatement(text, wrong = '', right = '') {
   const raw = String(text || '').trim();
   if (!raw) return true;
   if (looksLikeGraderMeta(raw)) return true;
-  if (/this question is asking for\b/i.test(raw)) return true;
-  if (/^you (chose|picked|selected)\s+\S+\.?$/i.test(raw)) return true;
   if (
     /you (picked|chose|selected|answered)/i.test(raw) &&
     /but (the )?(better|correct|right) (idea|answer|one)/i.test(raw)
@@ -338,26 +336,6 @@ const STUDENT_WORLD_IDEAS = [
       'Hydrogen is the lightest element; in plants it arrives as part of water, not as a balloon-style gas the leaf “breathes in” to make food.',
     mismatch:
       'Leaves do not take in hydrogen gas the way they take in carbon dioxide for photosynthesis.',
-  },
-  {
-    test: /\bresistor/,
-    label: 'resistor',
-    purpose: 'opposing or reducing electric current in a circuit',
-    bodyShort:
-      'A resistor is an electrical component that opposes or reduces electric current in a circuit.',
-    bodyFull:
-      'A resistor is an electrical component that opposes or reduces electric current in a circuit. Its job is to limit current, not to store static electric charge. A torch circuit may use a resistor so the current stays at a safe level.',
-    what: 'A resistor is an electrical component that opposes or reduces electric current.',
-    means: 'It resists the flow of charge in a circuit and can convert some electrical energy to heat.',
-    usedFor: 'We use resistors to limit current in a circuit.',
-    how: 'Charge still moves through the circuit, but the resistor reduces that current.',
-    example: 'A resistor in a simple circuit keeps the bulb from getting too large a current.',
-    meetShort: 'A resistor reduces electric current in a circuit.',
-    meet: 'A resistor opposes or reduces electric current. It does not store static electric charge.',
-    meetRich:
-      'A resistor is a circuit component that opposes current. That is a current-control job, not a charge-storage job.',
-    mismatch:
-      'A resistor does not store static electric charges — that is the job of a capacitor.',
   },
   {
     test: /store water|storing water|leaves that store|leaves to store|water in leaves|succulent|fleshy leaf/,
@@ -681,20 +659,6 @@ export function lookupStudentIdea(wrong) {
 
 const CORRECT_WORLD_IDEAS = [
   {
-    test: /\bcapacitor/,
-    label: 'capacitor',
-    purpose: 'storing electric charge',
-    what: 'A capacitor is a device that stores electric charge.',
-    means: 'It can hold static electric charges and release them later when needed.',
-    usedFor: 'We use capacitors to store static electric charges.',
-    how: 'Two conducting plates separated by an insulator hold opposite charges, so the device stores charge.',
-    example: 'A camera flash can use a capacitor that stores charge and then releases it as a burst of energy.',
-    bodyShort:
-      'A capacitor is a device that stores electric charge. That stored charge can be released later.',
-    bodyFull:
-      'A capacitor is a device that stores electric charge. It holds static electric charges on conducting plates and can release them later. Storing charge is its scientific job.',
-  },
-  {
     test: /carbon dioxide|co2|co₂/,
     what: 'Carbon dioxide is a gas found in air.',
     means: 'It is the gas that gives plants the carbon they pack into food.',
@@ -939,7 +903,7 @@ function catalogForAttempt(attempt) {
 
 export function questionJob(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
-  const right = resolveChoiceLabel(attempt.correctAnswer, attempt.options);
+  const right = norm(attempt.correctAnswer);
   const hint = norm(attempt.hint || '');
   const p = lower(prompt);
   const claim = unpackScienceClaim(prompt, attempt.topic) || unpackScienceClaim(right, attempt.topic);
@@ -1059,15 +1023,6 @@ export function questionJob(attempt = {}) {
         'Leaves and stems are vegetative organs. Their shape and size can differ among species, and that diversity helps plants live in different environments.',
     };
   }
-  if (/store static|static electric charge|\bcapacitor\b/.test(p)) {
-    return {
-      verbPhrase: 'name the device that stores static electric charge',
-      purpose: 'storing static electric charge',
-      asking: 'which device stores static electric charges',
-      rightHow:
-        'A capacitor stores electric charge. A resistor opposes current in a circuit and does not store static charge.',
-    };
-  }
   if (claim?.fact) {
     return {
       verbPhrase: 'match the science idea in the sentence',
@@ -1085,29 +1040,19 @@ export function questionJob(attempt = {}) {
   }
   if (right) {
     if (looksLikeFillInList(right) || /_{2,}|\[\s*_{0,4}\s*\]/.test(prompt)) {
-    return {
-      verbPhrase: 'name the science idea in the sentence',
-      asking: claim?.fact
-        ? firstSentence(claim.fact)
-        : 'the scientific idea named in this sentence',
-      rightHow:
-        claim?.fact ||
-        'Use the scientific idea in the sentence — not a related idea from another topic.',
-    };
-    }
-    const named = lookupCorrectIdea(right, prompt, attempt.topic);
-    if (named?.what || named?.bodyFull) {
       return {
-        verbPhrase: `explain ${named.label || right}`,
-        purpose: named.purpose || named.usedFor,
-        asking: named.purpose || stemIntent(prompt).asking,
-        rightHow: named.bodyFull || named.bodyShort || named.what,
+        verbPhrase: 'name the science idea in the sentence',
+        asking: claim?.fact
+          ? firstSentence(claim.fact)
+          : 'the scientific idea named in this sentence',
+        rightHow:
+          claim?.fact ||
+          'Use the scientific idea in the sentence — not a related idea from another topic.',
       };
     }
     return {
-      verbPhrase: 'match the science idea in the question',
-      asking: stemIntent(prompt).asking,
-      rightHow: claim?.fact || '',
+      verbPhrase: `match “${clip(right, 48)}”`,
+      rightHow: `This question is asking for ${right}. ${clip(prompt, 110)}`,
     };
   }
   return {
@@ -1183,29 +1128,9 @@ function fiveStepClip(band) {
   return 640;
 }
 
-/** Strip MCQ letters like "B." or a lone "C" so we never shout the option key. */
+/** Strip MCQ letters like "B." so we never shout the option key. */
 export function displayChoice(text) {
-  const s = norm(String(text || '').replace(/^\(?[A-Da-d]\)?[.)]\s+/, ''));
-  if (/^\(?[A-Da-d]\)?[.)]?$/.test(s)) return '';
-  return s;
-}
-
-function optionLabel(opt) {
-  if (opt == null) return '';
-  if (typeof opt === 'string') return displayChoice(opt);
-  return displayChoice(opt.text || opt.label || opt.value || opt.option || '');
-}
-
-/** Map "C" / "C. Capacitor" to the option science word when options exist. */
-export function resolveChoiceLabel(text, options = []) {
-  const raw = norm(text);
-  if (!raw) return '';
-  const stripped = displayChoice(raw);
-  if (stripped) return stripped;
-  const letter = raw.match(/^\(?([A-Da-d])\)?[.)]?$/);
-  if (!letter || !Array.isArray(options) || !options.length) return '';
-  const idx = letter[1].toUpperCase().charCodeAt(0) - 65;
-  return optionLabel(options[idx]) || '';
+  return norm(String(text || '').replace(/^\(?[A-Da-d]\)?[.)]\s+/, ''));
 }
 
 export function shortConceptLabel(text, max = 42) {
@@ -1459,7 +1384,7 @@ function ideaFromTypedText(text, attempt = {}, side = 'student') {
 /** Short science idea for map "Key idea" — never just True/False. */
 export function scienceKeyIdea(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
-  const right = resolveChoiceLabel(attempt.correctAnswer, attempt.options);
+  const right = displayChoice(attempt.correctAnswer);
   const fillCorrect = ideaFromFillInQuestion(attempt, 'correct');
   if (fillCorrect?.label) return fillCorrect.label;
   const claim = unpackScienceClaim(prompt, attempt.topic);
@@ -1472,9 +1397,7 @@ export function scienceKeyIdea(attempt = {}) {
   if (claim?.fact) return firstSentence(claim.fact);
   const job = questionJob(attempt);
   if (job?.purpose) return job.purpose;
-  if (job?.rightHow && !looksLikeAnswerKeyRestatement(job.rightHow, attempt.studentAnswer, right)) {
-    return firstSentence(job.rightHow);
-  }
+  if (job?.rightHow) return firstSentence(job.rightHow);
   if (right && !isTrueFalseToken(right)) return clip(right, 48);
   return clip(attempt.topic || 'This science idea', 40);
 }
@@ -1579,8 +1502,6 @@ export function isVagueOrIncomplete(text) {
   const s = norm(text);
   if (!s) return true;
   if (VAGUE_SCIENCE.test(s)) return true;
-  if (/this question is asking for\b/i.test(s)) return true;
-  if (/^you (chose|picked|selected)\s+\S+\.?$/i.test(s)) return true;
   if (/this is a (science|plant|biological) (concept|function|idea)/i.test(s)) return true;
   if (/related to plants\.?$/i.test(s) && s.length < 48) return true;
   return false;
@@ -1848,22 +1769,13 @@ export function formatLessonSpeech(lesson) {
  * Define both answers scientifically, then compare. Never emit incomplete comparison.
  */
 export function composeFiveStepLesson(attempt = {}, voice = {}) {
-  const resolved = {
-    ...attempt,
-    studentAnswer:
-      resolveChoiceLabel(attempt.studentAnswer, attempt.options) ||
-      attempt.studentAnswer,
-    correctAnswer:
-      resolveChoiceLabel(attempt.correctAnswer, attempt.options) ||
-      attempt.correctAnswer,
-  };
-  const typedAttempt = isTypedAttempt(resolved)
+  const typedAttempt = isTypedAttempt(attempt)
     ? {
-        ...resolved,
+        ...attempt,
         correctAnswer:
-          displayChoice(resolved.correctAnswer) || inferredTypedCorrect(resolved),
+          displayChoice(attempt.correctAnswer) || inferredTypedCorrect(attempt),
       }
-    : resolved;
+    : attempt;
   const band = voiceBand(voice);
   let student = completeConcept(typedAttempt.studentAnswer, typedAttempt, 'student', band);
   let correctObj = completeConcept(typedAttempt.correctAnswer, typedAttempt, 'correct', band);
@@ -2093,21 +2005,16 @@ export function explainCorrectIdea(attempt = {}, voice = {}) {
 /** Build the five SAGE teaching sections from a farm miss. */
 export function teachingLessonFromMiss(input = {}, voice = {}) {
   const prompt = norm(input.prompt || input.question || input.questionText);
-  const studentAnswer = resolveChoiceLabel(
-    input.studentAnswer || input.lastWrong || input.student_last_wrong_answer,
-    input.options,
-  ) || norm(
+  const studentAnswer = norm(
     input.studentAnswer || input.lastWrong || input.student_last_wrong_answer,
   );
   const typed = isTypedAnswerQuestionType(
     input.questionType || input.question_type || input.type,
   );
   const correctAnswer = typed
-    ? resolveChoiceLabel(input.correctAnswer || input.correct_answer, input.options) ||
-      norm(input.correctAnswer || input.correct_answer) ||
+    ? norm(input.correctAnswer || input.correct_answer) ||
       inferredTypedCorrect(input)
-    : resolveChoiceLabel(input.correctAnswer || input.correct_answer, input.options) ||
-      norm(input.correctAnswer || input.correct_answer);
+    : norm(input.correctAnswer || input.correct_answer);
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
   if (isPlaceholderBlank(studentAnswer) || isNoPick(studentAnswer)) return null;
@@ -2118,7 +2025,6 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
     correctAnswer,
     topic,
     hint: input.hint,
-    options: input.options,
     questionType: input.questionType || input.question_type || input.type,
     completeness: input.completeness,
     missingKeywords: input.missingKeywords || input.missing_keywords,

@@ -503,28 +503,3 @@ describe('five-step teaching order', () => {
     assert.match(teaching.interactiveCheck, /\?/);
   });
 });
-
-describe('MCQ resistor vs capacitor is taught scientifically', () => {
-  const miss = {
-    prompt: 'What device is used to store static electric charges?',
-    studentAnswer: 'Resistor',
-    correctAnswer: 'C',
-    options: ['Battery', 'Resistor', 'Capacitor', 'Switch'],
-    topic: 'Static Electricity',
-    questionType: 'MCQ',
-  };
-
-  it('does not dump “this question is asking for C”', () => {
-    const lesson = composeFiveStepLesson(miss, { frustrationLevel: 'moderate' });
-    const key = scienceKeyIdea(miss);
-    assert.equal(Boolean(lesson.insufficientKnowledge), false);
-    assert.ok(lesson.sections?.length >= 4);
-    const text = String(lesson.fullText || '').toLowerCase();
-    assert.equal(/this question is asking for c\b/i.test(text), false);
-    assert.equal(/this question is asking for c\b/i.test(String(key)), false);
-    assert.match(text, /resistor/);
-    assert.match(text, /capacitor/);
-    assert.match(text, /current|charge/);
-    assert.equal(/^you chose/i.test(text), false);
-  });
-});

@@ -243,7 +243,6 @@ export function createSpeechEngine({
 
 /**
  * Turn a mind map into short, student-friendly narration chunks.
- * Speaks the scientific lesson, then the map relationships — never "you chose X" alone.
  * Returns segments with focus targets so the map can highlight while speaking.
  * @returns {{ text: string, kind: string, branchId?: string|null, highlights: string[] }[]}
  */
@@ -251,15 +250,14 @@ export function buildMindMapNarration(map) {
   if (!map) return [];
   const branches = map.branches || [];
   const n = map.missCount || branches.length || 0;
-  const band = String(map.frustrationLevel || 'moderate').toLowerCase();
   /** @type {{ text: string, kind: string, branchId?: string|null, highlights: string[] }[]} */
   const parts = [];
 
-  const root = map.root || map.topic || map.title || 'this science idea';
   const rootTerms = uniqueHighlightTerms([
-    root,
-    map.centralIdea,
+    map.root,
+    map.title,
     map.topic,
+    'incorrect',
     'mind map',
   ]);
 
@@ -267,117 +265,67 @@ export function buildMindMapNarration(map) {
     kind: 'intro',
     branchId: null,
     highlights: rootTerms,
-    text:
-      band === 'very_high' || band === 'high'
-        ? `Let's look at the mind map. The main idea is ${clip(root, 40)}.`
-        : `Let's look at the mind map. The main concept here is ${clip(root, 48)}. You have ${n} miss${n === 1 ? '' : 'es'} to repair.`,
+    text: `Hi, I'm Sage, your farm science mentor. You have ${n} incorrect answer${n === 1 ? '' : 's'} on this mind map. Explore any card while I talk — the map still works.`,
   });
 
-  branches.forEach((b, i) => {
-    const segment = buildMissCardNarration(b, { frustrationLevel: band, index: i });
-    if (segment?.text) parts.push(segment);
-  });
-
-  if (band !== 'very_high') {
+  if (map.bigPicture || map.summary) {
+    const overviewText = String(map.bigPicture || map.summary);
     parts.push({
-      kind: 'outro',
+      kind: 'overview',
       branchId: null,
-      highlights: [],
-      text: 'The arrows show how your idea connects to the correct idea. Use that connection when you try again.',
+      highlights: uniqueHighlightTerms([
+        overviewText,
+        map.centralIdea,
+        map.topic,
+        map.root,
+      ]),
+      text: overviewText,
     });
   }
 
-  return parts.filter((p) => p.text && !isShallowChoiceLine(p.text));
-}
+  branches.forEach((b, i) => {
+    const miss = b.index || i + 1;
+    const topic = b.topic || b.label || 'Science';
+    const q = b.prompt || b.question || '';
+    const wrong = b.studentAnswer || 'your pick';
+    const right = b.correctAnswer || 'the correct idea';
+    const why = b.why || b.why_wrong || '';
+    const key = b.keyExplain || b.key_concept_explain || b.keyConcept || '';
+    const branchId = b.id || `miss-${i}`;
 
-function isShallowChoiceLine(text) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!s) return true;
-  if (/^you (chose|picked|selected)\s+.+\.?$/i.test(s) && s.length < 64) return true;
-  if (/this question is asking for\b/i.test(s) && s.length < 80) return true;
-  return false;
-}
+    let line = `Exam lock, miss ${miss}.`;
+    if (why) line += ` ${clip(why, 400)}`;
+    else line += ` You picked ${clip(wrong, 50)}. The scoring idea is ${clip(right, 50)}.`;
 
-function clipByFrustration(text, band) {
-  const n =
-    band === 'very_high' ? 140 : band === 'high' ? 200 : band === 'low' ? 360 : 280;
-  return clip(text, n);
-}
+    parts.push({
+      kind: 'branch',
+      branchId,
+      highlights: uniqueHighlightTerms([
+        topic,
+        wrong,
+        right,
+        b.keyConcept,
+        key,
+        why,
+        b.farmLink || b.farm_link,
+        `Miss ${miss}`,
+        ...clip(q, 100)
+          .split(/\s+/)
+          .filter((w) => w.length > 4)
+          .slice(0, 6),
+      ]),
+      text: line,
+    });
+  });
 
-function lessonSectionSpeech(section, band) {
-  if (!section) return '';
-  const def = section.scientificDefinition || section.body || '';
-  const title = String(section.title || '').toLowerCase();
-  if (section.id === 'your_answer' || /your answer/.test(title)) {
-    return clipByFrustration(
-      `Your answer. ${def || section.quote || ''}`,
-      band,
-    );
-  }
-  if (section.id === 'correct_answer' || /correct/.test(title)) {
-    return clipByFrustration(
-      `Correct idea. ${def || section.quote || ''}`,
-      band,
-    );
-  }
-  if (section.id === 'difference' || /comparison/.test(title)) {
-    const diff =
-      section.keyScientificDifference ||
-      section.difference ||
-      section.body ||
-      '';
-    const named = [
-      section.studentConcept && section.studentConceptFunction
-        ? `${section.studentConcept} → ${section.studentConceptFunction}`
-        : '',
-      section.correctConcept && section.correctConceptFunction
-        ? `${section.correctConcept} → ${section.correctConceptFunction}`
-        : '',
-    ]
-      .filter(Boolean)
-      .join('. ');
-    return clipByFrustration(
-      `Scientific comparison. ${named}${named && diff ? '. ' : ''}${diff}`.trim(),
-      band,
-    );
-  }
-  if (section.id === 'connection' || /connection/.test(title)) {
-    return clipByFrustration(`Key connection. ${section.body || ''}`, band);
-  }
-  if (section.id === 'check' && (band === 'low' || band === 'moderate' || !band)) {
-    return clipByFrustration(`Quick check. ${section.body || ''}`, band);
-  }
-  return '';
-}
+  parts.push({
+    kind: 'outro',
+    branchId: null,
+    highlights: [],
+    text: 'Say that exam line once in your own voice. Tap a card if you want the lock again.',
+  });
 
-function mindMapRelationshipSpeech(branch, band) {
-  const graph = branch?.audioGraph;
-  const root = graph?.rootConcept || branch?.topic || 'this science idea';
-  const rels = Array.isArray(graph?.relationships) ? graph.relationships : [];
-  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
-  const lines = [];
-  if (band !== 'very_high') {
-    lines.push(`On the map, the main concept is ${clip(root, 40)}.`);
-  }
-  const student = nodes.find((n) => n.id === 'student');
-  const correct = nodes.find((n) => n.id === 'correct');
-  if (student?.label && student.description && band !== 'very_high') {
-    lines.push(
-      `${clip(student.label, 32)} is your idea: ${clipByFrustration(student.description, band)}`,
-    );
-  }
-  if (correct?.label && correct.description) {
-    lines.push(
-      `${clip(correct.label, 32)} is the idea that fits this question: ${clipByFrustration(correct.description, band)}`,
-    );
-  }
-  if (rels[0]?.relationship && band !== 'very_high') {
-    const rel = rels[0];
-    lines.push(
-      `The important connection is: ${clip(rel.from, 28)} to ${clip(rel.to, 28)}. ${clipByFrustration(rel.relationship, band)}`,
-    );
-  }
-  return lines.filter(Boolean).join(' ');
+  return parts;
 }
 
 /**
@@ -442,66 +390,21 @@ export function isTermSpoken(term, spokenSoFar) {
   return false;
 }
 
-export function buildMissCardNarration(branch, voice = {}) {
+export function buildMissCardNarration(branch) {
   if (!branch) return null;
-  const band = String(voice.frustrationLevel || 'moderate').toLowerCase();
-  const miss = branch.index || voice.index + 1 || '';
+  const miss = branch.index || '';
   const topic = branch.topic || 'Science';
-  const wrong = branch.studentAnswer || '';
-  const right = branch.correctAnswer || '';
-  const lesson = branch.lesson;
-  const sections = Array.isArray(lesson?.sections) ? lesson.sections : [];
-
-  const chunks = [];
-  if (wrong && band !== 'very_high') {
-    chunks.push(
-      `You chose ${clip(wrong, 48)}. Let's see what that means scientifically.`,
-    );
-  } else {
-    chunks.push("Let's look at this miss on the mind map.");
-  }
-
-  if (sections.length) {
-    const wanted =
-      band === 'very_high'
-        ? ['your_answer', 'correct_answer']
-        : band === 'high'
-          ? ['your_answer', 'correct_answer', 'connection']
-          : ['your_answer', 'correct_answer', 'difference', 'connection'];
-    for (const id of wanted) {
-      const section = sections.find((s) => s.id === id) || sections.find((s) => {
-        if (id === 'your_answer') return /your answer/i.test(s.title || '');
-        if (id === 'correct_answer') return /correct/i.test(s.title || '');
-        if (id === 'difference') return /comparison/i.test(s.title || '');
-        if (id === 'connection') return /connection/i.test(s.title || '');
-        return false;
-      });
-      const spoken = lessonSectionSpeech(section, band);
-      if (spoken) chunks.push(spoken);
-    }
-    if (band === 'low') {
-      const check = sections.find((s) => s.id === 'check');
-      const spoken = lessonSectionSpeech(check, band);
-      if (spoken) chunks.push(spoken);
-    }
-  } else {
-    const explain = branch.keyExplain || branch.rightExplain || '';
-    if (explain && !isShallowChoiceLine(explain) && !/this question is asking for/i.test(explain)) {
-      chunks.push(clipByFrustration(explain, band));
-    }
-  }
-
-  const mapLine = mindMapRelationshipSpeech(branch, band);
-  if (mapLine) chunks.push(mapLine);
-
-  const text = chunks
-    .map((c) => String(c || '').replace(/\s+/g, ' ').trim())
-    .filter((c) => c && !isShallowChoiceLine(c))
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (!text) return null;
+  const wrong = branch.studentAnswer || 'that choice';
+  const right = branch.correctAnswer || 'the better idea';
+  const why = branch.why || '';
+  const farm = branch.farmLink || branch.farm_link || '';
+  const text = [
+    why
+      ? clip(why, 400)
+      : `Let's look at miss ${miss}. You chose ${clip(wrong, 80)}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return {
     kind: 'branch',
@@ -511,9 +414,9 @@ export function buildMissCardNarration(branch, voice = {}) {
       wrong,
       right,
       branch.keyConcept,
-      lesson?.studentAnswer?.concept,
-      lesson?.correctAnswer?.concept,
-      branch.audioGraph?.rootConcept,
+      why,
+      branch.keyExplain || branch.key_concept_explain,
+      farm,
       `Miss ${miss}`,
     ]),
     text,
