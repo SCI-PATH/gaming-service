@@ -1,9 +1,7 @@
 /**
  * Lightweight SVG charts for the student dashboard (no chart library).
  */
-import {
-  farmQuestionTypeLabel,
-} from '../assessmentEngine/assessmentQuizSession.js';
+import { buildQuizRoundRows } from './studentDashboardQuestions.js';
 
 function pickTickIndices(n) {
   if (n <= 0) return [];
@@ -197,8 +195,9 @@ export function AccuracyRing({ correct = 0, incorrect = 0 }) {
 export function FrustrationPerformanceChart({
   points = [],
   misconceptions = [],
+  liveHistory = [],
 }) {
-  const rows = buildQuizRoundRows(points, misconceptions);
+  const rows = buildQuizRoundRows(points, misconceptions, liveHistory);
 
   if (!rows.length) {
     return (
@@ -211,10 +210,13 @@ export function FrustrationPerformanceChart({
 
   return (
     <div className="dash-quiz-rounds-wrap">
-    <ol className="dash-quiz-rounds" aria-label="Recent farm questions">
+    <p className="dash-quiz-round-count">
+      {rows.length} question{rows.length === 1 ? '' : 's'} from this play
+    </p>
+    <ol className="dash-quiz-rounds" aria-label="Every farm question you faced">
       {rows.map((row) => (
         <li
-          key={row.at || row.i}
+          key={row.key}
           className={`dash-quiz-round is-${row.mood.band}${row.latest ? ' is-latest' : ''}`}
         >
           <span className="dash-quiz-round-face" aria-hidden>
@@ -237,7 +239,11 @@ export function FrustrationPerformanceChart({
             </div>
             {row.prompt ? (
               <p className="dash-quiz-round-prompt">{row.prompt}</p>
-            ) : null}
+            ) : (
+              <p className="dash-quiz-round-prompt is-missing">
+                Question text was not saved for this round.
+              </p>
+            )}
             <div
               className="dash-quiz-round-meter"
               role="img"
@@ -260,84 +266,4 @@ export function FrustrationPerformanceChart({
     </p>
     </div>
   );
-}
-
-function buildQuizRoundRows(points = [], misconceptions = []) {
-  const attempts = (misconceptions || []).flatMap((m) =>
-    (m.attempts || []).map((a) => ({
-      at: Number(a.at) || 0,
-      prompt: a.prompt || a.question || '',
-      questionType: a.questionType || a.question_type || '',
-      options: a.options || [],
-      used: false,
-    })),
-  );
-
-  const scored = (points || []).filter((p) => p && p.score != null).slice(-8);
-  return scored.map((p, i, list) => {
-    const fromPoint = String(p.prompt || p.question || '').trim();
-    let prompt = fromPoint;
-    let questionType = p.questionType || p.question_type || '';
-    let options = Array.isArray(p.options) ? p.options : [];
-    const looksMissed = p.isCorrect === false || p.incorrect === 1;
-    if (!prompt || !questionType) {
-      const at = Number(p.at) || 0;
-      const hit =
-        attempts.find(
-          (a) => !a.used && a.at && at && Math.abs(a.at - at) < 8000,
-        ) ||
-        (looksMissed
-          ? attempts.find((a) => !a.used && a.prompt)
-          : null);
-      if (hit) {
-        hit.used = true;
-        prompt = prompt || String(hit.prompt || '').trim();
-        questionType = questionType || hit.questionType;
-        if (!options.length && Array.isArray(hit.options)) options = hit.options;
-      }
-    }
-    const mood = moodForScore(p.score);
-    const correct =
-      typeof p.isCorrect === 'boolean'
-        ? p.isCorrect
-        : p.incorrect === 1
-          ? false
-          : p.incorrect === 0
-            ? true
-            : null;
-    const typeLabel =
-      farmQuestionTypeLabel({
-        questionType,
-        question_type: questionType,
-        prompt,
-        options,
-      }) || 'Question';
-    return {
-      ...p,
-      i,
-      n: i + 1,
-      latest: i === list.length - 1,
-      mood,
-      prompt: clipQuestionLine(prompt),
-      typeLabel,
-      correct,
-      feel: Math.max(0, Math.min(100, Math.round(Number(p.score) || 0))),
-    };
-  });
-}
-
-function clipQuestionLine(text, max = 160) {
-  const t = String(text || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!t) return '';
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1).trim()}…`;
-}
-
-function moodForScore(score) {
-  const n = Number(score) || 0;
-  if (n <= 30) return { emoji: '😊', band: 'low', label: 'Calm' };
-  if (n <= 60) return { emoji: '😐', band: 'moderate', label: 'A bit stuck' };
-  return { emoji: '😣', band: 'high', label: 'Whoa' };
 }

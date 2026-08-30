@@ -2,6 +2,7 @@
  * Persistence for engagement_gaming (Neon).
  * Matches tables created in backend/sql/004_all_extra_tables.sql
  */
+import { getFileLeaderboard, upsertLeaderboardEntry } from './db.mjs';
 import { isPostgresEnabled, query } from './pg.mjs';
 
 function id(prefix) {
@@ -636,8 +637,19 @@ function normalizeLeaderboardRow(row, rank) {
   };
 }
 
+function neonLeaderboardUnusable(err) {
+  const message = String(err?.message || '').toLowerCase();
+  return (
+    err?.code === 'NO_DATABASE' ||
+    message.includes('incorrect scheme') ||
+    message.includes('database_url') ||
+    message.includes('host is missing')
+  );
+}
+
 /**
  * Global top-N leaderboard (all students in engagement DB).
+ * Falls back to the file store when Neon is off or the connection string is invalid.
  * @param {{ period?: 'today'|'all', limit?: number, studentId?: string }} opts
  */
 export async function getLeaderboard(opts = {}) {
@@ -645,6 +657,18 @@ export async function getLeaderboard(opts = {}) {
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 10));
   const studentId = String(opts.studentId || '').trim();
 
+  if (!isPostgresEnabled()) {
+    return getFileLeaderboard({ period, limit, studentId });
+  }
+
+  try {
+    return await getNeonLeaderboard({ period, limit, studentId });
+  } catch {
+    return getFileLeaderboard({ period, limit, studentId });
+  }
+}
+
+async function getNeonLeaderboard({ period, limit, studentId }) {
   let rows = [];
   if (period === 'today') {
     const result = await query(
@@ -784,15 +808,30 @@ export async function submitLeaderboardScore(body = {}) {
 
   const score = Math.max(0, Math.round(Number(body.score) || 0));
   const quizCorrect = Math.max(0, Number(body.quizCorrect ?? body.quiz_correct) || 0);
+  const currentLevel = body.currentLevel ?? body.current_level ?? 1;
 
-  await upsertStudent({
-    ...body,
+  upsertLeaderboardEntry({
     studentId,
-    totalPointsEarned: score,
-    currentLevel: body.currentLevel ?? body.current_level ?? 1,
-    lessonsCompleted: body.lessonsCompleted ?? quizCorrect,
-    walletBalance: body.walletBalance ?? body.cash ?? null,
+    displayName: body.displayName || body.studentName || body.student_name,
+    currentLevel,
+    score,
+    quizCorrect,
   });
+
+  if (isPostgresEnabled()) {
+    try {
+      await upsertStudent({
+        ...body,
+        studentId,
+        totalPointsEarned: score,
+        currentLevel,
+        lessonsCompleted: body.lessonsCompleted ?? quizCorrect,
+        walletBalance: body.walletBalance ?? body.cash ?? null,
+      });
+    } catch (err) {
+      if (!neonLeaderboardUnusable(err)) throw err;
+    }
+  }
 
   return { studentId, score, quizCorrect };
 }

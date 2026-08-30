@@ -31,10 +31,14 @@ export async function fetchLeaderboard({
     const res = await fetch(`/api/engagement/leaderboard?${params.toString()}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.ok === false) {
+      const raw = data?.error || `HTTP ${res.status}`;
+      const schemeError = /incorrect scheme/i.test(String(raw));
       return {
         ok: false,
-        skipped: Boolean(data?.skipped),
-        error: data?.error || `HTTP ${res.status}`,
+        skipped: Boolean(data?.skipped) || schemeError,
+        error: schemeError
+          ? 'Leaderboard storage is not configured. Rankings will appear after you play.'
+          : raw,
         period,
         entries: [],
         you: null,

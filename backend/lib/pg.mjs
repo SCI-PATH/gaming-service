@@ -4,12 +4,40 @@
  */
 let lastError = null;
 
+export function normalizeDatabaseUrl(raw) {
+  let s = String(raw || '').trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  s = s.replace(/^jdbc:/i, '');
+  s = s.replace(/^postgres(ql)?\+\w+:\/\//i, 'postgresql://');
+  s = s.replace(/^postgres:\/\//i, 'postgresql://');
+  return s;
+}
+
+export function isNeonConnectionString(raw) {
+  const s = normalizeDatabaseUrl(raw);
+  if (!/^postgresql:\/\//i.test(s)) return false;
+  try {
+    const u = new URL(s);
+    return Boolean(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isPostgresEnabled() {
-  return Boolean(String(process.env.DATABASE_URL || '').trim());
+  return isNeonConnectionString(process.env.DATABASE_URL);
 }
 
 function sqlHttpEndpoint(connectionString) {
-  const u = new URL(connectionString);
+  const u = new URL(normalizeDatabaseUrl(connectionString));
+  if (!u.hostname) {
+    throw new Error('DATABASE_URL host is missing');
+  }
   return `https://${u.hostname}/sql`;
 }
 
@@ -18,8 +46,8 @@ function sqlHttpEndpoint(connectionString) {
  * @param {any[]} [params]
  */
 export async function query(text, params = []) {
-  const connectionString = String(process.env.DATABASE_URL || '').trim();
-  if (!connectionString) {
+  const connectionString = normalizeDatabaseUrl(process.env.DATABASE_URL);
+  if (!isNeonConnectionString(connectionString)) {
     const err = new Error('DATABASE_URL_not_configured');
     err.code = 'NO_DATABASE';
     throw err;
@@ -31,7 +59,7 @@ export async function query(text, params = []) {
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      'Neon-Connection-String': connectionString,
+      'Neon-Connection-String': normalizeDatabaseUrl(connectionString),
       'Neon-Raw-Text-Output': 'true',
       'Neon-Array-Mode': 'true',
     },

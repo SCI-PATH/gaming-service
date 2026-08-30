@@ -5199,6 +5199,9 @@ export default class GameScene extends Phaser.Scene {
           if (enemy && typeof enemy.setPatrolSpeed === 'function') {
             enemy.setPatrolSpeed(speed);
           }
+          if (enemy && typeof enemy.applyAdaptiveLook === 'function') {
+            enemy.applyAdaptiveLook(nextBand);
+          }
         });
       }
     }
@@ -5357,6 +5360,9 @@ export default class GameScene extends Phaser.Scene {
       );
       enemy.setSize(10, 10);
       enemy.setDepth(1);
+      if (typeof enemy.applyAdaptiveLook === 'function') {
+        enemy.applyAdaptiveLook(this.frustrationLevel || this._lastFrustrationBand);
+      }
       this.enemiesGroup.add(enemy);
     });
   }

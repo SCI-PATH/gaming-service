@@ -1,4 +1,5 @@
 import { FARM_SHOP_ZONE, PLANT_PLOTS } from './plantPlots.js';
+import { sageLineForStep } from './sageGuide.js';
 import { ANIMAL_PADDOCK } from './animalChallenges.js';
 import { CLEANING_YARD } from './cleaningChallenges.js';
 
@@ -246,35 +247,36 @@ export function resolvePlayWizard({
   shopOpen = false,
   challenges = [],
   carriedCount = 0,
+  frustrationLevel = null,
 } = {}) {
   const quizGuide = quizStep(quiz);
-  if (quizGuide) return quizGuide;
+  if (quizGuide) return withSageVoice(quizGuide, frustrationLevel);
 
   if (shopOpen) {
-    return {
+    return withSageVoice({
       id: 'unlock-shop',
       title: 'Unlock shop is open',
       how: 'Buy a farm unlock with your cash, or close the shop to keep playing.',
       key: null,
       pin: null,
       quiet: true,
-    };
+    }, frustrationLevel);
   }
 
   if (carriedCount > 0) {
-    return {
+    return withSageVoice({
       id: 'carry-shop',
       title: `Unload ${carriedCount} item${carriedCount === 1 ? '' : 's'}`,
       how: 'You are carrying harvest on your back. Walk to the Farm Shop in the centre of the map and press E.',
       key: 'E',
       pin: SHOP_PIN,
-    };
+    }, frustrationLevel);
   }
 
   const crop = pickActiveCrop(farm.cropChallengeList);
   if (crop) {
     const next = cropStep(crop, carriedCount);
-    if (next) return next;
+    if (next) return withSageVoice(next, frustrationLevel);
   } else if (
     Number(farm.harvestTarget) > 0 &&
     !farm.levelCropComplete &&
@@ -290,33 +292,41 @@ export function resolvePlayWizard({
       sellDone: false,
     };
     const next = cropStep(fallback, carriedCount);
-    if (next) return next;
+    if (next) return withSageVoice(next, frustrationLevel);
   }
 
   const animal = animalStep(farm);
-  if (animal) return animal;
+  if (animal) return withSageVoice(animal, frustrationLevel);
 
   const clean = cleanStep(farm);
-  if (clean) return clean;
+  if (clean) return withSageVoice(clean, frustrationLevel);
 
   const extra = challengeStep(challenges);
-  if (extra) return extra;
+  if (extra) return withSageVoice(extra, frustrationLevel);
 
   if (farm.forestUnlocked) {
-    return {
+    return withSageVoice({
       id: 'forest',
       title: 'Level complete',
       how: 'The forest path is open. Follow the entrance, or keep exploring the farm.',
       key: 'WASD',
       pin: null,
-    };
+    }, frustrationLevel);
   }
 
-  return {
+  return withSageVoice({
     id: 'explore',
     title: 'Keep farming',
     how: 'Use the quest scroll if you want the full list. Move with WASD, press E on gold beds, the shop, the animal pen, or the yard.',
     key: 'WASD · E',
     pin: null,
+  }, frustrationLevel);
+}
+
+function withSageVoice(step, frustrationLevel) {
+  if (!step) return null;
+  return {
+    ...step,
+    say: sageLineForStep(step, { frustrationLevel }),
   };
 }

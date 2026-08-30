@@ -15,6 +15,7 @@ import UnlockShopModal from './components/UnlockShopModal.jsx';
 import MotivationalVideoModal from './components/MotivationalVideoModal.jsx';
 import LevelQuestScroll from './components/LevelQuestScroll.jsx';
 import PlayWizard from './components/PlayWizard.jsx';
+import CustomerMoodHud from './components/CustomerMoodHud.jsx';
 import FarmPauseOverlay from './components/FarmPauseOverlay.jsx';
 import StudentLogin from './components/StudentLogin.jsx';
 import GameLobbyOverlay from './components/GameLobbyOverlay.jsx';
@@ -60,6 +61,8 @@ import {
   syncBootstrapStudentProgress,
 } from './data/aptitudeProgress.js';
 import { resolvePlayWizard } from './data/playWizard.js';
+import { grovePressureLine } from './data/sageGuide.js';
+import { collectCustomerAlerts } from './data/customerMood.js';
 import {
   clearFarmRun,
   farmRunSummary,
@@ -185,6 +188,11 @@ export default function App() {
   const [rpEarned, setRpEarned] = useState(0);
   const [banner, setBanner] = useState(null);
   const [hint, setHint] = useState(null);
+  const [shopHud, setShopHud] = useState({ customers: [], shopStock: {} });
+  const [customerAlerts, setCustomerAlerts] = useState([]);
+  const [groveNote, setGroveNote] = useState('');
+  const prevShopCustomersRef = useRef([]);
+  const prevFrustrationLevelRef = useRef(null);
   const [quizPayload, setQuizPayload] = useState(null);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopPerformance, setShopPerformance] = useState(null);
@@ -332,6 +340,18 @@ export default function App() {
       frustrationScore: telemetrySession.frustrationScore || 0,
       frustrationLevel: telemetrySession.frustrationLevel || 'low',
     });
+    const level = telemetrySession.frustrationLevel || 'low';
+    const prev = prevFrustrationLevelRef.current;
+    prevFrustrationLevelRef.current = level;
+    if (prev && prev !== level) {
+      const line = grovePressureLine(level);
+      setGroveNote(line);
+      if (line) {
+        const t = window.setTimeout(() => setGroveNote(''), 7000);
+        return () => window.clearTimeout(t);
+      }
+    }
+    return undefined;
   }, [telemetrySession.frustrationScore, telemetrySession.frustrationLevel]);
 
   // Farm shop money/state sync (no popup — sales happen in Phaser)
@@ -346,6 +366,21 @@ export default function App() {
           harvestedItemsCount:
             payload.harvestedItemsCount ?? f.harvestedItemsCount,
         }));
+      }
+      if (Array.isArray(payload.customers)) {
+        const nextCustomers = payload.customers;
+        const alerts = collectCustomerAlerts(
+          prevShopCustomersRef.current,
+          nextCustomers,
+        );
+        prevShopCustomersRef.current = nextCustomers;
+        if (alerts.length) {
+          setCustomerAlerts((prev) => [...alerts, ...prev].slice(0, 8));
+        }
+        setShopHud({
+          customers: nextCustomers,
+          shopStock: payload.shopStock || {},
+        });
       }
     };
     const onTelemetry = (ev = {}) => {
@@ -694,8 +729,9 @@ export default function App() {
         shopOpen,
         challenges,
         carriedCount,
+        frustrationLevel: telemetrySession.frustrationLevel || 'low',
       }),
-    [farm, quizPayload, shopOpen, challenges, carriedCount],
+    [farm, quizPayload, shopOpen, challenges, carriedCount, telemetrySession.frustrationLevel],
   );
 
   const handleReady = useCallback(() => setGameReady(true), []);
@@ -1690,6 +1726,8 @@ export default function App() {
             <PlayWizard
               step={wizardStep}
               hidden={Boolean(questScrollOpen)}
+              frustrationLevel={telemetrySession.frustrationLevel || 'low'}
+              groveNote={groveNote}
             />
           )}
 
@@ -1817,6 +1855,15 @@ export default function App() {
               cropName={farm.cropName || 'crops'}
               challenges={challenges}
               questStep={wizardStep?.pin || null}
+            />
+            <CustomerMoodHud
+              customers={shopHud.customers}
+              alerts={customerAlerts}
+              onDismissAlert={(id) =>
+                setCustomerAlerts((prev) =>
+                  prev.map((a) => (a.id === id ? { ...a, read: true } : a)),
+                )
+              }
             />
           </div>
         )}

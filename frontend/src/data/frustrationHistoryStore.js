@@ -180,7 +180,7 @@ export function recordFrustrationSample(sample = {}) {
     options: Array.isArray(sample.options) ? sample.options.slice(0, 8) : undefined,
     isCorrect: Boolean(sample.isCorrect),
   });
-  data.points = data.points.slice(-48);
+  data.points = data.points.slice(-MAX_SAMPLES);
 
   const topic = String(sample.topicId || sample.topic || '').trim();
   if (topic && !isGenericTopic(topic)) {
@@ -578,8 +578,7 @@ export function frustrationPerformancePoints(filters = {}) {
       if (fromMs != null && Number.isFinite(at) && at < fromMs) return false;
       if (toMs != null && Number.isFinite(at) && at > toMs) return false;
       return true;
-    })
-    .slice(-24);
+    });
 }
 
 export function learningStreak() {
