@@ -49,7 +49,7 @@ export default function ConceptGraphTree({ graph = null, compact = false, onNode
 
   return (
     <div className={`cg${compact ? ' is-compact' : ''}`}>
-      {graph?.misconception?.summary ? (
+      {!compact && graph?.misconception?.summary ? (
         <p className="cg-mixup">{graph.misconception.summary}</p>
       ) : null}
       <div className="cg-tree" role="tree">

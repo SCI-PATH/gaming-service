@@ -432,7 +432,11 @@ ${JSON.stringify(payload, null, 2)}
 The server already built a local concept graph. You may refine node explanations only.
 Return a concept_graph per branch:
 - 4 to 10 short keyword nodes (labels 1–4 words, not sentences)
-- Labeled relationships (from, to, label)
+- NEVER use placeholder labels like Function, Job, Claim, Correct idea, Plant Biology, Example
+- NEVER use meta edges like "asks" or "does not" pointing at empty nodes
+- Draw a real concept tree (e.g. Plant → Leaves / Stem, Leaves → Photosynthesis → Food)
+- If the student mixed parts, put the mix-up as a sibling with ITS real job (Stem → Transport)
+- Labeled relationships (from, to, label) such as has, do, absorb, transport
 - Mark the student mix-up node kind as "mixup" — never as if it were true
 - Include a node for the assessment correct idea (kind "correct")
 - Include learningPath (max 5 steps) and one practice question that tests the CONCEPT, not the original quiz item

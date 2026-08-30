@@ -95,6 +95,43 @@ describe('concept graphs teach relationships', () => {
   });
 });
 
+describe('plant maps are curriculum keywords, not placeholders', () => {
+  it('teaches seed function without Function / Correct idea boxes', () => {
+    const g = buildConceptGraph({
+      question: 'What is the role of seeds in flowering plants?',
+      studentAnswer: '',
+      correctAnswer: 'They grow into new plants',
+      questionType: 'TypedAnswer',
+      topic: 'Plant Biology',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('seed')));
+    assert.ok(labels.some((l) => /new plant|dispersal|flower/.test(l)));
+    assert.equal(labels.some((l) => /^(function|correct idea|plant biology)$/.test(l)), false);
+    assert.equal(g.relationships.some((r) => r.label === 'asks'), false);
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'They grow into new plants' }).ok, true);
+  });
+
+  it('contrasts leaf photosynthesis with stem transport', () => {
+    const g = buildConceptGraph({
+      question: 'What is the primary function of a plant leaf?',
+      studentAnswer: 'Transporting nutrients',
+      correctAnswer: 'Photosynthesis',
+      questionType: 'MCQ',
+      topic: 'Plant Biology',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => /leaves?/.test(l)));
+    assert.ok(labels.some((l) => l.includes('photosynthesis')));
+    assert.ok(labels.some((l) => l.includes('stem') || l.includes('transport')));
+    assert.equal(g.nodes.find((n) => /stem/i.test(n.label))?.kind, 'mixup');
+    assert.ok(g.nodes.some((n) => n.kind === 'correct' && /leaves|photosynth/i.test(n.label)));
+    assert.equal(g.relationships.some((r) => r.label === 'asks'), false);
+    assert.ok(g.relationships.every((r) => r.from && r.to));
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'Photosynthesis' }).ok, true);
+  });
+});
+
 describe('personalized map carries concept graphs', () => {
   it('attaches graph data that the UI can render', () => {
     const g = buildConceptGraph({
