@@ -100,14 +100,16 @@ async function postFrustrationCue({ userId, frustrationScore, source }) {
   return data;
 }
 
-function buildSocratesUrl({ frustrationScore } = {}) {
+function buildSocratesUrl({ frustrationScore, cuePosted } = {}) {
   const app = envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
   const url = new URL('/tutor', `${app}/`);
   url.searchParams.set('from', 'farm');
   const unit = toUnitScore(frustrationScore);
   if (unit != null) {
-    // SCI-PATH /tutor posts this to Component 4 if the gaming GET is empty.
     url.searchParams.set('frustrationScore', String(unit));
+  }
+  if (cuePosted) {
+    url.searchParams.set('cuePosted', '1');
   }
   return url.toString();
 }
@@ -177,7 +179,6 @@ export async function handoffToSocrates({
   }
 
   const unit = toUnitScore(score100) ?? 0;
-  const tutorUrl = buildSocratesUrl({ frustrationScore: unit });
   let cuePosted = false;
   let cueError = '';
   try {
@@ -191,6 +192,10 @@ export async function handoffToSocrates({
     cueError = err?.message || 'Could not send frustration cue';
     console.warn('[socratesHandoff] cue', cueError);
   }
+  const tutorUrl = buildSocratesUrl({
+    frustrationScore: unit,
+    cuePosted,
+  });
 
   let opened = false;
   try {
