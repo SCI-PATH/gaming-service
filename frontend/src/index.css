@@ -5895,15 +5895,22 @@ body {
 
 .cg-node {
   margin: 0;
-  padding: 4px 8px;
+  padding: 6px 10px;
+  max-width: min(100%, 16rem);
   border: 1.5px dashed #5a6a58;
   background: #f7faf6;
   color: #1a2a20;
   font: inherit;
   font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
+  text-align: left;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow: visible;
   cursor: pointer;
   border-radius: 4px;
 }
@@ -5951,6 +5958,9 @@ body {
   display: grid;
   gap: 2px;
   justify-items: start;
+  flex: 1 1 9rem;
+  min-width: min(100%, 9rem);
+  max-width: 100%;
 }
 
 .cg-edge {
@@ -5999,7 +6009,14 @@ body {
   margin: 0;
   padding-left: 1.1rem;
   font-size: 0.78rem;
-  line-height: 1.4;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
+}
+
+.cg-path li {
+  overflow-wrap: anywhere;
 }
 
 .cg-practice {
@@ -6023,10 +6040,14 @@ body {
   padding: 3px 6px;
 }
 
-.cg.is-compact .cg-detail,
+.cg.is-compact .cg-detail {
+  display: none;
+}
+
 .cg.is-compact .cg-path,
 .cg.is-compact .cg-practice {
-  display: none;
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
 .mm-card {

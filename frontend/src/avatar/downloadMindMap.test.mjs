@@ -60,4 +60,39 @@ describe('download mind map matches on-screen concept trees', () => {
     assert.doesNotMatch(svg, /Your pick/i);
     assert.doesNotMatch(svg, /  · your pick/i);
   });
+
+  it('keeps whole words in tree boxes and learning path', () => {
+    const long =
+      'Plants which produce flowers are called flowering plants and plants which do not produce flowers are called non-flowering plants';
+    const { svg } = buildMindMapSvg(
+      { title: 'Science gaps' },
+      [
+        {
+          index: 1,
+          topic: 'Plant Diversity',
+          question: 'What is a characteristic feature of flowering plants?',
+          conceptGraph: {
+            concept: 'Plant Diversity',
+            nodes: [
+              { id: 'root', label: 'Plant Diversity', kind: 'root' },
+              { id: 'a', label: 'Formation of flowers and fruits', kind: 'related' },
+              { id: 'b', label: 'Flowering plants produce flowers', kind: 'correct' },
+            ],
+            relationships: [
+              { from: 'root', to: 'a', label: 'includes' },
+              { from: 'root', to: 'b', label: 'teaches' },
+            ],
+            learningPath: [long],
+          },
+        },
+      ],
+    );
+    assert.match(svg, /FORMATION OF FLOWERS/);
+    assert.match(svg, /AND FRUITS/);
+    assert.match(svg, /FLOWERING PLANTS/);
+    assert.match(svg, /PRODUCE FLOWERS/);
+    assert.doesNotMatch(svg, /FORMATION OF FL[.]/);
+    assert.match(svg, /do not produce flowers/);
+    assert.doesNotMatch(svg, /do not prod</);
+  });
 });

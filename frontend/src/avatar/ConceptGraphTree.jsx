@@ -79,14 +79,14 @@ export default function ConceptGraphTree({ graph = null, compact = false, onNode
           {selected.example ? <p className="cg-example">{selected.example}</p> : null}
         </div>
       ) : null}
-      {!compact && Array.isArray(graph?.learningPath) && graph.learningPath.length ? (
+      {Array.isArray(graph?.learningPath) && graph.learningPath.length ? (
         <ol className="cg-path">
           {graph.learningPath.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
       ) : null}
-      {!compact && graph?.practice?.question ? (
+      {graph?.practice?.question ? (
         <p className="cg-practice">
           <span>Try this</span> {graph.practice.question}
         </p>

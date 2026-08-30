@@ -11,6 +11,7 @@ import {
 import {
   buildTypeAwareLesson,
   collectAssessmentMisses,
+  scoredConceptList,
   validateMindMapAgainstAssessments,
 } from '../../frontend/src/avatar/assessmentMiss.js';
 import {
@@ -164,6 +165,9 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       questionType: a.questionType,
       completeness: a.completeness,
       missingKeywords: a.missingKeywords,
+      missedBlanks: a.missedBlanks || [],
+      acceptedAnswers: a.acceptedAnswers || [],
+      frustrationLevel: adaptation?.level,
     };
     const noUsable =
       looksLikeSymbolicTypedAnswer(a.studentAnswer) ||
@@ -205,7 +209,10 @@ export function buildLocalMindMap(attempts, adaptation = null) {
           ? explainCorrectIdea(conceptual, voice)
           : keyExplain,
       lesson: lessonOk ? lesson : null,
-      concept_graph: buildConceptGraph(a),
+      concept_graph: buildConceptGraph({
+        ...a,
+        frustrationLevel: adaptation?.level,
+      }),
       farm_link: (() => {
         const idea = scienceKeyIdea(conceptual);
         if (idea && !sameRough(idea, right)) {
@@ -302,8 +309,12 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
       ? validateConceptGraph(hintedGraph, {
           correctAnswer: base.correct_answer,
           studentAnswer: base.student_answer,
+          missedBlanks: attempts[i]?.missedBlanks || base.missed_blanks,
+          acceptedAnswers: attempts[i]?.acceptedAnswers,
         })
       : { ok: false };
+    const localGraph = base.concept_graph;
+    const conceptGraph = graphCheck.ok ? hintedGraph : localGraph;
     return {
       ...base,
       topic: base.topic || hint.topic || 'Science',
@@ -313,7 +324,7 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
       correct_answer: base.correct_answer,
       why_wrong: '',
       lesson: base.lesson || null,
-      concept_graph: graphCheck.ok ? hintedGraph : base.concept_graph,
+      concept_graph: conceptGraph,
       key_concept: (() => {
         const hinted = String(hint.key_concept || hint.keyConcept || '').trim();
         if (hinted && !/^(true|false|t|f|yes|no)$/i.test(hinted) && hinted.length > 4) {
@@ -371,6 +382,7 @@ function buildPrompt(attempts, adaptation = null) {
     student_wrong_answer: a.studentAnswer,
     correct_answer: a.correctAnswer,
     missed_blanks: a.missedBlanks || [],
+    scored_concepts: scoredConceptList(a),
     hint: a.hint || null,
   }));
 
@@ -415,8 +427,12 @@ function buildPrompt(attempts, adaptation = null) {
   return `You are Sage's research helper. You do NOT write the science lesson and you do NOT decide the quiz key. The server will compose the lesson from ground truth.
 
 AUTHORITATIVE RULES (must follow):
-- The assessment engine's correct_answer is authoritative.
+- The assessment engine's correct_answer / scored_concepts are authoritative.
 - Do not replace, reinterpret, infer, or invent another correct answer.
+- Each string in scored_concepts MUST be its own node with kind "correct".
+- Use textbook language only in node explanations, never as chopped sentence labels.
+- Never make a node from activity verbs (tabulate, collect, compare) or from a lone number.
+- Never use a blank index as a mix-up node.
 - Explain the student's answer only in relation to this specific question.
 - Do not introduce an unrelated misconception.
 - If the student's answer is a valid scientific concept but does not answer this question, explain that distinction.
@@ -430,6 +446,7 @@ Sage voice: ${sageHint}
 ${bandGuide[level] || bandGuide.moderate}
 ${depthGuide[depth] || depthGuide.medium}
 ${simplify ? 'Use very simple Grade-6 words.' : 'Use clear school language.'}
+${level === 'high' || level === 'very_high' ? 'Fewer supporting nodes. Keep only the scored concepts plus at most one helper.' : 'You may add 1–3 textbook helper nodes that mention the scored concepts.'}
 Capped to ${attempts.length} miss(es).
 
 Incorrect answers:
@@ -444,7 +461,7 @@ Return a concept_graph per branch:
 - If the student mixed parts, put the mix-up as a sibling with ITS real job (Stem → Transport)
 - Labeled relationships (from, to, label) such as has, do, absorb, transport
 - Mark the student mix-up node kind as "mixup" — never as if it were true
-- Include a node for the assessment correct idea (kind "correct")
+- Include a node for EVERY scored_concept (kind "correct")
 - Write learningPath as spoken kid sentences (no "Miss 1", no "Learning path")
 - Do not invent a different correct answer
 

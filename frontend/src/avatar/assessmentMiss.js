@@ -42,17 +42,76 @@ export function answersEquivalent(a, b) {
 }
 
 export function splitAnswerParts(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => compactText(item)).filter(Boolean);
+  }
   const s = compactText(raw)
     .replace(/blank\s*\d+\s*:\s*/gi, '')
     .replace(/\s*·\s*/g, ' | ');
   if (!s) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((item) => compactText(item));
-  }
   if (/\s*\|\s*/.test(s)) {
-    return s.split(/\s*\|\s*/).map((part) => compactText(part));
+    return s.split(/\s*\|\s*/).map((part) => compactText(part)).filter(Boolean);
   }
   return [s];
+}
+
+export function looksLikeNonConceptAnswer(raw) {
+  const s = compactText(raw);
+  if (!s) return true;
+  if (/^\d+$/.test(s)) return true;
+  if (/^\d+\s+of\s+\d+/i.test(s)) return true;
+  if (/^(id|guid|uuid|null|undefined)$/i.test(s)) return true;
+  return false;
+}
+
+function uniqueConcepts(list) {
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const text = compactText(item);
+    const key = text.toLowerCase();
+    if (!text || looksLikeNonConceptAnswer(text) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+/** Assessment-engine keys for this miss — one concept per scored blank. */
+export function scoredConceptList(miss = {}) {
+  const blanks = Array.isArray(miss.missedBlanks) ? miss.missedBlanks : [];
+  const fromBlanks = uniqueConcepts(blanks.map((b) => b?.correctAnswer || b?.correct || b));
+  if (fromBlanks.length) return fromBlanks;
+  const accepted = uniqueConcepts(miss.acceptedAnswers || []);
+  if (accepted.length > 1) return accepted;
+  return uniqueConcepts(splitAnswerParts(miss.correctAnswer || miss.canonicalCorrectAnswer));
+}
+
+export function studentMixupList(miss = {}) {
+  const blanks = Array.isArray(miss.missedBlanks) ? miss.missedBlanks : [];
+  const raw = blanks.length
+    ? blanks.map((b) => compactText(b?.studentAnswer))
+    : splitAnswerParts(miss.studentAnswer);
+  const correct = new Set(scoredConceptList(miss).map((s) => s.toLowerCase()));
+  return uniqueConcepts(raw).filter((s) => !correct.has(s.toLowerCase()) && s.length <= 40);
+}
+
+/** Verb-ish link from the stem immediately before each blank. */
+export function blankRolesFromQuestion(question) {
+  const q = compactText(question);
+  if (!q) return [];
+  const parts = q.split(/\[_+\]|_{3,}|\[\s*blank\s*\d+\s*\]/i);
+  const roles = [];
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const tail = parts[i].slice(-48).toLowerCase();
+    if (/\bproduc/.test(tail)) roles.push('produce');
+    else if (/\bprovid/.test(tail)) roles.push('provide');
+    else if (/source of/.test(tail)) roles.push('source of');
+    else if (/role in/.test(tail)) roles.push('role in');
+    else if (/\bneed|\buse/.test(tail)) roles.push('need');
+    else roles.push('teaches');
+  }
+  return roles;
 }
 
 function missedBlankMap(raw) {

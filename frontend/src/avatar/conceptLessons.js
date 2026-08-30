@@ -15,15 +15,24 @@ function has(text, re) {
   return re.test(lower(text));
 }
 
-export function phraseLabel(text, n = 28) {
+export function phraseLabel(text, n = 72) {
   const s = compactText(text)
     .replace(/^(?:option\s*)?\(?[A-Da-d]\)?[.)]\s+/i, '')
     .replace(/\s+/g, ' ')
+    .replace(/[.…]{2,}$/g, '')
     .trim();
   if (!s) return '';
-  const words = s.split(' ').slice(0, 4).join(' ');
-  const cut = words.length <= n ? words : `${words.slice(0, n).replace(/\s+\S*$/, '').trim()}`;
-  return cut || s.slice(0, n);
+  const cap = Math.max(8, n);
+  const words = s.split(' ').filter(Boolean).slice(0, 10);
+  let out = '';
+  for (const word of words) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > cap) break;
+    out = next;
+  }
+  if (out) return out;
+  const first = words[0] || s;
+  return first.length <= cap ? first : first.slice(0, cap);
 }
 
 export function questionBlob(miss = {}) {

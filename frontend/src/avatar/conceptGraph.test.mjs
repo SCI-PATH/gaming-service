@@ -193,4 +193,34 @@ describe('personalized map carries concept graphs', () => {
     assert.ok(g.nodes.length >= 4);
     assert.ok(g.relationships.length);
   });
+
+  it('uses assessment fill-in keys instead of a blank number mix-up', () => {
+    const g = buildConceptGraph({
+      question:
+        'Plants are vital for the environment as they produce [____], provide [____], and are a source of [____]. Additionally, they play a crucial role in [____].',
+      studentAnswer: '4',
+      correctAnswer: 'oxygen | food | medicine | pollination',
+      questionType: 'FillInTheBlank',
+      topic: 'Ecology',
+      missedBlanks: [
+        { blankIndex: 1, correctAnswer: 'oxygen' },
+        { blankIndex: 2, correctAnswer: 'food' },
+        { blankIndex: 3, correctAnswer: 'medicine' },
+        { blankIndex: 4, correctAnswer: 'pollination' },
+      ],
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('oxygen')));
+    assert.ok(labels.some((l) => l.includes('pollination')));
+    assert.equal(g.nodes.some((n) => n.kind === 'mixup' && n.label === '4'), false);
+    assert.equal(validateConceptGraph(g, {
+      correctAnswer: 'oxygen | food | medicine | pollination',
+      missedBlanks: [
+        { correctAnswer: 'oxygen' },
+        { correctAnswer: 'food' },
+        { correctAnswer: 'medicine' },
+        { correctAnswer: 'pollination' },
+      ],
+    }).ok, true);
+  });
 });

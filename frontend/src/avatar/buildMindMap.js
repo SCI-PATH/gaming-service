@@ -294,6 +294,7 @@ function mindMapProfile({ mastery, band, frustrationScore, frustrationLevel } = 
       explainDepth: mm.explainDepth || 'medium',
       simplifyLanguage: Boolean(mm.simplifyLanguage),
       frustrationLevel: adapt.level,
+      frustrationScore: frScore,
       complexity: mm.complexity || 'focused',
     };
   }
@@ -517,8 +518,12 @@ export function buildPersonalizedMindMap({
       ...miss,
       studentAnswer: a.studentAnswer,
       correctAnswer: miss.correctAnswer,
+      missedBlanks: miss.missedBlanks || a.missedBlanks,
+      acceptedAnswers: miss.acceptedAnswers || a.acceptedAnswers,
       completeness: a.completeness,
       missingKeywords: a.missingKeywords,
+      frustrationLevel: profile.frustrationLevel,
+      frustrationScore: profile.frustrationScore,
     });
     const layout = String(lesson?.layout || miss.questionType || '').toLowerCase();
 
@@ -813,7 +818,17 @@ function sameLine(a, b) {
 }
 
 function shortLabel(s, n) {
-  const t = String(s || '').trim();
+  const t = String(s || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!t) return '';
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+  if (t.length <= n) return t;
+  const words = t.split(' ');
+  let out = '';
+  for (const word of words) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > n - 1) break;
+    out = next;
+  }
+  return `${out || words[0].slice(0, Math.max(4, n - 1))}…`;
 }

@@ -5,7 +5,12 @@
  * labeled relationships. Mix-up nodes are never treated as true.
  */
 import { looksLikeSymbolicTypedAnswer } from './explainMisconception.js';
-import { compactText, answersEquivalent } from './assessmentMiss.js';
+import {
+  compactText,
+  answersEquivalent,
+  scoredConceptList,
+  studentMixupList,
+} from './assessmentMiss.js';
 import {
   PLACEHOLDER_NODE,
   PLANT_PARTS,
@@ -57,8 +62,10 @@ function shortLabel(text, n = 28) {
 }
 
 function usableStudent(miss) {
+  if (studentMixupList(miss).length) return true;
   const s = compactText(miss.studentAnswer);
   if (!s) return false;
+  if (/^\d+$/.test(s)) return false;
   if (looksLikeSymbolicTypedAnswer(s)) return false;
   if (/no pick|timed out|ran out of time|left blank/i.test(s)) return false;
   return true;
@@ -166,7 +173,7 @@ export function diagnoseMisconception(miss = {}) {
 }
 
 function node(id, label, extra = {}) {
-  const lab = shortLabel(label, 28) || id;
+  const lab = shortLabel(label, 72) || id;
   return {
     id,
     label: lab,
@@ -504,10 +511,10 @@ function trueFalseGraph(miss, diagnosis) {
 function keywordFromCorrect(miss) {
   const c = compactText(miss.correctAnswer);
   if (!c || /see the lesson|key idea|placeholder/i.test(c)) return '';
-  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 28);
+  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 72);
   const part = focusPlantPart(miss);
   if (part) return part.label;
-  return phraseLabel(c, 28);
+  return phraseLabel(c, 72);
 }
 
 function genericGraph(miss, diagnosis) {
@@ -708,24 +715,54 @@ function pickTemplate(miss, diagnosis) {
 export function buildConceptGraph(miss = {}) {
   const diagnosis = diagnoseMisconception(miss);
   const built = pickTemplate(miss, diagnosis);
-  const correct = compactText(miss.correctAnswer);
-  if (correct && built.nodes.every((n) => n.kind !== 'correct')) {
-    const label = keywordFromCorrect(miss) || shortLabel(correct, 28);
-    if (label && !PLACEHOLDER_NODE.test(label)) {
-      built.nodes.push(
-        node('ae-correct', label, {
-          kind: 'correct',
-          importance: 'key',
-          explanation: `The assessment idea is ${correct}.`,
-        }),
-      );
+  return ensureAssessmentNodes(built, miss);
+}
+
+function ensureAssessmentNodes(graph, miss) {
+  if (!graph?.nodes?.length) return graph;
+  const concepts = scoredConceptList(miss);
+  const nodes = graph.nodes.filter((n) => !/^\d+$/.test(compactText(n.label)));
+  const relationships = (graph.relationships || []).filter((r) =>
+    nodes.some((n) => n.id === r.from) && nodes.some((n) => n.id === r.to),
+  );
+  const rootId = nodes.find((n) => n.kind === 'root')?.id || nodes[0]?.id;
+  concepts.forEach((concept, i) => {
+    if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, concept) || lower(n.label).includes(lower(concept))))) {
+      return;
     }
-  }
-  return built;
+    const id = slug(concept, `ae-${i}`);
+    if (nodes.some((n) => n.id === id)) return;
+    nodes.push(
+      node(id, concept, {
+        kind: 'correct',
+        importance: 'key',
+        explanation: `The assessment engine scores this as ${concept}.`,
+      }),
+    );
+    if (rootId && rootId !== id) {
+      relationships.push({ from: rootId, to: id, label: 'teaches' });
+    }
+  });
+  return { ...graph, nodes, relationships };
 }
 
 export function graphIncludesCorrectIdea(graph, missOrAnswer) {
   const miss = typeof missOrAnswer === 'object' && missOrAnswer ? missOrAnswer : { correctAnswer: missOrAnswer };
+  const concepts = scoredConceptList(miss);
+  if (concepts.length > 1) {
+    if (!graph?.nodes?.length) return false;
+    return concepts.every((concept) =>
+      graph.nodes.some((n) => {
+        if (n.kind === 'mixup') return false;
+        const blob = `${lower(n.label)} ${lower(n.explanation || '')}`;
+        return (
+          answersEquivalent(n.label, concept) ||
+          blob.includes(lower(concept)) ||
+          lower(concept).includes(lower(n.label))
+        );
+      }),
+    );
+  }
   const want = lower(miss.correctAnswer);
   if (!want || !graph?.nodes?.length) return !want;
   const focus = focusPlantPart(miss);

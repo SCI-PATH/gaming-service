@@ -61,4 +61,42 @@ describe('textbook chapter graphs', () => {
     assert.equal(graph.nodes.some((n) => /^(function|link|process)$/i.test(n.label)), false);
     assert.ok(graph.nodes.some((n) => /transpir/i.test(`${n.label} ${n.explanation}`)));
   });
+
+  it('maps fill-in blanks to assessment answers, not chopped textbook lines', () => {
+    const miss = {
+      question:
+        'Plants are vital for the environment as they produce [____], provide [____], and are a source of [____]. Additionally, they play a crucial role in [____].',
+      correctAnswer: 'oxygen · food · medicine · pollination',
+      studentAnswer: '4',
+      topic: 'Ecology',
+      questionType: 'FillInTheBlank',
+      missedBlanks: [
+        { blankIndex: 1, correctAnswer: 'oxygen', studentAnswer: '' },
+        { blankIndex: 2, correctAnswer: 'food', studentAnswer: '' },
+        { blankIndex: 3, correctAnswer: 'medicine', studentAnswer: '' },
+        { blankIndex: 4, correctAnswer: 'pollination', studentAnswer: '' },
+      ],
+      frustrationLevel: 'moderate',
+    };
+    const graph = graphFromTextbookSentences(
+      miss,
+      [
+        'Tabulate the plants you collected from the school garden.',
+        'duce flowers and that is how some plants make seeds.',
+        'Flowering plants and plants which do not produce flowers are grouped differently.',
+        'Green plants produce oxygen during photosynthesis and also provide food.',
+        'Many plants are a source of medicine.',
+        'Flowers play a crucial role in pollination, which supports ecosystems.',
+      ],
+      { chapter_name: 'Plant Diversity', grade: 6 },
+    );
+    const labels = graph.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('oxygen')));
+    assert.ok(labels.some((l) => l.includes('food')));
+    assert.ok(labels.some((l) => l.includes('medicine')));
+    assert.ok(labels.some((l) => l.includes('pollination')));
+    assert.equal(labels.some((l) => /^\d+$/.test(l)), false);
+    assert.equal(labels.some((l) => /tabulate|duce flowers|and plants$/.test(l)), false);
+    assert.equal(validateConceptGraph(graph, miss).ok, true);
+  });
 });

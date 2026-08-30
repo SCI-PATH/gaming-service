@@ -13,10 +13,14 @@ const COLORS = [
   { stroke: '#5a6570', fill: '#e8ecef' },
 ];
 
-const NODE_W = 128;
-const NODE_H = 28;
-const H_GAP = 16;
-const V_GAP = 46;
+const NODE_MIN_W = 132;
+const NODE_MAX_W = 220;
+const CHAR_W = 7.1;
+const LINE_H = 13;
+const NODE_PAD_X = 14;
+const NODE_PAD_Y = 8;
+const H_GAP = 18;
+const V_GAP = 52;
 
 function esc(value) {
   return String(value ?? '')
@@ -35,30 +39,38 @@ function norm(text) {
 function wrapLines(text, maxChars, maxLines = 80) {
   const words = norm(text).split(' ').filter(Boolean);
   if (!words.length) return [];
+  const cap = Math.max(8, maxChars);
   const lines = [];
   let cur = '';
-  let i = 0;
-  while (i < words.length && lines.length < maxLines) {
+  const push = (line, more) => {
+    lines.push(more ? `${line}…` : line);
+  };
+  for (let i = 0; i < words.length; i += 1) {
     const word = words[i];
     const next = cur ? `${cur} ${word}` : word;
-    if (next.length > maxChars && cur) {
+    if (next.length <= cap) {
+      cur = next;
+      continue;
+    }
+    if (cur) {
+      const last = i < words.length;
+      if (lines.length + 1 >= maxLines && last) {
+        push(cur, true);
+        return lines;
+      }
       lines.push(cur);
       cur = word;
-      i += 1;
-    } else if (word.length > maxChars && !cur) {
-      lines.push(word.slice(0, maxChars - 1));
-      words[i] = word.slice(maxChars - 1);
     } else {
-      cur = next;
-      i += 1;
+      if (lines.length + 1 >= maxLines) {
+        push(word, i < words.length - 1);
+        return lines;
+      }
+      lines.push(word);
+      cur = '';
     }
   }
-  if (cur && lines.length < maxLines) lines.push(cur);
-  if (i < words.length && lines.length) {
-    const last = lines[lines.length - 1];
-    lines[lines.length - 1] = `${last.slice(0, Math.max(1, maxChars - 1))}…`;
-  }
-  return lines;
+  if (cur) lines.push(cur);
+  return lines.slice(0, maxLines);
 }
 
 function stampName(title) {
@@ -89,43 +101,58 @@ function nodeStyle(kind) {
   return { fill: '#f7faf6', stroke: '#5a6a58', dash: '4 3' };
 }
 
-function clipLabel(text, n = 16) {
-  const s = norm(text).toUpperCase();
-  if (s.length <= n) return s;
-  return `${s.slice(0, n - 1).trim()}…`;
+function nodeBox(node) {
+  const lines = wrapLines(norm(node?.label).toUpperCase(), 22, 5);
+  const longest = Math.max(8, ...lines.map((line) => line.length));
+  return {
+    lines,
+    w: Math.min(NODE_MAX_W, Math.max(NODE_MIN_W, longest * CHAR_W + NODE_PAD_X)),
+    h: NODE_PAD_Y + Math.max(1, lines.length) * LINE_H + 6,
+  };
 }
 
 function measureTree(node) {
-  if (!node) return { node: null, kids: [], w: 0, h: 0 };
+  if (!node) return { node: null, kids: [], w: 0, h: 0, box: { lines: [], w: 0, h: 0 } };
+  const box = nodeBox(node);
   const kids = (Array.isArray(node.children) ? node.children : []).map(measureTree);
   const kidsW = kids.reduce((sum, k, i) => sum + k.w + (i ? H_GAP : 0), 0);
-  const w = Math.max(NODE_W, kidsW);
+  const w = Math.max(box.w, kidsW);
   const kidH = kids.length ? Math.max(...kids.map((k) => k.h)) : 0;
   return {
     node,
     kids,
+    box,
     w,
-    h: NODE_H + (kids.length ? V_GAP + kidH : 0),
+    h: box.h + (kids.length ? V_GAP + kidH : 0),
   };
+}
+
+function drawMultiline(x, y, lines, size = 10) {
+  const start = y + size;
+  return `<text x="${x}" y="${start}" text-anchor="middle" font-family="Consolas, Cascadia Mono, ui-monospace, monospace" font-size="${size}" font-weight="800" fill="#1a2a20">${lines
+    .map(
+      (line, i) =>
+        `<tspan x="${x}" ${i ? `dy="${LINE_H}"` : ''}>${esc(line)}</tspan>`,
+    )
+    .join('')}</text>`;
 }
 
 function drawTree(measured, originX, originY) {
   if (!measured?.node) return '';
   const kind = measured.node.kind || 'related';
   const style = nodeStyle(kind);
-  const nx = originX + measured.w / 2 - NODE_W / 2;
+  const box = measured.box || nodeBox(measured.node);
+  const nx = originX + measured.w / 2 - box.w / 2;
   const ny = originY;
-  let svg = `<rect x="${nx}" y="${ny}" width="${NODE_W}" height="${NODE_H}" rx="6" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1.6" stroke-dasharray="${style.dash}"/>`;
-  svg += `<text x="${nx + NODE_W / 2}" y="${ny + 19}" text-anchor="middle" font-family="Consolas, Cascadia Mono, ui-monospace, monospace" font-size="11" font-weight="800" fill="#1a2a20">${esc(
-    clipLabel(measured.node.label),
-  )}</text>`;
+  let svg = `<rect x="${nx}" y="${ny}" width="${box.w}" height="${box.h}" rx="6" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1.6" stroke-dasharray="${style.dash}"/>`;
+  svg += drawMultiline(nx + box.w / 2, ny + 4, box.lines);
 
   if (!measured.kids.length) return svg;
   const kidsW = measured.kids.reduce((sum, k, i) => sum + k.w + (i ? H_GAP : 0), 0);
   let kx = originX + (measured.w - kidsW) / 2;
-  const ky = originY + NODE_H + V_GAP;
+  const ky = originY + box.h + V_GAP;
   const parentCx = originX + measured.w / 2;
-  const parentBottom = ny + NODE_H;
+  const parentBottom = ny + box.h;
   measured.kids.forEach((k) => {
     const childCx = kx + k.w / 2;
     svg += `<line x1="${parentCx}" y1="${parentBottom}" x2="${childCx}" y2="${ky}" stroke="#8aa08c" stroke-width="1.4" stroke-dasharray="4 4"/>`;
@@ -158,7 +185,7 @@ function cardCopy(b, maxChars) {
   if (Array.isArray(graph?.learningPath) && graph.learningPath.length) {
     const lines = [];
     graph.learningPath.forEach((step, i) => {
-      wrapLines(`${i + 1}. ${step}`, maxChars, 2).forEach((line) => lines.push(line));
+      wrapLines(`${i + 1}. ${step}`, maxChars, 8).forEach((line) => lines.push(line));
     });
     if (lines.length) blocks.push({ label: 'Learning path', lines });
   }
@@ -172,7 +199,7 @@ function measureCard(b, maxChars, treePad) {
   const graph = branchGraph(b);
   const layout = graph?.nodes?.length ? layoutConceptTree(graph) : { tree: null, leftover: [] };
   const tree = layout.tree ? measureTree(layout.tree) : { w: 0, h: 0, kids: [], node: null };
-  const leftoverH = layout.leftover?.length ? 40 : 0;
+  const leftoverH = layout.leftover?.length ? 56 : 0;
   const blocks = cardCopy(b, maxChars);
   const lineH = 17;
   let textH = 56;
@@ -276,15 +303,19 @@ export function buildMindMapSvg(map, branches) {
       by += tree.h + 8;
       if (layout.leftover?.length) {
         let lx = x + 22;
+        let ly = by;
         layout.leftover.forEach((n) => {
           const st = nodeStyle(n.kind || 'related');
-          svg += `<rect x="${lx}" y="${by}" width="110" height="24" rx="5" fill="${st.fill}" stroke="${st.stroke}" stroke-width="1.4" stroke-dasharray="${st.dash}"/>`;
-          svg += `<text x="${lx + 55}" y="${by + 16}" text-anchor="middle" font-family="Consolas, Cascadia Mono, ui-monospace, monospace" font-size="10" font-weight="800" fill="#1a2a20">${esc(
-            clipLabel(n.label, 14),
-          )}</text>`;
-          lx += 118;
+          const box = nodeBox(n);
+          if (lx + box.w > x + cardW - 18) {
+            lx = x + 22;
+            ly += box.h + 8;
+          }
+          svg += `<rect x="${lx}" y="${ly}" width="${box.w}" height="${box.h}" rx="5" fill="${st.fill}" stroke="${st.stroke}" stroke-width="1.4" stroke-dasharray="${st.dash}"/>`;
+          svg += drawMultiline(lx + box.w / 2, ly + 3, box.lines, 10);
+          lx += box.w + 8;
         });
-        by += 36;
+        by = ly + 40;
       }
     }
 
