@@ -69,6 +69,17 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/phaser')) return 'phaser';
+            if (id.includes('node_modules/react-dom')) return 'react';
+            if (id.includes('node_modules/react/')) return 'react';
+            return undefined;
+          },
+        },
+      },
     },
     server: {
       port: 5173,
