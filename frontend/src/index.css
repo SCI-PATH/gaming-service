@@ -5000,7 +5000,7 @@ body {
 .avatar-assistant-overlay {
   position: fixed;
   inset: 0;
-  z-index: 5000;
+  z-index: 9000;
   box-sizing: border-box;
   display: flex;
   justify-content: center;
@@ -5917,7 +5917,28 @@ body {
 
 .cg-node.is-root {
   border-style: solid;
-  background: #e8f3ea;
+  border-width: 2.5px;
+  border-color: #1f6b3a;
+  background: #d7eedc;
+  font-size: 0.88rem;
+  padding: 8px 14px;
+}
+
+.mm-pedagogy {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.mm-pedagogy strong {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3d5c48;
 }
 
 .cg-node.is-correct {

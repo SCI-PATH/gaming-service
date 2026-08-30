@@ -76,8 +76,8 @@ export function retrieveTextbookChunks(miss = {}, { limit = 3 } = {}) {
   const query = [
     miss.question || miss.prompt,
     miss.correctAnswer,
-    miss.studentAnswer,
     miss.topic,
+    miss.chapter || miss.chapter_name,
   ]
     .filter(Boolean)
     .join(' ');
@@ -101,6 +101,7 @@ export function retrieveTextbookChunks(miss = {}, { limit = 3 } = {}) {
 
 export function graphFromTextbookChunks(miss = {}, chunks = []) {
   if (!chunks.length) return null;
+  const teach = { ...miss, studentAnswer: '', missedBlanks: [] };
   const chapter = resolveChapter(miss) || {
     chapter_name: miss.topic || chunks[0].chapter_name || 'Science',
     chapter_id: chunks[0].chapter_id || '',
@@ -108,15 +109,16 @@ export function graphFromTextbookChunks(miss = {}, chunks = []) {
     grade: chunks[0].grade,
   };
   const sentences = chunks.flatMap((c) => extractTextbookSentences(c.text));
-  const graph = graphFromTextbookSentences(miss, sentences, chapter);
+  const graph = graphFromTextbookSentences(teach, sentences, chapter);
   if (!graph) return null;
   const check = validateConceptGraph(graph, miss);
   return check.ok ? graph : null;
 }
 
 function textbookExcerpt(miss, chunks) {
+  const teach = { ...miss, studentAnswer: '' };
   const sentences = chunks.flatMap((c) => extractTextbookSentences(c.text));
-  const ranked = rankSentences(sentences, miss, 2);
+  const ranked = rankSentences(sentences, teach, 2);
   if (ranked.length) return ranked.join(' ').slice(0, 700);
   if (!chunks[0]?.text) return '';
   return String(chunks[0].text).replace(/\s+/g, ' ').trim().slice(0, 700);
@@ -128,22 +130,20 @@ export function excerptForQuestion(miss = {}) {
 }
 
 export function attachTextbookGrounding(branch, attempt) {
-  const chunks = retrieveTextbookChunks(attempt, { limit: 3 });
+  const teach = { ...attempt, studentAnswer: '', missedBlanks: [] };
+  const chunks = retrieveTextbookChunks(teach, { limit: 3 });
   if (!chunks.length) return branch;
-  const graph = graphFromTextbookChunks(attempt, chunks);
-  const excerpt = textbookExcerpt(attempt, chunks).slice(0, 400);
+  const excerpt = textbookExcerpt(teach, chunks).slice(0, 220);
   const chapter = resolveChapter(attempt);
-  const teach = graph?.learningPath?.[0] || excerpt;
+  const teachLine = excerpt;
   return {
     ...branch,
-    concept_graph: graph || branch.concept_graph,
     textbook_excerpt: excerpt,
     chapter_id: chapter?.chapter_id || chunks[0].chapter_id || branch.chapter_id,
     topic_id: chapter?.topic_id || chunks[0].topic_id || branch.topic_id,
-    key_concept_explain: teach || branch.key_concept_explain,
-    farm_link: excerpt
-      ? `From the textbook (${chapter?.chapter_id || chunks[0].chapter_id}): ${excerpt}`
-      : branch.farm_link,
+    key_concept_explain: branch.key_concept_explain || teachLine,
+    farm_link: excerpt || branch.farm_link,
+    textbook_grounded: true,
   };
 }
 

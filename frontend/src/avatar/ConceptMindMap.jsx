@@ -1,11 +1,11 @@
 /**
- * Clear mind map UI: AI-enriched, one card per incorrect answer (all shown at once).
+ * Concept mind map: assessment-engine knowledge, no student wrong answers.
  * Highlights only the word currently being spoken by Sage (reading-flow sync).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAiMindMap } from './fetchAiMindMap.js';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
-import { softProviderNote, safeScienceLine, friendlyWrongAnswer } from './kidFriendlySpeech.js';
+import { softProviderNote, safeScienceLine } from './kidFriendlySpeech.js';
 import {
   alignSpeechToText,
   buildReadingTimeline,
@@ -13,7 +13,6 @@ import {
   tokenizeMapText,
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
-import SageLessonPanel from './SageLessonPanel.jsx';
 import ConceptGraphTree from './ConceptGraphTree.jsx';
 
 const COLORS = [
@@ -46,6 +45,8 @@ function attemptsFromProps(map, misconceptions) {
         studentAnswer: a.studentAnswer,
         correctAnswer: a.correctAnswer,
         hint: a.hint || m.hint,
+        questionType: a.questionType,
+        questionId: a.questionId,
       })),
     );
   }
@@ -74,7 +75,7 @@ function uniqueQuestionBranches(branches) {
       .toLowerCase();
     if (key && seen.has(key)) continue;
     if (key) seen.add(key);
-    out.push({ ...b, index: out.length + 1, id: b.id || `miss-${out.length}` });
+        out.push({ ...b, index: out.length + 1, id: b.id || `concept-${out.length}` });
   }
   return out;
 }
@@ -83,28 +84,19 @@ function toDisplayBranches(map) {
   if (!map) return [];
   if (Array.isArray(map.branches) && map.branches.length) {
     const mapped = map.branches.map((b, i) => ({
-      id: b.id || `miss-${i}`,
+      id: b.id || `concept-${i}`,
       index: b.index || i + 1,
       topic: b.topic || b.label || 'Science',
       icon: b.icon || '🔬',
       question: b.prompt || b.question || '',
-      studentAnswer:
-        friendlyWrongAnswer(
-          b.studentAnswer || b.student_answer || '',
-          96,
-        ) ||
-        (/^(id|guid|uuid)$/i.test(
-          String(b.studentAnswer || b.student_answer || '').trim(),
-        )
-          ? 'unclear pick'
-          : 'no pick yet'),
+      studentAnswer: '',
       correctAnswer:
         safeScienceLine(b.correctAnswer || b.correct_answer, null) ||
-        'the idea in this farm question',
-      why: safeScienceLine(b.why || b.why_wrong, '') || '',
+        '',
+      why: '',
       keyConcept:
         safeScienceLine(
-          b.keyConcept || b.key_concept || b.correctAnswer || b.topic,
+          b.keyConcept || b.key_concept || b.topic,
           b.topic || 'Science',
         ),
       keyExplain:
@@ -114,8 +106,9 @@ function toDisplayBranches(map) {
         ) || '',
       farmLink: b.farmLink || b.farm_link || '',
       colorIndex: b.colorIndex ?? b.color_index ?? i % 6,
-      lesson: b.lesson || null,
-      options: b.options || b.attempt?.options || [],
+      lesson: null,
+      pedagogy: Array.isArray(b.pedagogy) ? b.pedagogy : [],
+      options: [],
       hint: b.hint || null,
       prompt: b.prompt || b.question || '',
       questionType: b.questionType || b.question_type || '',
@@ -234,7 +227,7 @@ export default function ConceptMindMap({
   useEffect(() => {
     let cancelled = false;
     const fallback =
-      seedMap?.layout === 'all-misses-ai'
+      seedMap?.layout === 'concept-map' || seedMap?.layout === 'all-misses-ai'
         ? seedMap
         : localMapFromAttempts(seedAttempts, misconceptions, {
             score: resolvedFrustrationScore,
@@ -249,19 +242,19 @@ export default function ConceptMindMap({
 
     if (fallback) {
       setLiveMap(fallback);
-      setStatus(enableAi ? 'loading' : 'ready');
-      setNote(
-        enableAi
-          ? 'Loading AI mind map for all your misses…'
-          : 'Mind map of every incorrect answer.',
-      );
+      setStatus('ready');
+      setNote('Concept map of the assessed idea.');
       const first = toDisplayBranches(fallback)[0];
       setActiveId(first?.id || null);
       setExplored(new Set());
       onMapChange?.(fallback);
     }
 
-    if (!enableAi || !seedAttempts.length) {
+    const fallbackHasTree = toDisplayBranches(fallback).some(
+      (b) => (b.conceptGraph?.nodes?.length || 0) >= 3,
+    );
+
+    if (!enableAi || !seedAttempts.length || fallbackHasTree) {
       setStatus('ready');
       return undefined;
     }
@@ -283,14 +276,14 @@ export default function ConceptMindMap({
         }
         setNote(
           softProviderNote(result.note) ||
-            `AI map with all ${seedAttempts.length} incorrect answers.`,
+            `Concept map for ${seedAttempts.length} assessed idea${seedAttempts.length === 1 ? '' : 's'}.`,
         );
         setStatus('ready');
       } catch (err) {
         if (cancelled) return;
         setNote(
           softProviderNote(err?.message) ||
-            'Using local map of all misses.',
+            'Using the local concept map.',
         );
         setStatus('ready');
       }
@@ -345,10 +338,7 @@ export default function ConceptMindMap({
       return [
         { key: 'topic', text: b.topic },
         { key: 'question', text: b.question },
-        { key: 'wrong', text: b.studentAnswer },
-        { key: 'right', text: b.correctAnswer },
         { key: 'key', text: b.keyConcept },
-        { key: 'why', text: b.why },
         { key: 'explain', text: b.keyExplain },
         { key: 'farm', text: b.farmLink },
       ].filter((f) => String(f.text || '').trim());
@@ -383,8 +373,8 @@ export default function ConceptMindMap({
     return (
       <section className="mm">
         <p className="mm-empty">
-          No incorrect answers yet. When you miss questions, every miss will
-          appear here as its own branch.
+          No incorrect answers yet. When you miss questions, Sage will open a
+          concept map of the correct idea.
         </p>
       </section>
     );
@@ -446,11 +436,11 @@ export default function ConceptMindMap({
   return (
     <section
       className={`mm${compact ? ' is-compact' : ''}${speechFocus ? ' is-speech-linked' : ''}`}
-      aria-label={`Mind map of all ${n} incorrect answers`}
+      aria-label={`Concept map of ${n} science idea${n === 1 ? '' : 's'}`}
     >
       <header className="mm-top">
         <p className="mm-kicker">
-          All incorrect answers · {n} miss{n === 1 ? '' : 'es'}
+          Concept map · {n} idea{n === 1 ? '' : 's'}
           {map.conceptCount > 1 ? ` · ${map.conceptCount} topics` : ''}
           {status === 'loading' ? ' · generating with AI…' : ''}
           {map.generatedBy === 'ai' || (status === 'ready' && note.includes('AI'))
@@ -461,7 +451,7 @@ export default function ConceptMindMap({
         <h3>
           <Sync
             fieldKey="root"
-            text={map.root || map.title || map.topic || 'Your Science Gaps'}
+            text={map.root || map.title || map.topic || 'Science'}
             on={overviewOn}
           />
         </h3>
@@ -472,7 +462,7 @@ export default function ConceptMindMap({
               text={
                 map.summary ||
                 map.personalizedNote ||
-                `One card per wrong answer. All ${n} are shown together.`
+                `One card per concept. All ${n} are shown together.`
               }
               on={overviewOn}
             />
@@ -493,7 +483,7 @@ export default function ConceptMindMap({
         {status === 'loading' ? (
           <div className="mm-load" role="status">
             <span className="mm-load-dot" />
-            Building AI mind map for every miss…
+            Building concept map…
           </div>
         ) : null}
         {!compact && note && status !== 'loading' && softProviderNote(note) ? (
@@ -525,13 +515,13 @@ export default function ConceptMindMap({
         </button>
       </header>
 
-      <div className="mm-hub-row" role="tablist" aria-label="All misses">
+      <div className="mm-hub-row" role="tablist" aria-label="Concepts">
         <div
           className={`mm-hub-core${overviewOn ? ' is-speech' : ''}`}
           aria-hidden
         >
           <span>🔬</span>
-          <strong>All {n}</strong>
+          <strong>{n === 1 ? 'Idea' : `${n} ideas`}</strong>
         </div>
         {branches.map((b) => {
           const c = COLORS[b.colorIndex % COLORS.length];
@@ -550,7 +540,7 @@ export default function ConceptMindMap({
             >
               <span aria-hidden>{b.icon}</span>
               <span className="mm-hub-chip-text">
-                <em>Miss {b.index}</em>
+                <em>Concept {b.index}</em>
                 <strong>{b.topic}</strong>
               </span>
             </button>
@@ -585,14 +575,8 @@ export default function ConceptMindMap({
             >
               <header>
                 <span className="mm-card-num">
-                  {b.icon} Miss {b.index}
-                  {Array.isArray(b.blankIndexes) && b.blankIndexes.length > 1 ? (
-                    <span className="mm-card-type">
-                      Blanks {b.blankIndexes.join(', ')}
-                    </span>
-                  ) : b.blankIndex ? (
-                    <span className="mm-card-type">Blank {b.blankIndex}</span>
-                  ) : b.questionType ? (
+                  {b.icon} {b.topic}
+                  {b.questionType ? (
                     <span className="mm-card-type">{String(b.questionType).replace(/_/g, ' ')}</span>
                   ) : null}
                   {speechOn ? (
@@ -616,26 +600,21 @@ export default function ConceptMindMap({
               </p>
               {b.conceptGraph?.nodes?.length ? (
                 <ConceptGraphTree graph={b.conceptGraph} compact={compact} />
-              ) : (
-                <>
-                  <div className="mm-card-row is-bad">
-                    <span>Mix-up</span>
-                    <strong>
-                      {speechOn ? (
-                        <Sync fieldKey="wrong" text={b.studentAnswer || '—'} on />
-                      ) : (
-                        b.studentAnswer || '—'
-                      )}
-                    </strong>
-                  </div>
-                  {b.keyConcept ? (
-                    <p className="mm-card-key">
-                      <span className="mm-card-kicker">Key idea</span>{' '}
-                      {b.keyConcept}
-                    </p>
-                  ) : null}
-                </>
-              )}
+              ) : b.pedagogy?.length ? (
+                <ul className="mm-pedagogy">
+                  {b.pedagogy.map((cat) => (
+                    <li key={cat.title}>
+                      <strong>{cat.title}</strong>
+                      {(cat.children || []).join(' · ')}
+                    </li>
+                  ))}
+                </ul>
+              ) : b.keyConcept ? (
+                <p className="mm-card-key">
+                  <span className="mm-card-kicker">Key idea</span>{' '}
+                  {b.keyConcept}
+                </p>
+              ) : null}
             </article>
           );
         })}
@@ -648,20 +627,22 @@ export default function ConceptMindMap({
           aria-live="polite"
         >
           <p className="mm-focus-kicker">
-            Focus · Miss {active.index} of {n}
-            {active.blankIndexes?.length > 1
-              ? ` · Blanks ${active.blankIndexes.join(', ')}`
-              : active.blankIndex
-                ? ` · Blank ${active.blankIndex}`
-                : ''} · {active.topic}
+            Focus · {active.index} of {n} · {active.topic}
           </p>
           <h4>
             {active.icon} {active.conceptGraph?.concept || active.topic}
           </h4>
           {active.conceptGraph?.nodes?.length ? (
             <ConceptGraphTree graph={active.conceptGraph} />
-          ) : active.lesson?.sections?.length ? (
-            <SageLessonPanel sections={active.lesson.sections} lesson={active.lesson} />
+          ) : active.pedagogy?.length ? (
+            <ul className="mm-pedagogy">
+              {active.pedagogy.map((cat) => (
+                <li key={cat.title}>
+                  <strong>{cat.title}</strong>
+                  <span>{(cat.children || []).join(' · ')}</span>
+                </li>
+              ))}
+            </ul>
           ) : null}
           {active.farmLink ? (
             <p className="mm-focus-p is-farm">
@@ -675,7 +656,7 @@ export default function ConceptMindMap({
           ) : null}
           <div className="mm-focus-actions">
             <button type="button" className="mm-btn" onClick={goNext}>
-              Next miss →
+              Next idea →
             </button>
             <span>
               Explored {explored.size}/{n}

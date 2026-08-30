@@ -593,18 +593,12 @@ function branchCorrectAllowed(branch, miss) {
   return false;
 }
 
-function branchStudentAllowed(branch, miss) {
-  const got = compactText(branch.studentAnswer || branch.student_answer);
-  if (!got) return true;
-  if (answersEquivalent(got, miss.studentAnswer)) return true;
-  if ((miss.missedBlanks || []).some((item) => answersEquivalent(got, item.studentAnswer))) {
-    return true;
-  }
-  return false;
+function branchStudentForbidden(branch) {
+  return !compactText(branch.studentAnswer || branch.student_answer);
 }
 
 /**
- * Reject maps that swapped the engine key, question, or student answer.
+ * Reject maps that swapped the engine key or leaked a student wrong answer.
  */
 export function validateMindMapAgainstAssessments(map, assessments = []) {
   const branches = Array.isArray(map?.branches) ? map.branches : [];
@@ -631,8 +625,8 @@ export function validateMindMapAgainstAssessments(map, assessments = []) {
     if (!branchCorrectAllowed(branch, miss)) {
       return { ok: false, reason: 'correct_answer_changed' };
     }
-    if (!branchStudentAllowed(branch, miss)) {
-      return { ok: false, reason: 'student_answer_changed' };
+    if (!branchStudentForbidden(branch)) {
+      return { ok: false, reason: 'student_answer_on_map' };
     }
     const branchPrompt = promptFingerprint(branch.prompt || branch.question);
     if (prompt && branchPrompt && promptFingerprint(miss.question) !== branchPrompt) {

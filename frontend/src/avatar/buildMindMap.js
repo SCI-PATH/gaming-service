@@ -516,9 +516,12 @@ export function buildPersonalizedMindMap({
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
     const conceptGraph = buildConceptGraph({
       ...miss,
-      studentAnswer: a.studentAnswer,
+      studentAnswer: '',
       correctAnswer: miss.correctAnswer,
-      missedBlanks: miss.missedBlanks || a.missedBlanks,
+      missedBlanks: (miss.missedBlanks || a.missedBlanks || []).map((b) => ({
+        ...b,
+        studentAnswer: '',
+      })),
       acceptedAnswers: miss.acceptedAnswers || a.acceptedAnswers,
       completeness: a.completeness,
       missingKeywords: a.missingKeywords,
@@ -596,7 +599,7 @@ export function buildPersonalizedMindMap({
     }
 
     return {
-      id: `miss-${i}`,
+      id: `concept-${i}`,
       index: i + 1,
       topic: t,
       label: t,
@@ -609,30 +612,32 @@ export function buildPersonalizedMindMap({
       blankIndexes: miss.blankIndexes || (miss.missedBlanks || []).map((b) => b.blankIndex),
       prompt: a.prompt || miss.question,
       question: a.prompt || miss.question,
-      studentAnswer: cleanWrong,
+      studentAnswer: '',
       correctAnswer: cleanRight,
-      missedBlanks: miss.missedBlanks || [],
-      options: Array.isArray(a.options) ? a.options : [],
+      missedBlanks: [],
+      options: [],
       hint: a.hint,
-      why,
-      why_wrong: why,
+      why: '',
+      why_wrong: '',
       rightExplain: keyExplain,
       keyConcept,
       key_concept: keyConcept,
       keyExplain,
       key_concept_explain: keyExplain,
-      lesson: lessonOk ? lesson : null,
+      lesson: null,
       conceptGraph,
       farmLink: related.explanation,
       farm_link: related.explanation,
       summary:
         catalog?.summary ||
-        `Review this ${t} idea so the farm lesson sticks.`,
-      nodes,
+        `Hold this ${t} idea.`,
+      nodes: nodes.filter((n) => n.kind !== 'wrong'),
       attempt: a,
-      children: nodes.map((n) => ({
+      children: nodes
+        .filter((n) => n.kind !== 'wrong')
+        .map((n) => ({
         id: n.id,
-        kind: n.kind === 'wrong' ? 'mistake' : n.kind === 'right' ? 'correct' : n.kind === 'ask' ? 'question' : 'link',
+        kind: n.kind === 'right' ? 'correct' : n.kind === 'ask' ? 'question' : 'link',
         label: n.label,
         role: n.title,
         icon: n.icon,
@@ -655,19 +660,19 @@ export function buildPersonalizedMindMap({
     root: rootTitle,
     title: rootTitle,
     centralIdea: rootTitle,
-    summary: `${profile.label}: ${totalMisses} incorrect answer${totalMisses === 1 ? '' : 's'} on one map.`,
+    summary: `${profile.label}: ${totalMisses} concept${totalMisses === 1 ? '' : 's'} on one map.`,
     bigPicture:
       profile.tone === 'support'
         ? `Start with the correct idea on each card. ${conceptCount > 1 ? `Topics: ${[...topicsSeen].join(', ')}.` : `Focus on ${rootTitle}.`}`
         : conceptCount > 1
-        ? `These misses cover: ${[...topicsSeen].join(', ')}. Study each card, then connect the farm story.`
-        : `Every miss is about ${rootTitle}. Say the correct idea for each card out loud.`,
-    studyPath: branches.map((b) => `Miss ${b.index}: ${b.topic}`),
+        ? `These maps cover: ${[...topicsSeen].join(', ')}.`
+        : `This map teaches ${rootTitle}.`,
+    studyPath: branches.map((b) => b.topic),
     branches,
     nodes: branches.map((b) => ({
       id: b.id,
       label: b.label,
-      role: `Miss ${b.index}`,
+      role: `Idea ${b.index}`,
       kind: 'branch',
       explanation: b.summary,
     })),
@@ -762,15 +767,12 @@ export function summarizeMindMapForLlm(map) {
     based_on_all_incorrect_questions: (map.sourceAttempts || []).map((a) => ({
       topic: a.topic,
       prompt: a.prompt,
-      student_answer: a.studentAnswer,
       correct_answer: a.correctAnswer,
     })),
     branches: (map.branches || []).map((b) => ({
       miss_number: b.index,
       concept: b.label,
-      student_answer: b.studentAnswer,
       correct_answer: b.correctAnswer,
-      why: b.why,
       nodes: (b.nodes || []).map((n) => ({
         kind: n.kind,
         label: n.label,

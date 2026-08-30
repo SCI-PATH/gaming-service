@@ -139,14 +139,8 @@ export function sageMapOutro(voice) {
   return 'Ask me if you want that again.';
 }
 
-function honourMixup(wrong, voice) {
-  const w = compactText(wrong);
-  if (!w || /no pick|no answer|unclear|timed out/i.test(w)) return '';
-  if (w.length > 80) return voice.level === 'very_high' ? '' : 'That was a fair try.';
-  if (voice.level === 'very_high') return `That's okay.`;
-  if (voice.level === 'high') return `You said ${w}. That's a real idea.`;
-  if (voice.level === 'low') return `You went with ${w}. Nice try.`;
-  return `You said ${w}.`;
+function honourMixup() {
+  return '';
 }
 
 /**

@@ -2,7 +2,7 @@
  * Mind maps from official EduPub textbook sentences, tagged with the
  * same chapter_id / topic_id the assessment engine uses.
  */
-import { compactText, scoredConceptList, studentMixupList, blankRolesFromQuestion } from './assessmentMiss.js';
+import { compactText, scoredConceptList, blankRolesFromQuestion } from './assessmentMiss.js';
 import { PLACEHOLDER_NODE, phraseLabel } from './conceptLessons.js';
 import digestJson from './textbookChapterDigest.json' with { type: 'json' };
 
@@ -100,7 +100,6 @@ function queryBlob(miss = {}) {
   return [
     miss.question || miss.prompt,
     miss.correctAnswer,
-    miss.studentAnswer,
     miss.topic,
     miss.chapter_name || miss.chapter,
   ]
@@ -215,7 +214,6 @@ function matchDigestChapter(miss = {}) {
 export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMeta = {}) {
   const usable = [...sentences].filter(isTeachableSentence);
   const concepts = scoredConceptList(miss);
-  const mixups = studentMixupList(miss);
   const ranked = rankSentences(usable.length ? usable : sentences.filter(isTeachableSentence), miss, 8);
   if (!ranked.length && !concepts.length) return null;
   const chapterName =
@@ -287,21 +285,6 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
     relationships.push({ from: 'tb-root', to: id, label: 'includes' });
     extra += 1;
   }
-
-  mixups.forEach((mix, i) => {
-    const label = phraseLabel(mix, 32);
-    if (!label || isJunkLabel(label) || seen.has(normalizeTitle(label))) return;
-    const id = slug(label, `mix-${i}`);
-    seen.add(id);
-    seen.add(normalizeTitle(label));
-    nodes.push({
-      id,
-      label,
-      kind: 'mixup',
-      explanation: `That is not one of the ideas this question is scoring.`,
-    });
-    relationships.push({ from: 'tb-root', to: id, label: 'confused with' });
-  });
 
   if (nodes.length < 3) {
     nodes.push({

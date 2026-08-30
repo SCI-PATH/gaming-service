@@ -34,11 +34,23 @@ function NodeBlock({ node, selectedId, onSelect, compact }) {
   );
 }
 
+function teachOnlyGraph(graph) {
+  if (!graph) return graph;
+  const nodes = (graph.nodes || []).filter((n) => n.kind !== 'mixup');
+  const ids = new Set(nodes.map((n) => n.id));
+  return {
+    ...graph,
+    nodes,
+    relationships: (graph.relationships || []).filter((r) => ids.has(r.from) && ids.has(r.to)),
+  };
+}
+
 export default function ConceptGraphTree({ graph = null, compact = false, onNodeSelect = null }) {
-  const layout = useMemo(() => layoutConceptTree(graph), [graph]);
+  const teachGraph = useMemo(() => teachOnlyGraph(graph), [graph]);
+  const layout = useMemo(() => layoutConceptTree(teachGraph), [teachGraph]);
   const [selectedId, setSelectedId] = useState(layout.rootId);
   const selected =
-    (graph?.nodes || []).find((n) => n.id === selectedId) || graph?.nodes?.[0] || null;
+    (teachGraph?.nodes || []).find((n) => n.id === selectedId) || teachGraph?.nodes?.[0] || null;
 
   if (!layout.tree) return null;
 
@@ -49,9 +61,6 @@ export default function ConceptGraphTree({ graph = null, compact = false, onNode
 
   return (
     <div className={`cg${compact ? ' is-compact' : ''}`}>
-      {!compact && graph?.misconception?.summary ? (
-        <p className="cg-mixup">{graph.misconception.summary}</p>
-      ) : null}
       <div className="cg-tree" role="tree">
         <NodeBlock node={layout.tree} selectedId={selectedId} onSelect={pick} compact={compact} />
         {layout.leftover.length ? (

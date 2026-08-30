@@ -386,7 +386,7 @@ export function buildMindMapNarration(map, opts = {}) {
   branches.forEach((b, i) => {
     const topic = b.topic || b.label || 'Science';
     const q = b.prompt || b.question || '';
-    const wrong = b.studentAnswer || '';
+    const wrong = '';
     const right = b.correctAnswer || '';
     const why = b.why || b.why_wrong || '';
     const key = b.keyExplain || b.key_concept_explain || b.keyConcept || '';
@@ -500,7 +500,7 @@ export function buildMissCardNarration(branch, opts = {}) {
     frustrationLevel: opts.frustrationLevel || branch.frustrationLevel,
   });
   const topic = branch.topic || 'Science';
-  const wrong = branch.studentAnswer || '';
+  const wrong = '';
   const right = branch.correctAnswer || '';
   const why = branch.why || '';
   const farm = branch.farmLink || branch.farm_link || '';

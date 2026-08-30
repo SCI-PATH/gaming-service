@@ -47,13 +47,14 @@ describe('buildMindMapNarration', () => {
     ],
   };
 
-  it('reads the mix-up and key idea in plain speech', () => {
+  it('reads the correct idea in plain speech', () => {
     const parts = buildMindMapNarration(map, { frustrationScore: 40 });
     const branch = parts.find((p) => p.kind === 'branch');
     assert.ok(branch?.text);
     assert.doesNotMatch(branch.text, /Miss 1/);
     assert.doesNotMatch(branch.text, /learning path/i);
-    assert.match(branch.text, /Resistor|capacitor/i);
+    assert.match(branch.text, /capacitor/i);
+    assert.doesNotMatch(branch.text, /\bResistor\b/);
     assert.doesNotMatch(branch.text, /Exam lock/i);
   });
 
@@ -89,7 +90,8 @@ describe('buildMissCardNarration', () => {
       },
       { frustrationScore: 40 },
     );
-    assert.match(seg.text, /Oxygen|carbon dioxide/i);
+    assert.match(seg.text, /carbon dioxide/i);
+    assert.doesNotMatch(seg.text, /\bOxygen\b/);
     assert.doesNotMatch(seg.text, /Miss 1/);
   });
 });

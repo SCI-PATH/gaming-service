@@ -1843,7 +1843,7 @@ export default function App() {
           />
         </div>
 
-        {inFarm && (
+        {inFarm && !avatarOpen && (
           <div className="farm-side-panels">
             <FarmMapPanel
               playerMapX={playerMap.x}

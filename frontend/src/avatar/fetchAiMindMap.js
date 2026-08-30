@@ -1,5 +1,5 @@
 /**
- * Client: AI mind map covering incorrect answers, personalized by frustration.
+ * Client: concept map from the assessment engine key, structured by AI.
  */
 import { softProviderNote } from './kidFriendlySpeech.js';
 

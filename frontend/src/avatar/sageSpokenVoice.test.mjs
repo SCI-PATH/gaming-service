@@ -94,7 +94,8 @@ describe('buildMindMapNarration', () => {
     const spoken = parts.map((p) => p.text).join(' ');
     assert.match(spoken, /Sage|Hey /);
     assert.doesNotMatch(spoken, /incorrect/i);
-    assert.match(spoken, /Resistor|capacitor/i);
+    assert.match(spoken, /capacitor/i);
+    assert.doesNotMatch(spoken, /\bResistor\b/);
     assert.doesNotMatch(spoken, /Miss 1/);
   });
 });

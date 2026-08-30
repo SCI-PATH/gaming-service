@@ -13,6 +13,7 @@ export const SAGE_QUESTION_TYPES = {
   TrueFalse: 'TrueFalse',
   FILL_IN_THE_BLANK: 'FILL_IN_THE_BLANK',
   TYPED_ANSWER: 'TYPED_ANSWER',
+  Matching: 'Matching',
   ShortAnswer: 'TYPED_ANSWER',
 };
 
@@ -22,6 +23,7 @@ export const SAGE_ASSESSMENT_TYPES = {
   TrueFalse: 'TrueFalse',
   FillInTheBlank: 'FillInTheBlank',
   ShortAnswer: 'ShortAnswer',
+  Matching: 'Matching',
 };
 
 export function toSageAssessmentType(kind) {
@@ -50,6 +52,9 @@ export function toSageAssessmentType(kind) {
   }
   if (raw === 'truefalse' || raw === 'tf' || raw === 'boolean') {
     return SAGE_ASSESSMENT_TYPES.TrueFalse;
+  }
+  if (raw === 'matching' || raw === 'match' || raw === 'matchingpairs') {
+    return SAGE_ASSESSMENT_TYPES.Matching;
   }
   if (raw === 'mcq' || raw === 'multiplechoice') {
     return SAGE_ASSESSMENT_TYPES.MCQ;
@@ -118,6 +123,13 @@ function explicitKind(raw) {
   }
   if (TYPED_ANSWER_ALIASES.has(explicit)) {
     return SAGE_QUESTION_TYPES.TYPED_ANSWER;
+  }
+  if (
+    explicit === 'matching' ||
+    explicit === 'match' ||
+    explicit === 'matchingpairs'
+  ) {
+    return SAGE_QUESTION_TYPES.Matching;
   }
   return null;
 }
