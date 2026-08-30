@@ -23,6 +23,8 @@ import {
   friendlyStudentName,
   sanitizeKidSpeech,
 } from '../../frontend/src/avatar/kidFriendlySpeech.js';
+import { excerptForQuestion } from './textbookRetrieve.mjs';
+import { resolveChapter } from './curriculumChapters.mjs';
 
 function sessionExtras(context = {}, name = '') {
   return {
@@ -150,6 +152,22 @@ export function buildFallbackReply(context = {}, studentMessage = '', history = 
  */
 export function buildMessages(body = {}) {
   const context = body.contextPayload || body.context || {};
+  const miss = {
+    question: context?.current_question?.question_text,
+    prompt: context?.current_question?.question_text,
+    correctAnswer: context?.current_question?.correct_answer,
+    studentAnswer: context?.current_question?.student_last_wrong_answer,
+    topic: context?.current_question?.topic,
+    topic_id: context?.current_question?.topic_id,
+    chapter_name: context?.current_question?.chapter_name,
+    chapter_id: context?.current_question?.chapter_id,
+    grade: context?.current_question?.grade,
+  };
+  if (!context.textbook_excerpt) {
+    context.textbook_excerpt = excerptForQuestion(miss);
+  }
+  const chapter = resolveChapter(miss);
+  if (chapter) context.textbook_chapter_id = chapter.chapter_id;
   const studentMessage = String(
     body.studentMessage || body.message || body.quickPrompt || '',
   ).trim();

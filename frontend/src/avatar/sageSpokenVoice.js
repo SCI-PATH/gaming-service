@@ -155,8 +155,10 @@ function honourMixup(wrong, voice) {
 export function buildSageMissScript(branch, voice) {
   if (!branch) return '';
   const graph = branch.conceptGraph || branch.concept_graph;
+  const textbook = compactText(branch.textbook_excerpt || branch.textbookExcerpt);
   const idea =
     spokenFromGraph(graph, voice) ||
+    (textbook ? asSentence(textbook.split(/(?<=[.!?])\s+/)[0]) : '') ||
     asSentence(branch.keyConcept || branch.key_concept);
   const mix = honourMixup(branch.studentAnswer, voice);
   const bits = [];

@@ -111,22 +111,39 @@ export function findPlantPart(text) {
   return PLANT_PARTS.find((p) => p.keys.test(t)) || null;
 }
 
+export function isPlantPartFunctionQuestion(miss) {
+  const q = `${miss.question || ''} ${miss.prompt || ''}`;
+  return has(
+    q,
+    /which part|what part|function of|role of|job of|parts? of (a |the )?plant|absorbs? water|from the soil|grows? underground|produces pollen/,
+  );
+}
+
 export function focusPlantPart(miss) {
   const q = `${miss.question || ''} ${miss.prompt || ''}`;
   const c = miss.correctAnswer || '';
+  const fromCorrect = findPlantPart(c);
+  if (fromCorrect) return fromCorrect;
+  if (
+    !isPlantPartFunctionQuestion(miss) &&
+    !has(q, /\b(root|stem|leaf|leaves|anther|pistil)\b/)
+  ) {
+    return null;
+  }
   const ordered = [
     { re: /\bseeds?\b/, id: 'seeds' },
     { re: /\bleaves\b|\bleaf\b/, id: 'leaves' },
-    { re: /\banther\b|\bpistil\b|\bpollen\b|\bflowers?\b/, id: 'flowers' },
+    { re: /\banther\b|\bpistil\b|\bpollen\b/, id: 'flowers' },
     { re: /\bfruits?\b/, id: 'fruits' },
     { re: /\babsorb|from the soil|underground/, id: 'roots' },
     { re: /\broots?\b/, id: 'roots' },
     { re: /\bstems?\b/, id: 'stem' },
+    { re: /\bflowers?\b/, id: 'flowers' },
   ];
   for (const row of ordered) {
     if (row.re.test(lower(q))) return PLANT_PARTS.find((p) => p.id === row.id);
   }
-  return findPlantPart(c) || findPlantPart(q);
+  return findPlantPart(q);
 }
 
 export function mixupPlantPart(miss, focus) {
@@ -165,7 +182,7 @@ export function pollinationLesson(miss) {
 }
 
 export function waterCycleLesson(miss) {
-  return has(questionBlob(miss), /evaporat|condens|precipit|water cycle/);
+  return has(questionBlob(miss), /evaporat|condens|precipit|transpir|water cycle/);
 }
 
 export function floweringContrastLesson(miss) {

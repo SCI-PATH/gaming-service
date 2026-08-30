@@ -17,6 +17,7 @@ import {
   buildConceptGraph,
   validateConceptGraph,
 } from '../../frontend/src/avatar/conceptGraph.js';
+import { attachTextbookGrounding } from './textbookRetrieve.mjs';
 
 const TOPIC_ICONS = {
   photosynthesis: '☀️',
@@ -55,6 +56,11 @@ function normalizeAttempts(body = {}) {
     completeness: a.completeness,
     missingKeywords: a.missingKeywords || [],
     isCorrect: Boolean(a.isCorrect),
+    chapter: a.chapter || a.chapter_name,
+    chapter_name: a.chapter || a.chapter_name,
+    chapter_id: a.chapter_id || a.chapterId,
+    topic_id: a.topic_id || a.topicId,
+    grade: a.grade,
   }));
 }
 
@@ -175,7 +181,7 @@ export function buildLocalMindMap(attempts, adaptation = null) {
     const whyWrong = lessonOk
       ? lesson.comparisonFields?.keyScientificDifference || lesson.comparison || ''
       : '';
-    return {
+    const branch = {
       miss_index: i + 1,
       questionId: a.questionId || null,
       questionType: a.questionType || '',
@@ -209,6 +215,7 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       })(),
       color_index: i % 6,
     };
+    return attachTextbookGrounding(branch, a);
   });
 
   return {

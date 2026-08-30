@@ -155,6 +155,30 @@ describe('plant maps are curriculum keywords, not placeholders', () => {
     assert.ok(g.relationships.every((r) => r.from && r.to));
     assert.equal(validateConceptGraph(g, { correctAnswer: 'Photosynthesis' }).ok, true);
   });
+
+  it('maps transpiration from the water cycle, not a flower tree', () => {
+    const g = buildConceptGraph({
+      question: 'Water moving from plant leaves into the air is called…',
+      studentAnswer: 'Precipitation',
+      correctAnswer: 'Transpiration',
+      topic: 'Water Cycle',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('transpiration')));
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'Transpiration' }).ok, true);
+  });
+
+  it('maps a harvest-cart miss without treating harvested flowers as the concept', () => {
+    const g = buildConceptGraph({
+      question: 'Why do farmers load harvested crops into a cart or barn?',
+      studentAnswer: 'To stop photosynthesis forever',
+      correctAnswer: 'To store and move the harvest safely',
+      topic: 'Storage',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.equal(labels.some((l) => l === 'flowers'), false);
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'To store and move the harvest safely' }).ok, true);
+  });
 });
 
 describe('personalized map carries concept graphs', () => {

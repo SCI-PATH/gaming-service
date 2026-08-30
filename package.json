@@ -18,7 +18,8 @@
     "dev:frontend": "npm run frontend",
     "build": "npm run build -w frontend",
     "preview": "npm run preview -w frontend",
-    "lint": "oxlint frontend backend"
+    "lint": "oxlint frontend backend",
+    "ingest:textbooks": "python scripts/ingest_textbooks.py"
   },
   "devDependencies": {
     "oxlint": "^1.71.0"

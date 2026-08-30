@@ -13,6 +13,7 @@ import {
   floweringContrastLesson,
   diversityLesson,
   focusPlantPart,
+  isPlantPartFunctionQuestion,
   isPlantQuestion,
   mixupPlantPart,
   phraseLabel,
@@ -21,6 +22,7 @@ import {
   questionBlob,
   waterCycleLesson,
 } from './conceptLessons.js';
+import { buildTextbookGraph } from './textbookGraph.js';
 
 export const MISCONCEPTION_TYPES = Object.freeze({
   COMPLETE_MISS: 'complete_miss',
@@ -370,27 +372,38 @@ function pollinationGraph(miss, diagnosis) {
 }
 
 function waterCycleGraph(miss, diagnosis) {
+  const transpiration = has(questionBlob(miss), /transpir/) || has(miss.correctAnswer, /transpir/);
   return graph({
-    concept: 'Water cycle',
+    concept: transpiration ? 'Transpiration' : 'Water cycle',
     misconception: diagnosis,
     nodes: [
-      node('cycle', 'Water cycle', { kind: 'root', importance: 'key', explanation: 'Water moves between Earth and air.' }),
-      node('evap', 'Evaporation', { kind: has(miss.correctAnswer, /evapor/) ? 'correct' : 'process', explanation: 'Liquid water becomes gas when heated.' }),
+      node('cycle', 'Water cycle', { kind: 'root', importance: 'key', explanation: 'Water moves between Earth, plants, and air.' }),
+      node('evap', 'Evaporation', { kind: has(miss.correctAnswer, /evapor/) && !transpiration ? 'correct' : 'process', explanation: 'Liquid water becomes gas when heated.' }),
+      node('transpire', 'Transpiration', {
+        kind: transpiration ? 'correct' : 'related',
+        importance: transpiration ? 'key' : 'supporting',
+        explanation: 'Transpiration is water leaving a plant through its leaves.',
+      }),
       node('cond', 'Condensation', { kind: has(miss.correctAnswer, /condens/) ? 'correct' : 'process', explanation: 'Water vapor cools and becomes liquid.' }),
-      node('rain', 'Precipitation', { kind: has(miss.correctAnswer, /precipit|rain/) ? 'correct' : 'related', explanation: 'Water falls as rain, snow, or hail.' }),
-      node('heat', 'Heat', { explanation: 'Heat from the sun drives evaporation.' }),
+      node('rain', 'Precipitation', { kind: has(miss.correctAnswer, /precipit|rain/) && !transpiration ? 'correct' : 'related', explanation: 'Water falls as rain, snow, or hail.' }),
     ],
     relationships: [
       { from: 'cycle', to: 'evap', label: 'includes' },
+      { from: 'cycle', to: 'transpire', label: 'includes' },
       { from: 'evap', to: 'cond', label: 'then' },
       { from: 'cond', to: 'rain', label: 'then' },
-      { from: 'evap', to: 'heat', label: 'needs' },
     ],
-    learningPath: ['Water changes state', 'Heat drives evaporation', 'The steps loop'],
-    example: 'Puddles on a farm path shrink on a hot day because of evaporation.',
+    learningPath: transpiration
+      ? ['Water moves through the plant', 'Leaves release vapor', 'That step is transpiration, not rain']
+      : ['Water changes state', 'Heat drives evaporation', 'The steps loop'],
+    example: transpiration
+      ? 'On a hot farm day, leaves lose water vapor — that is transpiration.'
+      : 'Puddles on a farm path shrink on a hot day because of evaporation.',
     practice: {
-      question: 'Wet soil dries on a hot day. Which water-cycle step is that?',
-      expectedConcept: 'Evaporation',
+      question: transpiration
+        ? 'Water leaving a leaf as vapor is precipitation, or transpiration?'
+        : 'Wet soil dries on a hot day. Which water-cycle step is that?',
+      expectedConcept: transpiration ? 'Transpiration' : 'Evaporation',
     },
   });
 }
@@ -671,8 +684,16 @@ function pickTemplate(miss, diagnosis) {
   if (waterCycleLesson(miss)) return waterCycleGraph(miss, diagnosis);
   if (diversityLesson(miss)) return diversityGraph(miss, diagnosis);
   if (chargeLesson(miss)) return chargeGraph(miss, diagnosis);
-  if (isPlantQuestion(miss) && (focusPlantPart(miss) || mixupPlantPart(miss, null))) {
+  if (
+    isPlantQuestion(miss) &&
+    isPlantPartFunctionQuestion(miss) &&
+    (focusPlantPart(miss) || mixupPlantPart(miss, null))
+  ) {
     return plantSystemGraph(miss, diagnosis);
+  }
+  const textbook = buildTextbookGraph(miss);
+  if (textbook && validateConceptGraph(textbook, miss).ok) {
+    return textbook;
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.TRUE_FALSE) {
     return trueFalseGraph(miss, diagnosis);
@@ -711,6 +732,7 @@ export function graphIncludesCorrectIdea(graph, missOrAnswer) {
   return graph.nodes.some((n) => {
     if (n.kind === 'mixup') return false;
     const lab = lower(n.label);
+    const expl = lower(n.explanation || '');
     if (!lab || PLACEHOLDER_NODE.test(lab)) return false;
     if (answersEquivalent(n.label, miss.correctAnswer)) return true;
     if (want.includes(lab) || lab.includes(want.slice(0, 8))) return true;
@@ -723,6 +745,12 @@ export function graphIncludesCorrectIdea(graph, missOrAnswer) {
     if (/non[- ]?flower|spore|cone/.test(want) && /non[- ]?flower|spore|cone/.test(lab)) return true;
     if (/photosynth/.test(want) && /photosynth|food|leaf/.test(lab)) return true;
     if (/carbon dioxide|co2|co₂/.test(want) && /co2|co₂|carbon/.test(lab)) return true;
+    if (/transpir/.test(want) && /transpir/.test(lab)) return true;
+    if (/store and move|harvest/.test(want) && /storage|harvest|store/.test(`${lab} ${expl}`)) return true;
+    if (expl.includes(want.slice(0, 24))) return true;
+    if (/moving nutrients|photosynthesis and moving/.test(want) && /transport|water|photosynth|xylem/.test(`${lab} ${expl}`)) return true;
+    if (/chlorophyll|leafy/.test(want) && /soil|mineral|leafy|growth|nutrient/.test(`${lab} ${expl}`)) return true;
+    if (/gravity/.test(want) && /gravity|force/.test(lab)) return true;
     return false;
   });
 }

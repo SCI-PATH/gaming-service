@@ -245,6 +245,9 @@ function questionGroundingBlock(context = {}) {
     activeCorrect
       ? `Known correct answer for THAT question: "${String(activeCorrect).slice(0, 140)}". When revealing, use this exact idea — do not invent another.`
       : 'Correct answer not yet known — teach from the question stem only; do not invent a letter key.',
+    context.textbook_excerpt
+      ? `TEXTBOOK GROUNDING (official science book, chapter ${context.textbook_chapter_id || context.current_question?.chapter_id || ''}): "${String(context.textbook_excerpt).slice(0, 500)}". Teach only with this chapter language. Do not invent facts that are not in the excerpt or the scored answer.`
+      : null,
     history.length
       ? `Recent answer history (oldest→newest, ${history.length} items): ${JSON.stringify(history).slice(0, 900)}`
       : null,
