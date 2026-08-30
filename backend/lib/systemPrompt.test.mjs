@@ -13,6 +13,6 @@ describe('polishSageSpeech', () => {
     const out = polishSageSpeech(raw, { frustration_score: 72 });
     assert.doesNotMatch(out, /YOUR ANSWER/i);
     assert.doesNotMatch(out, /KEY CONNECTION/i);
-    assert.ok((out.match(/[.!?]/g) || []).length <= 2);
+    assert.ok((out.match(/[.!?]/g) || []).length <= 4);
   });
 });

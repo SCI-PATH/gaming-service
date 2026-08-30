@@ -668,7 +668,7 @@ export default function AvatarAssistantModal({
         setLiveCaption('');
       }
       setSpokenCaption(t);
-      return ttsRef.current.speak(t, { rate: sageVoice.rate, pitch: 1.05 });
+      return ttsRef.current.speak(t, { rate: sageVoice.rate, pitch: 1 });
     },
     [voiceMuted, sageVoice.rate],
   );

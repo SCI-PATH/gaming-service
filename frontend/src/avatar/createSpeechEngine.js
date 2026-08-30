@@ -3,21 +3,24 @@
  */
 import {
   sageGreeting,
-  sageMapOutro,
   buildSageMissScript,
   resolveSageVoice,
+  prepareTtsText,
 } from './sageSpokenVoice.js';
 
 function pickVoice() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices() || [];
   if (!voices.length) return null;
-  const prefer =
-    voices.find((v) => /en-US|en_US/i.test(v.lang) && /female|Samantha|Google US English|Zira|Aria/i.test(v.name)) ||
-    voices.find((v) => /en-?US/i.test(v.lang)) ||
-    voices.find((v) => /^en/i.test(v.lang)) ||
-    voices[0];
-  return prefer || null;
+  const score = (v) => {
+    const n = `${v.name} ${v.lang}`;
+    if (/neural|natural|aria|jenny|guy|samantha/i.test(n) && /en/i.test(v.lang)) return 4;
+    if (/google us english/i.test(n)) return 3;
+    if (/en-US|en_US/i.test(v.lang) && /female|zira/i.test(v.name)) return 2;
+    if (/^en/i.test(v.lang)) return 1;
+    return 0;
+  };
+  return [...voices].sort((a, b) => score(b) - score(a))[0] || voices[0];
 }
 
 export function createSpeechEngine({
@@ -74,15 +77,13 @@ export function createSpeechEngine({
    * Long text is split into Chrome-safe chunks without cancel() between them.
    * @returns {Promise<{ spoken: boolean, reason: string }>}
    */
-  function speak(text, { rate = 0.95, pitch = 1.05, volume = 1 } = {}) {
+  function speak(text, { rate = 0.9, pitch = 1, volume = 1 } = {}) {
     if (!supported) {
       onError?.('Speech synthesis is not available in this browser.');
       return Promise.resolve({ spoken: false, reason: 'unsupported' });
     }
 
-    const clean = String(text || '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const clean = prepareTtsText(text);
     if (!clean) return Promise.resolve({ spoken: false, reason: 'empty' });
 
     stop();
@@ -380,13 +381,8 @@ export function buildMindMapNarration(map, opts = {}) {
     'mind map',
   ]);
 
-  parts.push({
-    kind: 'intro',
-    branchId: null,
-    highlights: rootTerms,
-    text: sageGreeting(voice, opts.studentName),
-  });
-
+  const greeting = sageGreeting(voice, opts.studentName);
+  const cardParts = [];
   branches.forEach((b, i) => {
     const topic = b.topic || b.label || 'Science';
     const q = b.prompt || b.question || '';
@@ -397,8 +393,7 @@ export function buildMindMapNarration(map, opts = {}) {
     const branchId = b.id || `miss-${i}`;
     const line = buildSageMissScript(b, voice);
     if (!line) return;
-
-    parts.push({
+    cardParts.push({
       kind: 'branch',
       branchId,
       highlights: uniqueHighlightTerms([
@@ -418,13 +413,21 @@ export function buildMindMapNarration(map, opts = {}) {
     });
   });
 
-  parts.push({
-    kind: 'outro',
-    branchId: null,
-    highlights: [],
-    text: sageMapOutro(voice),
-  });
+  if (cardParts.length === 1) {
+    parts.push({
+      ...cardParts[0],
+      text: `${greeting} ${cardParts[0].text}`.replace(/\s+/g, ' ').trim(),
+    });
+    return parts;
+  }
 
+  parts.push({
+    kind: 'intro',
+    branchId: null,
+    highlights: rootTerms,
+    text: greeting,
+  });
+  parts.push(...cardParts);
   return parts;
 }
 

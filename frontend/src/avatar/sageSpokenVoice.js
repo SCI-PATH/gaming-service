@@ -1,38 +1,14 @@
 /**
- * Sage TTS: Grade 6–9 wording, paced by CSF frustration (never spoken aloud).
+ * Sage TTS: natural teacher talk, paced by CSF frustration (never spoken aloud).
  */
 import {
   buildFrustrationAdaptation,
   frustrationLevelFromScore,
 } from '../data/frustrationModel.js';
-import { layoutConceptTree } from './conceptGraph.js';
 import { compactText } from './assessmentMiss.js';
 import { friendlyStudentName } from './kidFriendlySpeech.js';
 
 const CHAPTER_TOPIC = /^(plant biology|science|biology|topic)$/i;
-
-const EDGE_SPEAK = {
-  include: 'include',
-  has: 'have',
-  make: 'make',
-  'can form': 'can form',
-  hold: 'hold',
-  do: 'do',
-  involve: 'involve',
-  from: 'take from',
-  needs: 'need',
-  'lead to': 'lead to',
-  with: 'and',
-  and: 'and',
-  'checked by': 'are checked by',
-  scores: 'score as',
-  uses: 'use',
-  'stored by': 'are stored by',
-  'not stored by': 'are not stored by',
-  'confused with': 'is not the same as',
-  'not grouped by': 'are not grouped by',
-  'belongs to': 'belongs with',
-};
 
 export function resolveSageVoice(opts = {}) {
   const rawScore = Number(opts.frustrationScore);
@@ -43,15 +19,22 @@ export function resolveSageVoice(opts = {}) {
   const adapt = buildFrustrationAdaptation(score != null ? score : level);
   const sage = adapt.sage || {};
   const mm = adapt.mindMap || {};
-  const sentenceMax = Math.max(1, Number(sage.sentenceMax) || 3);
+  const sentenceMax =
+    adapt.level === 'very_high'
+      ? 3
+      : adapt.level === 'high'
+        ? 4
+        : adapt.level === 'low'
+          ? 5
+          : 4;
   const rate =
     adapt.level === 'very_high'
-      ? 0.78
+      ? 0.82
       : adapt.level === 'high'
-        ? 0.84
+        ? 0.86
         : adapt.level === 'low'
-          ? 1.02
-          : 0.95;
+          ? 0.94
+          : 0.9;
   return {
     level: adapt.level,
     sentenceMax,
@@ -65,19 +48,43 @@ export function resolveSageVoice(opts = {}) {
   };
 }
 
-export function capSpokenSentences(text, max = 3) {
+export function capSpokenSentences(text, max = 4) {
   const clean = compactText(text);
   if (!clean) return '';
   const parts = clean
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const take = Math.max(1, Number(max) || 3);
+  const take = Math.max(1, Number(max) || 4);
   const kept = parts.slice(0, take);
   if (!kept.length) return '';
   const last = kept[kept.length - 1];
   if (!/[.!?]$/.test(last)) kept[kept.length - 1] = `${last}.`;
   return kept.join(' ');
+}
+
+/**
+ * Make text easy for browser TTS (pauses, no symbols, say science words).
+ */
+export function prepareTtsText(raw) {
+  let s = String(raw || '');
+  s = s.replace(/\[object Object\]/gi, '');
+  s = s.replace(/\[_{2,}\]|_{3,}|\[blank\]/gi, ' blank ');
+  s = s.replace(/\s*\|\s*/g, ', ');
+  s = s.replace(/\bCO\s*2\b|\bCO₂\b/gi, 'carbon dioxide');
+  s = s.replace(/\bH\s*2\s*O\b|\bH₂O\b/gi, 'water');
+  s = s.replace(/\bO\s*2\b|\bO₂\b/gi, 'oxygen');
+  s = s.replace(/\be\.g\./gi, 'for example');
+  s = s.replace(/\bi\.e\./gi, 'that is');
+  s = s.replace(/\bvs\.?\b/gi, 'versus');
+  s = s.replace(/\bw\/\b/gi, 'with');
+  s = s.replace(/(\d)\s*[–—-]\s*(\d)/g, '$1 to $2');
+  s = s.replace(/\s*[—–]\s*/g, ', ');
+  s = s.replace(/;/g, ',');
+  s = s.replace(/`+/g, '');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  if (s && !/[.!?]$/.test(s)) s = `${s}.`;
+  return s;
 }
 
 function speakableTopic(raw) {
@@ -86,117 +93,88 @@ function speakableTopic(raw) {
   return t;
 }
 
-function kidEdge(from, edge, to) {
-  const e = compactText(edge).toLowerCase();
-  if (!from || !to) return '';
-  if (/^(centers on|asks|tests|means|does not)$/i.test(e)) return '';
-  const verb = EDGE_SPEAK[e] || (e.length <= 12 ? e : '');
-  if (!verb) return '';
-  return `${from} ${verb} ${to}.`;
+function asSentence(raw) {
+  const t = compactText(raw);
+  if (!t) return '';
+  return /[.!?]$/.test(t) ? t : `${t}.`;
 }
 
-function walkGraphLines(node, voice, acc = [], depth = 0) {
-  if (!node || acc.length >= (voice.microSteps ? 3 : 8)) return acc;
-  if (node.kind === 'mixup' && (voice.level === 'high' || voice.level === 'very_high')) {
-    return acc;
+function spokenFromGraph(graph, voice) {
+  if (!graph) return '';
+  const path = Array.isArray(graph.learningPath)
+    ? graph.learningPath.map(compactText).filter(Boolean)
+    : [];
+  if (path.length) {
+    const n = voice.microSteps ? 2 : Math.min(path.length, 3);
+    return path.slice(0, n).map(asSentence).join(' ');
   }
-  const kids = Array.isArray(node.children) ? node.children : [];
-  for (const child of kids) {
-    if (acc.length >= (voice.microSteps ? 3 : 8)) break;
-    if (child.kind === 'mixup' && (voice.level === 'high' || voice.level === 'very_high')) {
-      continue;
-    }
-    const line = kidEdge(node.label, child.edge, child.label);
-    if (line) acc.push(line);
-    walkGraphLines(child, voice, acc, depth + 1);
+  const example = compactText(graph.example);
+  if (example && example.length <= 180) return asSentence(example);
+  const summary = compactText(graph.misconception?.summary);
+  if (summary && !/this question is checking|not the idea/i.test(summary)) {
+    return asSentence(summary);
   }
-  return acc;
-}
-
-export function narrateConceptGraph(graph, voice) {
-  if (!graph?.nodes?.length) return '';
-  const layout = layoutConceptTree(graph);
-  const lines = walkGraphLines(layout.tree, voice);
-  if (!lines.length && graph.learningPath?.length) {
-    return capSpokenSentences(graph.learningPath.join('. '), voice.sentenceMax);
-  }
-  return capSpokenSentences(lines.join(' '), voice.sentenceMax);
+  return '';
 }
 
 export function sageGreeting(voice, studentName) {
   const name = friendlyStudentName(studentName);
-  const hi = name ? `Hi ${name}.` : "Hi, I'm Sage.";
+  const hi = name ? `Hey ${name}.` : "Hey, I'm Sage.";
   if (voice.level === 'very_high') {
-    return `${hi} We'll go one tiny step. You're doing fine.`;
+    return `${hi} We'll take this slowly. You're doing fine.`;
   }
   if (voice.level === 'high') {
-    return `${hi} We'll go slowly, one idea at a time.`;
+    return `${hi} We'll go one idea at a time.`;
   }
   if (voice.level === 'low') {
-    return `${hi} Let's look at this farm science idea together.`;
+    return `${hi} Let's look at this together.`;
   }
-  return `${hi} Let's look at this idea together.`;
+  return `${hi} Let's look at this together.`;
 }
 
 export function sageMapOutro(voice) {
   if (voice.level === 'very_high' || voice.level === 'high') {
-    return 'Tap a card if you want to hear it again. Take your time.';
+    return 'I can say it again if you want.';
   }
-  if (voice.level === 'low') {
-    return 'Tap a card if you want that part again — then try the farm when you are ready.';
-  }
-  return 'Tap a card if you want me to say that part again.';
+  return 'Ask me if you want that again.';
 }
 
-function mixupLine(wrong, voice) {
+function honourMixup(wrong, voice) {
   const w = compactText(wrong);
-  if (!w || /no pick|no answer|unclear/i.test(w)) return '';
-  if (voice.level === 'very_high') return '';
-  if (voice.level === 'high') return `You wrote ${w}. That's okay.`;
-  if (voice.level === 'low') return `You tried ${w} — close, but not this job.`;
-  return `You answered ${w}.`;
+  if (!w || /no pick|no answer|unclear|timed out/i.test(w)) return '';
+  if (w.length > 80) return voice.level === 'very_high' ? '' : 'That was a fair try.';
+  if (voice.level === 'very_high') return `That's okay.`;
+  if (voice.level === 'high') return `You said ${w}. That's a real idea.`;
+  if (voice.level === 'low') return `You went with ${w}. Nice try.`;
+  return `You said ${w}.`;
 }
 
 /**
- * One card in kid speech. Never says "Miss N", "learning path", or frustration.
+ * One card as a teacher would say it — not a graph dump.
  */
 export function buildSageMissScript(branch, voice) {
   if (!branch) return '';
   const graph = branch.conceptGraph || branch.concept_graph;
-  const graphTalk = narrateConceptGraph(graph, voice);
-  const key = compactText(branch.keyConcept || branch.key_concept);
-  const wrong = mixupLine(branch.studentAnswer, voice);
+  const idea =
+    spokenFromGraph(graph, voice) ||
+    asSentence(branch.keyConcept || branch.key_concept);
+  const mix = honourMixup(branch.studentAnswer, voice);
   const bits = [];
 
-  if (voice.level === 'low' && speakableTopic(branch.topic)) {
-    bits.push(`This is about ${speakableTopic(branch.topic)}.`);
-  }
-
-  if (graphTalk) {
-    bits.push(graphTalk);
+  if (mix) bits.push(mix);
+  if (idea) {
+    bits.push(idea);
   } else {
     const question = compactText(branch.prompt || branch.question);
-    if (question && !voice.microSteps && question.length <= 140) {
-      bits.push(`The question asked: ${/[.!?]$/.test(question) ? question : `${question}.`}`);
+    if (question && question.length <= 120 && !voice.microSteps) {
+      bits.push(`The farm asked: ${asSentence(question)}`);
     }
-    if (wrong) bits.push(wrong);
-    if (key && !/see the lesson|the idea in this farm question/i.test(key)) {
-      bits.push(`Remember: ${key}.`);
-    }
-  }
-
-  if (wrong && graphTalk && voice.level !== 'very_high') {
-    bits.unshift(wrong);
-  }
-
-  if (
-    graph?.practice?.question &&
-    voice.level === 'low' &&
-    !voice.microSteps
-  ) {
-    bits.push(`Quick check: ${graph.practice.question}`);
   }
 
   const joined = bits.join(' ').replace(/\s+/g, ' ').trim();
-  return capSpokenSentences(joined, voice.sentenceMax);
+  return prepareTtsText(capSpokenSentences(joined, voice.sentenceMax));
+}
+
+export function narrateConceptGraph(graph, voice) {
+  return spokenFromGraph(graph, voice);
 }

@@ -14,6 +14,7 @@ import {
 } from '../../frontend/src/avatar/sageTutorLoop.js';
 import {
   capSpokenSentences,
+  prepareTtsText,
   resolveSageVoice,
 } from '../../frontend/src/avatar/sageSpokenVoice.js';
 import { sanitizeKidSpeech } from '../../frontend/src/avatar/kidFriendlySpeech.js';
@@ -31,7 +32,7 @@ SPOKEN SKILL (must follow — this is talking, not a worksheet):
 - Short sentences. Put the most important science fact first.
 - NEVER write labels or lesson titles: YOUR ANSWER, CORRECT ANSWER, KEY CONNECTION, QUICK CHECK, Miss 1, Learning path, Plant Biology.
 - NEVER say: misconception, mechanism, distinction, assessment engine, affect band, frustration.
-- Obey the LIVE sentence budget from sage_adaptation. If it says 2 sentences, your WHOLE reply is 2 sentences. Fold the science into that budget.
+- Write 3 to 5 short spoken sentences a 12-year-old can hear once and get. No headings. Do not chop the thought in the middle.
 - Band examples (same science, different voice):
   low: "A resistor slows current — neat idea. This question wanted what stores charge: a capacitor. Want a trickier farm check?"
   moderate: "A resistor limits current; it does not store it. A capacitor holds charge for later. Which one stores?"
@@ -200,6 +201,7 @@ export function polishSageSpeech(text, context = {}) {
   );
   s = s.replace(/\bMiss\s+\d+\b/gi, '');
   s = s.replace(/\s{2,}/g, ' ').trim();
+  s = prepareTtsText(s);
   return capSpokenSentences(s, voice.sentenceMax);
 }
 

@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import {
   buildSageMissScript,
   capSpokenSentences,
+  prepareTtsText,
   resolveSageVoice,
   sageGreeting,
 } from './sageSpokenVoice.js';
@@ -17,7 +18,7 @@ describe('resolveSageVoice', () => {
     const high = resolveSageVoice({ frustrationScore: 72 });
     const low = resolveSageVoice({ frustrationScore: 12 });
     assert.equal(high.level, 'high');
-    assert.equal(high.sentenceMax, 2);
+    assert.equal(high.sentenceMax, 4);
     assert.ok(high.rate < low.rate);
     assert.equal(low.level, 'low');
   });
@@ -38,6 +39,10 @@ describe('buildSageMissScript', () => {
       relationships: [
         { from: 'plants', to: 'flowering', label: 'include' },
         { from: 'flowering', to: 'flowers', label: 'make' },
+      ],
+      learningPath: [
+        'Flowering plants make flowers',
+        'Non-flowering plants use spores or cones',
       ],
     },
   };
@@ -60,7 +65,7 @@ describe('buildSageMissScript', () => {
       resolveSageVoice({ frustrationScore: 10 }),
     );
     const count = (s) => (s.match(/[.!?]/g) || []).length;
-    assert.ok(count(high) <= 2);
+    assert.ok(count(high) <= 3);
     assert.ok(count(low) >= count(high));
   });
 });
@@ -86,12 +91,19 @@ describe('buildMindMapNarration', () => {
 
   it('greets without counting incorrect answers', () => {
     const parts = buildMindMapNarration(map, { frustrationScore: 45 });
-    const intro = parts.find((p) => p.kind === 'intro');
-    assert.match(intro.text, /Sage|Hi /);
-    assert.doesNotMatch(intro.text, /incorrect/i);
-    const branch = parts.find((p) => p.kind === 'branch');
-    assert.match(branch.text, /Resistor|capacitor/i);
-    assert.doesNotMatch(branch.text, /Miss 1/);
+    const spoken = parts.map((p) => p.text).join(' ');
+    assert.match(spoken, /Sage|Hey /);
+    assert.doesNotMatch(spoken, /incorrect/i);
+    assert.match(spoken, /Resistor|capacitor/i);
+    assert.doesNotMatch(spoken, /Miss 1/);
+  });
+});
+
+describe('prepareTtsText', () => {
+  it('turns symbols into spoken words', () => {
+    const spoken = prepareTtsText('CO2 versus O2');
+    assert.match(spoken, /carbon dioxide/);
+    assert.match(spoken, /oxygen/);
   });
 });
 
@@ -108,6 +120,6 @@ describe('sageGreeting', () => {
   it('reassures at very high frustration', () => {
     const line = sageGreeting(resolveSageVoice({ frustrationScore: 88 }), 'Maya');
     assert.match(line, /Maya/);
-    assert.match(line, /tiny step|doing fine/i);
+    assert.match(line, /slowly|doing fine/i);
   });
 });
