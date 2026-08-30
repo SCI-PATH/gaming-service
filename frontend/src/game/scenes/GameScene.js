@@ -4951,7 +4951,6 @@ export default class GameScene extends Phaser.Scene {
     });
     this._farmShopLeftSession = 0;
     this.farmShopLayer.sync(this.worldShop);
-    this.emitFarmShopTelemetry(this.worldShop.events?.slice?.(-8) || []);
     return this.worldShop;
   }
 

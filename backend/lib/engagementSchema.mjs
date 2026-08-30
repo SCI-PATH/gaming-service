@@ -114,16 +114,20 @@ async function tryGrantPreferred() {
   }
 }
 
+function tableRef(schema, prefixedPublic, name) {
+  return prefixedPublic
+    ? `public.${PUBLIC_PREFIX}${name}`
+    : `${ident(schema)}.${name}`;
+}
+
+/** CREATE IF NOT EXISTS for every engagement table the game writes. */
 async function bootstrapCoreTables(schema, prefixedPublic = false) {
-  const students = prefixedPublic
-    ? `public.${PUBLIC_PREFIX}students`
-    : `${ident(schema)}.students`;
-  const sessions = prefixedPublic
-    ? `public.${PUBLIC_PREFIX}game_sessions`
-    : `${ident(schema)}.game_sessions`;
-  const snaps = prefixedPublic
-    ? `public.${PUBLIC_PREFIX}frustration_snapshots`
-    : `${ident(schema)}.frustration_snapshots`;
+  const t = (name) => tableRef(schema, prefixedPublic, name);
+  const students = t('students');
+  const sessions = t('game_sessions');
+  const snaps = t('frustration_snapshots');
+  const catalog = t('unlock_catalog');
+
   await query(`
     CREATE TABLE IF NOT EXISTS ${students} (
       student_id TEXT PRIMARY KEY,
@@ -169,6 +173,112 @@ async function bootstrapCoreTables(schema, prefixedPublic = false) {
     )
   `);
   await query(`
+    CREATE TABLE IF NOT EXISTS ${t('level_progress')} (
+      level_progress_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER NOT NULL CHECK (level_number >= 1),
+      status TEXT NOT NULL DEFAULT 'in_progress'
+        CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned')),
+      lessons_completed INTEGER NOT NULL DEFAULT 0,
+      lessons_total INTEGER,
+      points_earned INTEGER NOT NULL DEFAULT 0,
+      points_spent INTEGER NOT NULL DEFAULT 0,
+      mastery_score NUMERIC(6,4),
+      performance_band TEXT,
+      gameplay_band TEXT,
+      quiz_correct INTEGER NOT NULL DEFAULT 0,
+      quiz_incorrect INTEGER NOT NULL DEFAULT 0,
+      avg_response_ms INTEGER,
+      retries_count INTEGER NOT NULL DEFAULT 0,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      metrics_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+      UNIQUE (student_id, level_number)
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('lesson_completions')} (
+      lesson_completion_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      level_progress_id TEXT REFERENCES ${t('level_progress')} (level_progress_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER NOT NULL,
+      lesson_key TEXT NOT NULL,
+      lesson_type TEXT NOT NULL DEFAULT 'other',
+      lesson_title TEXT,
+      status TEXT NOT NULL DEFAULT 'completed',
+      points_awarded INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 1,
+      completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      detail JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('quiz_attempts')} (
+      attempt_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER,
+      lesson_key TEXT,
+      question_id TEXT,
+      question_bank TEXT DEFAULT 'question_engine',
+      concept_tags TEXT[] NOT NULL DEFAULT '{}',
+      farm_action TEXT,
+      is_correct BOOLEAN NOT NULL,
+      selected_option TEXT,
+      correct_option TEXT,
+      response_ms INTEGER,
+      hint_used BOOLEAN NOT NULL DEFAULT FALSE,
+      retry_index INTEGER NOT NULL DEFAULT 0,
+      points_delta INTEGER NOT NULL DEFAULT 0,
+      answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${catalog} (
+      item_id TEXT PRIMARY KEY,
+      item_name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
+      base_price INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      image_path TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('student_unlocks')} (
+      student_unlock_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      item_id TEXT NOT NULL REFERENCES ${catalog} (item_id),
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      purchased_at_level INTEGER,
+      price_paid INTEGER NOT NULL DEFAULT 0,
+      purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      is_equipped BOOLEAN NOT NULL DEFAULT FALSE,
+      placement JSONB NOT NULL DEFAULT '{}'::jsonb,
+      UNIQUE (student_id, item_id)
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('points_ledger')} (
+      ledger_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER,
+      entry_type TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      balance_after INTEGER,
+      reason TEXT NOT NULL,
+      reference_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS ${snaps} (
       snapshot_id TEXT PRIMARY KEY,
       student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
@@ -182,6 +292,37 @@ async function bootstrapCoreTables(schema, prefixedPublic = false) {
       dominant_indicators TEXT[] NOT NULL DEFAULT '{}',
       source TEXT NOT NULL DEFAULT 'gameplay',
       recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('mentor_interventions')} (
+      intervention_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER,
+      intervention_mode TEXT NOT NULL,
+      perceived_state TEXT,
+      trigger_reason TEXT,
+      frustration_score NUMERIC(5,2),
+      provider TEXT,
+      model_name TEXT,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      closed_at TIMESTAMPTZ,
+      student_message TEXT,
+      mentor_reply TEXT,
+      focus_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      telemetry_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS ${t('gameplay_events')} (
+      event_id TEXT PRIMARY KEY,
+      student_id TEXT NOT NULL REFERENCES ${students} (student_id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
+      level_number INTEGER,
+      event_type TEXT NOT NULL,
+      event_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb
     )
   `);
 }
@@ -198,42 +339,30 @@ async function adoptSchema(schema, prefixedPublic = false) {
   }
   try {
     await tryProbe(schema, prefixedPublic);
-    resolved = schema;
-    usePublicPrefix = prefixedPublic;
-    lastSchemaError = null;
-    return true;
   } catch (err) {
     lastSchemaError = err instanceof Error ? err.message : String(err);
-    if (isMissingRelation(err) || isPermissionDenied(err) && prefixedPublic) {
-      try {
-        await bootstrapCoreTables(schema, prefixedPublic);
-        await tryProbe(schema, prefixedPublic);
-        resolved = schema;
-        usePublicPrefix = prefixedPublic;
-        lastSchemaError = null;
-        return true;
-      } catch (bootErr) {
-        lastSchemaError =
-          bootErr instanceof Error ? bootErr.message : String(bootErr);
-        return false;
-      }
+    const canBoot =
+      isMissingRelation(err) || (isPermissionDenied(err) && prefixedPublic);
+    if (!canBoot) return false;
+    try {
+      await bootstrapCoreTables(schema, prefixedPublic);
+      await tryProbe(schema, prefixedPublic);
+    } catch (bootErr) {
+      lastSchemaError =
+        bootErr instanceof Error ? bootErr.message : String(bootErr);
+      return false;
     }
-    if (isMissingRelation(err)) {
-      try {
-        await bootstrapCoreTables(schema, prefixedPublic);
-        await tryProbe(schema, prefixedPublic);
-        resolved = schema;
-        usePublicPrefix = prefixedPublic;
-        lastSchemaError = null;
-        return true;
-      } catch (bootErr) {
-        lastSchemaError =
-          bootErr instanceof Error ? bootErr.message : String(bootErr);
-        return false;
-      }
-    }
-    return false;
   }
+  try {
+    await bootstrapCoreTables(schema, prefixedPublic);
+  } catch (err) {
+    lastSchemaError = err instanceof Error ? err.message : String(err);
+    /* keep schema if core tables already work; extra CREATE may be denied */
+  }
+  resolved = schema;
+  usePublicPrefix = prefixedPublic;
+  lastSchemaError = null;
+  return true;
 }
 
 export async function ensureEngagementSchema() {

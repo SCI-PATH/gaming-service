@@ -10,6 +10,22 @@ function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** UUID string — valid for both UUID and TEXT id columns. */
+function rowUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const n = (Math.random() * 16) | 0;
+    return (c === 'x' ? n : (n & 0x3) | 0x8).toString(16);
+  });
+}
+
+function isSessionIdError(err) {
+  const msg = String(err?.message || '');
+  return /uuid|foreign key|session_id|invalid input syntax/i.test(msg);
+}
+
 export function engagementAvailable() {
   return isPostgresEnabled();
 }
@@ -263,6 +279,16 @@ export async function insertQuizAttempt(body = {}) {
   return { attemptId };
 }
 
+function catalogCategory(raw) {
+  const c = String(raw || 'other').toLowerCase().trim();
+  if (c === 'animal' || c === 'prop' || c === 'decoration' || c === 'other') {
+    return c;
+  }
+  if (c === 'decor') return 'decoration';
+  if (c === 'building') return 'prop';
+  return 'other';
+}
+
 export async function upsertUnlockCatalogItem(item = {}) {
   const itemId = String(item.itemId || item.id || '').trim();
   if (!itemId) return null;
@@ -278,7 +304,7 @@ export async function upsertUnlockCatalogItem(item = {}) {
     [
       itemId,
       item.itemName || item.name || itemId,
-      item.category || 'other',
+      catalogCategory(item.category),
       item.basePrice ?? item.base_price ?? 0,
       item.description || null,
       item.imagePath || item.image || null,
@@ -293,6 +319,12 @@ export async function insertStudentUnlock(body = {}) {
   const itemId = String(body.itemId || '').trim();
   if (!studentId || !itemId) throw new Error('studentId and itemId required');
 
+  await upsertStudent({
+    studentId,
+    studentName: body.studentName || body.displayName || studentId,
+    displayName: body.displayName || body.studentName || studentId,
+  });
+
   await upsertUnlockCatalogItem({
     itemId,
     itemName: body.itemName || itemId,
@@ -302,27 +334,35 @@ export async function insertStudentUnlock(body = {}) {
     imagePath: body.imagePath,
   });
 
-  const studentUnlockId = String(body.studentUnlockId || id('ul'));
-  await query(
-    `INSERT INTO engagement_gaming.student_unlocks (
+  const studentUnlockId = String(body.studentUnlockId || rowUuid());
+  const insertSql = `INSERT INTO engagement_gaming.student_unlocks (
        student_unlock_id, student_id, item_id, session_id,
        purchased_at_level, price_paid, is_equipped, placement
      ) VALUES ($1,$2,$3,$4,$5,COALESCE($6,0),COALESCE($7,false),$8::jsonb)
      ON CONFLICT (student_id, item_id) DO UPDATE SET
        price_paid = EXCLUDED.price_paid,
        purchased_at_level = COALESCE(EXCLUDED.purchased_at_level, engagement_gaming.student_unlocks.purchased_at_level),
-       placement = EXCLUDED.placement`,
-    [
-      studentUnlockId,
-      studentId,
-      itemId,
-      body.sessionId || null,
-      body.purchasedAtLevel ?? null,
-      body.pricePaid ?? 0,
-      Boolean(body.isEquipped),
-      JSON.stringify(body.placement || {}),
-    ],
-  );
+       placement = EXCLUDED.placement`;
+  const row = [
+    studentUnlockId,
+    studentId,
+    itemId,
+    body.sessionId || null,
+    body.purchasedAtLevel ?? null,
+    body.pricePaid ?? 0,
+    Boolean(body.isEquipped),
+    JSON.stringify(body.placement || {}),
+  ];
+  try {
+    await query(insertSql, row);
+  } catch (err) {
+    if (row[3] && isSessionIdError(err)) {
+      row[3] = null;
+      await query(insertSql, row);
+    } else {
+      throw err;
+    }
+  }
 
   await query(
     `UPDATE engagement_gaming.students SET
@@ -641,20 +681,35 @@ export async function getStudentProgress(studentId) {
 export async function insertGameplayEvent(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
-  const eventId = String(body.eventId || id('ev'));
-  await query(
-    `INSERT INTO engagement_gaming.gameplay_events (
+
+  await upsertStudent({
+    studentId,
+    studentName: body.studentName || body.displayName || studentId,
+    displayName: body.displayName || body.studentName || studentId,
+  });
+
+  const eventId = String(body.eventId || rowUuid()).trim();
+  const insertSql = `INSERT INTO engagement_gaming.gameplay_events (
        event_id, student_id, session_id, level_number, event_type, payload
-     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
-    [
-      eventId,
-      studentId,
-      body.sessionId || null,
-      body.levelNumber ?? null,
-      String(body.eventType || 'unknown'),
-      JSON.stringify(body.payload || {}),
-    ],
-  );
+     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`;
+  const row = [
+    eventId,
+    studentId,
+    body.sessionId || null,
+    body.levelNumber ?? null,
+    String(body.eventType || 'unknown'),
+    JSON.stringify(body.payload || {}),
+  ];
+  try {
+    await query(insertSql, row);
+  } catch (err) {
+    if (row[2] && isSessionIdError(err)) {
+      row[2] = null;
+      await query(insertSql, row);
+    } else {
+      throw err;
+    }
+  }
   return { eventId };
 }
 

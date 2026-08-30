@@ -673,14 +673,14 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
     if (ratio <= 0.35 && c.status !== CUSTOMER_STATUS.IMPATIENT) {
       if (c.id !== shop.activeCustomerId) {
         c.status = CUSTOMER_STATUS.IMPATIENT;
+        events.push(
+          emitLocal(shop, SHOP_EVENTS.CUSTOMER_IMPATIENT, {
+            customerId: c.id,
+            patience: c.patience,
+          }),
+        );
       }
       c.speech = '😠 I have been waiting for a while!';
-      events.push(
-        emitLocal(shop, SHOP_EVENTS.CUSTOMER_IMPATIENT, {
-          customerId: c.id,
-          patience: c.patience,
-        }),
-      );
     } else if (ratio > 0.35 && c.id !== shop.activeCustomerId) {
       c.speech = '🙂 I am waiting for my order.';
     }

@@ -305,7 +305,11 @@ export async function syncMentorIntervention(payload = {}, student = null) {
   });
 }
 
+/** Per-tick shop HUD noise — keep local, do not POST to Neon. */
+const SKIP_GAMEPLAY_EVENT_TYPES = new Set(['CUSTOMER_PATIENCE_CHANGED']);
+
 export async function syncGameplayEvent(eventType, payload = {}, student = null) {
+  if (!eventType || SKIP_GAMEPLAY_EVENT_TYPES.has(eventType)) return null;
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId) return null;
   return post('/api/engagement/event', {

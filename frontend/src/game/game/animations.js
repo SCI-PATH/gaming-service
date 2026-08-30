@@ -15,16 +15,20 @@ export function createGameAnimations(scene) {
     { key: 'tree-side', prefix: 'walk/treant-walk-side/treant-walk-side-' },
   ];
 
+  const atlas = scene.textures.get('atlas');
   definitions.forEach(({ key, prefix }) => {
     if (scene.anims.exists(key)) return;
 
+    const frames = [];
+    for (let i = 1; i <= 6; i += 1) {
+      const frame = `${prefix}${i}`;
+      if (atlas?.has?.(frame)) frames.push({ key: 'atlas', frame });
+    }
+    if (!frames.length) return;
+
     scene.anims.create({
       key,
-      frames: scene.anims.generateFrameNames('atlas', {
-        prefix,
-        start: 1,
-        end: 6,
-      }),
+      frames,
       frameRate: 6,
       repeat: -1,
     });
