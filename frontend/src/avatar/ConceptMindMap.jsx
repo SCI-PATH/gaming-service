@@ -14,6 +14,7 @@ import {
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
 import SageLessonPanel from './SageLessonPanel.jsx';
+import ConceptGraphTree from './ConceptGraphTree.jsx';
 
 const COLORS = [
   { stroke: '#c45c5c', fill: '#fde8e8', bar: '#c45c5c' },
@@ -102,6 +103,9 @@ function toDisplayBranches(map) {
       options: b.options || b.attempt?.options || [],
       hint: b.hint || null,
       prompt: b.prompt || b.question || '',
+      questionType: b.questionType || b.question_type || '',
+      blankIndex: b.blankIndex || b.blank_index || null,
+      conceptGraph: b.conceptGraph || b.concept_graph || null,
     }));
   }
   return [];
@@ -548,9 +552,8 @@ export default function ConceptMindMap({
           const selected = b.id === active?.id;
           const speechOn = speechBranchId === b.id;
           return (
-            <button
+            <article
               key={`card-${b.id}`}
-              type="button"
               ref={(el) => {
                 if (el) cardRefs.current[b.id] = el;
               }}
@@ -562,6 +565,11 @@ export default function ConceptMindMap({
               <header>
                 <span className="mm-card-num">
                   {b.icon} Miss {b.index}
+                  {b.blankIndex ? (
+                    <span className="mm-card-type">Blank {b.blankIndex}</span>
+                  ) : b.questionType ? (
+                    <span className="mm-card-type">{String(b.questionType).replace(/_/g, ' ')}</span>
+                  ) : null}
                   {speechOn ? (
                     <span className="mm-card-live">Speaking</span>
                   ) : null}
@@ -581,68 +589,29 @@ export default function ConceptMindMap({
                   b.question || '—'
                 )}
               </p>
-              <div className="mm-card-row is-bad">
-                <span>Your pick</span>
-                <strong>
-                  {speechOn ? (
-                    <Sync fieldKey="wrong" text={b.studentAnswer || '—'} on />
-                  ) : (
-                    b.studentAnswer || '—'
-                  )}
-                </strong>
-              </div>
-              <div className="mm-card-row is-ok">
-                <span>Correct</span>
-                <strong>
-                  {speechOn ? (
-                    <Sync fieldKey="right" text={b.correctAnswer || '—'} on />
-                  ) : (
-                    b.correctAnswer || '—'
-                  )}
-                </strong>
-              </div>
-              {b.lesson?.sections?.length ? (
-                compact && selected ? (
-                  <SageLessonPanel sections={b.lesson.sections} lesson={b.lesson} />
-                ) : (
-                  <>
-                    {b.keyConcept ? (
-                      <p className="mm-card-key">
-                        <span className="mm-card-kicker">Key idea</span>{' '}
-                        {b.keyConcept}
-                      </p>
-                    ) : null}
-                  </>
-                )
+              {b.conceptGraph?.nodes?.length ? (
+                <ConceptGraphTree graph={b.conceptGraph} compact={compact} />
               ) : (
                 <>
+                  <div className="mm-card-row is-bad">
+                    <span>Mix-up</span>
+                    <strong>
+                      {speechOn ? (
+                        <Sync fieldKey="wrong" text={b.studentAnswer || '—'} on />
+                      ) : (
+                        b.studentAnswer || '—'
+                      )}
+                    </strong>
+                  </div>
                   {b.keyConcept ? (
                     <p className="mm-card-key">
                       <span className="mm-card-kicker">Key idea</span>{' '}
-                      {speechOn ? (
-                        <Sync fieldKey="key" text={b.keyConcept} on />
-                      ) : (
-                        b.keyConcept
-                      )}
-                    </p>
-                  ) : null}
-                  {compact && selected && (b.why || b.keyExplain) && !/one is about/i.test(b.why || '') ? (
-                    <p className="mm-card-why">
-                      <span className="mm-card-kicker">Let's look</span>{' '}
-                      {speechOn ? (
-                        <Sync
-                          fieldKey={b.why ? 'why' : 'explain'}
-                          text={b.why || b.keyExplain}
-                          on
-                        />
-                      ) : (
-                        b.why || b.keyExplain
-                      )}
+                      {b.keyConcept}
                     </p>
                   ) : null}
                 </>
               )}
-            </button>
+            </article>
           );
         })}
       </div>
@@ -654,13 +623,15 @@ export default function ConceptMindMap({
           aria-live="polite"
         >
           <p className="mm-focus-kicker">
-            Focus · Miss {active.index} of {n} · {active.topic}
+            Focus · Miss {active.index} of {n}
+            {active.blankIndex ? ` · Blank ${active.blankIndex}` : ''} · {active.topic}
           </p>
           <h4>
-            {active.icon}{' '}
-            {active.studentAnswer || active.keyConcept || active.topic}
+            {active.icon} {active.conceptGraph?.concept || active.topic}
           </h4>
-          {active.lesson?.sections?.length ? (
+          {active.conceptGraph?.nodes?.length ? (
+            <ConceptGraphTree graph={active.conceptGraph} />
+          ) : active.lesson?.sections?.length ? (
             <SageLessonPanel sections={active.lesson.sections} lesson={active.lesson} />
           ) : null}
           {active.farmLink ? (

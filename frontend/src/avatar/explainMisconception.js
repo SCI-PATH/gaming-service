@@ -1156,11 +1156,12 @@ export function questionJob(attempt = {}) {
   }
   if (
     /characteristic|feature|special about|define|known for/.test(p) &&
-    /flowering plant/.test(p)
+    /flowering plant/.test(p) &&
+    (!right || /flower|fruit/i.test(right))
   ) {
     return {
       verbPhrase: 'name what makes flowering plants special',
-      purpose: 'flowers and fruits',
+      purpose: right ? shortConceptLabel(right, 48) : 'flowers and fruits',
       asking: 'what characteristic feature flowering plants have',
       rightHow:
         'Flowering plants make flowers, and many later form fruits that hold seeds. That reproductive feature is what makes them flowering plants — not where they live, such as only in water.',
@@ -1169,11 +1170,12 @@ export function questionJob(attempt = {}) {
   if (
     (/two main groups|main groups|groups of flowering/.test(p) ||
       (/seed structure/.test(p) && /group/.test(p))) &&
-    /flowering|seed/.test(p)
+    /flowering|seed/.test(p) &&
+    (!right || /monocot|dicot/i.test(right))
   ) {
     return {
       verbPhrase: 'name the two seed-structure groups of flowering plants',
-      purpose: 'monocots and dicots',
+      purpose: right ? shortConceptLabel(right, 48) : 'monocots and dicots',
       asking: 'the two main groups of flowering plants based on seed structure',
       rightHow:
         'Flowering plants are grouped by seed structure into monocots (one seed leaf / cotyledon) and dicots (two seed leaves). Naming only monocots misses the other main group.',
@@ -1508,14 +1510,17 @@ function ideaFromFillInQuestion(attempt = {}, side = 'correct') {
   if (!fillIn) return null;
   const kind = classifyFillInPrompt(prompt);
   if (side === 'correct') {
-    if (kind === 'main_plant_parts') {
-      return lookupCorrectIdea('roots stem leaves', '', '');
+    const right = lower(attempt.correctAnswer || attempt.correct_answer || '');
+    if (kind === 'main_plant_parts' && /root|stem|leaf/.test(right)) {
+      return lookupCorrectIdea(right || 'roots stem leaves', '', '') ||
+        lookupCorrectIdea('roots stem leaves', '', '');
     }
-    if (kind === 'stem_functions') {
-      return lookupCorrectIdea('support transport', '', '');
+    if (kind === 'stem_functions' && /support|transport/.test(right)) {
+      return lookupCorrectIdea(right || 'support transport', '', '') ||
+        lookupCorrectIdea('support transport', '', '');
     }
-    if (kind === 'plant_diversity') {
-      return lookupCorrectIdea('leaves stems shape size environments', '', '');
+    if (kind === 'plant_diversity' && /leaf|stem|shape|size|environment/.test(right)) {
+      return lookupCorrectIdea(right || 'leaves stems shape size environments', '', '');
     }
   }
   return null;
@@ -1529,7 +1534,7 @@ function ideaFromFillInStudentTokens(text, attempt = {}) {
   const kind = classifyFillInPrompt(prompt);
   const blob = lower(`${text} ${splitFillInTokens(text).join(' ')}`);
   if (kind === 'main_plant_parts' || kind === 'stem_functions') {
-    if (/flower|fruit|seed/.test(blob)) return lookupStudentIdea('flowers and fruits');
+    if (/flower|fruit|seed/.test(blob)) return lookupStudentIdea(text) || lookupStudentIdea('flowers');
     if (/photosynth/.test(blob)) return lookupStudentIdea('photosynthesis');
     if (/\broots?\b/.test(blob)) return lookupStudentIdea('roots');
   }
@@ -1604,42 +1609,12 @@ function isTypedAttempt(attempt = {}) {
 }
 
 function inferredTypedCorrect(attempt = {}) {
-  const direct = displayChoice(attempt.correctAnswer || attempt.correct_answer);
-  const prompt = lower(attempt.prompt || attempt.question || attempt.questionText || '');
-  // Prefer stem-grounded inference when the stored key clearly mismatches the question.
-  if (
-    (/two main groups|main groups|groups of flowering/.test(prompt) ||
-      (/seed structure/.test(prompt) && /group/.test(prompt))) &&
-    /flowering|seed/.test(prompt)
-  ) {
-    if (
-      !direct ||
-      /flowers that produce seeds|only grow in water|flowers and fruits/i.test(direct)
-    ) {
-      return 'monocots and dicots';
-    }
-  }
-  if (direct) return direct;
-  if (/gas/.test(prompt) && /photosynth|take in/.test(prompt)) return 'carbon dioxide';
-  if (/what is photosynthesis|define photosynthesis/.test(prompt)) {
-    return 'Photosynthesis is the process by which plants use light energy to make glucose from carbon dioxide and water.';
-  }
-  if (/why.*sunlight|need sunlight/.test(prompt)) {
-    return 'Plants use sunlight as an energy source during photosynthesis.';
-  }
-  if (
-    /characteristic|feature/.test(prompt) &&
-    /flowering plant/.test(prompt)
-  ) {
-    return 'flowers and fruits';
-  }
-  return '';
+  return displayChoice(attempt.correctAnswer || attempt.correct_answer);
 }
 
-/** Resolve the correct idea shown on mind-map cards for fill-in / typed misses. */
+/** Assessment-engine key only. Never infer a different correct answer from the stem. */
 export function resolveFreeTextCorrectAnswer(attempt = {}) {
-  const prompt = attempt.prompt || attempt.question || attempt.questionText || '';
-  const fromAe = displayChoice(
+  return displayChoice(
     attempt.correctAnswer ||
       attempt.correct_answer ||
       attempt.canonicalCorrectAnswer ||
@@ -1647,15 +1622,6 @@ export function resolveFreeTextCorrectAnswer(attempt = {}) {
       attempt.grade?.idealAnswer ||
       '',
   );
-  const inferred = inferredTypedCorrect({
-    ...attempt,
-    correctAnswer: fromAe,
-    prompt,
-  });
-  if (inferred) return inferred;
-  const job = questionJob({ ...attempt, prompt, correctAnswer: fromAe });
-  if (job?.purpose && !isMetaQuestionAskLine(job.purpose)) return job.purpose;
-  return fromAe || '';
 }
 
 function normalizeScienceTypo(text) {
@@ -1716,23 +1682,22 @@ function ideaFromTypedText(text, attempt = {}, side = 'student') {
     );
   }
 
-  if (/why.*sunlight|need sunlight/.test(prompt)) {
+  if (/why.*sunlight|need sunlight/.test(prompt) && /sunlight|light|energy/i.test(cleaned)) {
     return TYPED_SUNLIGHT_ENERGY_IDEA;
   }
 
-  if (m.co2 || /carbon dioxide|\bco2\b/.test(lower(inferredTypedCorrect(attempt) || cleaned))) {
+  if (m.co2 || /carbon dioxide|\bco2\b/.test(lower(cleaned))) {
     const co2 = lookupCorrectIdea('carbon dioxide', '', '');
     if (co2 && (aboutGas || m.co2)) return co2;
   }
-  if (aboutPhoto && !aboutGas && !aboutSeedGroups) return TYPED_PHOTOSYNTHESIS_FULL_IDEA;
-  if (aboutSeedGroups) {
+  if (aboutPhoto && !aboutGas && !aboutSeedGroups && /photosynth|glucose|carbon dioxide|sunlight/i.test(cleaned)) {
+    return TYPED_PHOTOSYNTHESIS_FULL_IDEA;
+  }
+  if (aboutSeedGroups && /monocot|dicot/i.test(cleaned)) {
     return lookupCorrectIdea('monocots and dicots', '', '');
   }
-  return (
-    lookupCorrectIdea(cleaned, '', '') ||
-    lookupCorrectIdea(inferredTypedCorrect(attempt), '', '') ||
-    (aboutPhoto && !aboutGas ? TYPED_PHOTOSYNTHESIS_FULL_IDEA : null)
-  );
+  return lookupCorrectIdea(cleaned, '', '') ||
+    (aboutPhoto && !aboutGas && /photosynth/i.test(cleaned) ? TYPED_PHOTOSYNTHESIS_FULL_IDEA : null);
 }
 
 function isMetaQuestionAskLine(text) {
@@ -1919,9 +1884,20 @@ export function verifiedIdeaFor(text, attempt = {}, side = 'student') {
       }
     : null;
   if (side === 'correct') {
-    return fromTyped || fromQuestion || fromCorrect || fromCatalog || fromStudent || promptIdea;
+    const idea = fromTyped || fromCorrect || fromCatalog || fromStudent || fromQuestion || promptIdea;
+    return pinIdeaLabel(idea, cleaned);
   }
-  return fromTyped || fromStudent || fromTokens || fromCorrect || fromCatalog;
+  return pinIdeaLabel(
+    fromTyped || fromStudent || fromCorrect || fromCatalog || fromTokens,
+    cleaned,
+  );
+}
+
+function pinIdeaLabel(idea, text) {
+  if (!idea) return null;
+  const actual = displayChoice(text) || norm(text);
+  if (!actual) return idea;
+  return { ...idea, label: actual };
 }
 
 function statementScience(attempt, band) {
@@ -2135,7 +2111,7 @@ function completeConcept(text, attempt, side, band) {
 
   return {
     title,
-    concept: idea?.label || shortConceptLabel(text, 72) || displayChoice(text),
+    concept: displayChoice(text) || idea?.label || shortConceptLabel(text, 72),
     scientificDefinition: definition,
     scientificFunction,
     example: example || firstSentence(definition),
@@ -2359,8 +2335,7 @@ export function composeFiveStepLesson(attempt = {}, voice = {}) {
   const typedAttempt = isTypedAttempt(attempt)
     ? {
         ...attempt,
-        correctAnswer:
-          displayChoice(attempt.correctAnswer) || inferredTypedCorrect(attempt),
+        correctAnswer: displayChoice(attempt.correctAnswer),
       }
     : attempt;
   const band = voiceBand(voice);
@@ -2588,13 +2563,7 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
   const studentAnswer = norm(
     input.studentAnswer || input.lastWrong || input.student_last_wrong_answer,
   );
-  const typed = isTypedAnswerQuestionType(
-    input.questionType || input.question_type || input.type,
-  );
-  const correctAnswer = typed
-    ? norm(input.correctAnswer || input.correct_answer) ||
-      inferredTypedCorrect(input)
-    : norm(input.correctAnswer || input.correct_answer);
+  const correctAnswer = norm(input.correctAnswer || input.correct_answer);
   const topic = norm(input.topic || '');
   if (!prompt || !studentAnswer || !correctAnswer) return null;
   if (

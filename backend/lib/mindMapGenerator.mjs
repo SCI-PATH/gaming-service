@@ -6,11 +6,17 @@ import { chatCompletion, getLlamaConfig } from './llamaClient.mjs';
 import {
   explainCorrectIdea,
   scienceKeyIdea,
-  composeFiveStepLesson,
-  validateStructuredLesson,
   looksLikeSymbolicTypedAnswer,
-  resolveFreeTextCorrectAnswer,
 } from '../../frontend/src/avatar/explainMisconception.js';
+import {
+  buildTypeAwareLesson,
+  collectAssessmentMisses,
+  validateMindMapAgainstAssessments,
+} from '../../frontend/src/avatar/assessmentMiss.js';
+import {
+  buildConceptGraph,
+  validateConceptGraph,
+} from '../../frontend/src/avatar/conceptGraph.js';
 
 const TOPIC_ICONS = {
   photosynthesis: '☀️',
@@ -32,60 +38,24 @@ function iconFor(topic) {
 }
 
 function normalizeAttempts(body = {}) {
-  const out = [];
-  const attempts = body.attempts || body.sourceAttempts || [];
-  if (Array.isArray(attempts)) {
-    for (const a of attempts) {
-      if (!a) continue;
-      out.push({
-        questionId: a.questionId || a.id || null,
-        topic: a.topic || 'Science',
-        prompt: a.prompt || a.question || '',
-        studentAnswer: a.studentAnswer || a.student_answer || a.wrong || '',
-        correctAnswer: a.correctAnswer || a.correct_answer || a.right || '',
-        hint: a.hint || null,
-      });
-    }
-  }
-
-  const misc = body.misconceptions || [];
-  if (Array.isArray(misc)) {
-    for (const m of misc) {
-      if (Array.isArray(m.attempts)) {
-        for (const a of m.attempts) {
-          out.push({
-            questionId: a.questionId || null,
-            topic: a.topic || m.topic || 'Science',
-            prompt: a.prompt || '',
-            studentAnswer: a.studentAnswer || '',
-            correctAnswer: a.correctAnswer || m.lastCorrectAnswer || '',
-            hint: a.hint || m.hint || null,
-          });
-        }
-      } else if (m.prompts?.length) {
-        m.prompts.forEach((p, i) => {
-          out.push({
-            questionId: `${m.topic}-${i}`,
-            topic: m.topic || 'Science',
-            prompt: p,
-            studentAnswer: m.wrongAnswers?.[i] || m.wrongAnswers?.[0] || '',
-            correctAnswer:
-              m.correctAnswers?.[i] || m.lastCorrectAnswer || '',
-            hint: m.hint || null,
-          });
-        });
-      }
-    }
-  }
-
-  const seen = new Set();
-  return out.filter((a) => {
-    const key = `${a.prompt}|${a.studentAnswer}|${a.correctAnswer}|${a.topic}`;
-    if (!a.prompt && !a.correctAnswer) return false;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, 8);
+  return collectAssessmentMisses(body).map((a) => ({
+    questionId: a.questionId,
+    topic: a.topic || topicFromAttempt(a),
+    prompt: a.question || a.prompt || '',
+    question: a.question || a.prompt || '',
+    studentAnswer: cleanStudentAnswer(a.studentAnswer),
+    correctAnswer: cleanCorrectAnswer(a.correctAnswer),
+    canonicalCorrectAnswer: a.canonicalCorrectAnswer || a.correctAnswer,
+    acceptedAnswers: a.acceptedAnswers || [],
+    missedBlanks: a.missedBlanks || [],
+    blankIndex: a.blankIndex || null,
+    questionType: a.questionType,
+    options: a.options || [],
+    hint: a.hint || null,
+    completeness: a.completeness,
+    missingKeywords: a.missingKeywords || [],
+    isCorrect: Boolean(a.isCorrect),
+  }));
 }
 
 function clip(text, n = 120) {
@@ -179,22 +149,23 @@ export function buildLocalMindMap(attempts, adaptation = null) {
 
   const branches = list.map((a, i) => {
     const topic = a.topic || 'Science';
-    const resolvedRight =
-      resolveFreeTextCorrectAnswer(a) || a.correctAnswer || '';
-    const right = resolvedRight;
+    const right = a.correctAnswer || '';
     const conceptual = {
       ...conceptualAttempt(a),
       correctAnswer: right,
       studentAnswer: a.studentAnswer,
       prompt: a.prompt || a.question,
+      questionType: a.questionType,
+      completeness: a.completeness,
+      missingKeywords: a.missingKeywords,
     };
     const noUsable =
       looksLikeSymbolicTypedAnswer(a.studentAnswer) ||
       /ran out of time|no pick yet|nothing typed|left blank/i.test(
         String(a.studentAnswer || ''),
       );
-    const lesson = noUsable ? null : composeFiveStepLesson(conceptual, voice);
-    const lessonOk = validateStructuredLesson(lesson);
+    const lesson = noUsable ? null : buildTypeAwareLesson(a, voice);
+    const lessonOk = Boolean(lesson && !lesson.insufficientKnowledge && lesson.sections?.length);
     const keyConcept = lessonOk
       ? clip(lesson.correctAnswer.concept, 90)
       : clip(scienceKeyIdea(conceptual), 90) || clip(topic, 40) || 'Key idea';
@@ -206,11 +177,15 @@ export function buildLocalMindMap(attempts, adaptation = null) {
       : '';
     return {
       miss_index: i + 1,
+      questionId: a.questionId || null,
+      questionType: a.questionType || '',
+      blankIndex: a.blankIndex || null,
       topic,
       icon: iconFor(topic),
       question: a.prompt || a.question || '',
       student_answer: a.studentAnswer || 'no pick yet',
       correct_answer: right || '',
+      missed_blanks: a.missedBlanks || [],
       options: Array.isArray(a.options) ? a.options : [],
       why_wrong: whyWrong,
       key_concept:
@@ -224,6 +199,7 @@ export function buildLocalMindMap(attempts, adaptation = null) {
           ? explainCorrectIdea(conceptual, voice)
           : keyExplain,
       lesson: lessonOk ? lesson : null,
+      concept_graph: buildConceptGraph(a),
       farm_link: (() => {
         const idea = scienceKeyIdea(conceptual);
         if (idea && !sameRough(idea, right)) {
@@ -314,15 +290,23 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
       farm.length >= 12 &&
       farm.length <= 180 &&
       !/placeholder|frustrat|you picked|the response fills/i.test(farm);
+    const hintedGraph = hint.concept_graph || hint.conceptGraph || null;
+    const graphCheck = hintedGraph
+      ? validateConceptGraph(hintedGraph, {
+          correctAnswer: base.correct_answer,
+          studentAnswer: base.student_answer,
+        })
+      : { ok: false };
     return {
       ...base,
       topic: base.topic || hint.topic || 'Science',
       icon: hint.icon || base.icon,
-      question: base.question || hint.question || '',
-      student_answer: base.student_answer || hint.student_answer || '',
-      correct_answer: base.correct_answer || hint.correct_answer || '',
+      question: base.question || '',
+      student_answer: base.student_answer,
+      correct_answer: base.correct_answer,
       why_wrong: '',
       lesson: base.lesson || null,
+      concept_graph: graphCheck.ok ? hintedGraph : base.concept_graph,
       key_concept: (() => {
         const hinted = String(hint.key_concept || hint.keyConcept || '').trim();
         if (hinted && !/^(true|false|t|f|yes|no)$/i.test(hinted) && hinted.length > 4) {
@@ -372,10 +356,14 @@ function mergeAiOntoAttempts(attempts, ai, adaptation = null) {
 function buildPrompt(attempts, adaptation = null) {
   const payload = attempts.map((a, i) => ({
     miss_number: i + 1,
+    question_id: a.questionId || null,
+    question_type: a.questionType || 'unknown',
+    blank_index: a.blankIndex || null,
     topic: a.topic,
     question: a.prompt,
     student_wrong_answer: a.studentAnswer,
     correct_answer: a.correctAnswer,
+    missed_blanks: a.missedBlanks || [],
     hint: a.hint || null,
   }));
 
@@ -417,7 +405,18 @@ function buildPrompt(attempts, adaptation = null) {
       'Softest map. Tiny language. One step per branch. Reassure effort. Prefer the most important misses only.',
   };
 
-  return `You are Sage's research helper. You do NOT write the science lesson. The server will compose a 3-beat why from ground truth (question, student answer, correct answer, hint). You only help name what the student's WRONG word means in everyday life — and only if you are certain.
+  return `You are Sage's research helper. You do NOT write the science lesson and you do NOT decide the quiz key. The server will compose the lesson from ground truth.
+
+AUTHORITATIVE RULES (must follow):
+- The assessment engine's correct_answer is authoritative.
+- Do not replace, reinterpret, infer, or invent another correct answer.
+- Explain the student's answer only in relation to this specific question.
+- Do not introduce an unrelated misconception.
+- If the student's answer is a valid scientific concept but does not answer this question, explain that distinction.
+- For fill-in questions, focus on the specific missed blank (blank_index).
+- For multiple blanks, treat each miss_number as an independent blank. Do not mix blanks.
+- Never use another question from answer history. Only the questions in this payload exist.
+- Copy question, student_answer, and correct_answer exactly from input.
 
 Create ONE mind map JSON from EVERY incorrect answer below.
 Personalization (PRIVATE — never write these words on the map): frustration_level=${level}, mind_map_tone=${tone}, sage_voice=${tone}, explain_depth=${depth}.
@@ -427,27 +426,17 @@ ${depthGuide[depth] || depthGuide.medium}
 ${simplify ? 'Use very simple Grade-6 words.' : 'Use clear school language.'}
 Capped to ${attempts.length} miss(es).
 
-student_idea_in_the_world rules:
-- ONE sentence about the student's wrong term as a real-world idea (helium → balloons; petal → colourful flower part).
-- If you are not 100% sure what that term is, output empty string "". Never guess.
-- Do NOT mention the correct_answer. Do NOT teach photosynthesis/the lesson in this field.
-- Do NOT talk about placeholders, blanks, or typing.
-
-The server writes why_wrong and key_concept_explain. You may leave them as "".
-Copy question, student_answer, and correct_answer exactly from input. Never invent a different correct answer.
-
-GOLDEN shape the SERVER will build (for your understanding only):
-Wrong helium / right carbon dioxide → Helium is the light balloon gas. Leaves take in carbon dioxide to make food. Helium does not join that reaction.
-
-FORBIDDEN: guessing facts, “you picked X but the answer is Y”, placeholder talk, shame words.
-
-Rules:
-1. Output ONLY valid JSON.
-2. EXACTLY ${attempts.length} branches, miss_index 1..${attempts.length}.
-3. Do not drop or invent misses.
-
 Incorrect answers:
 ${JSON.stringify(payload, null, 2)}
+
+The server already built a local concept graph. You may refine node explanations only.
+Return a concept_graph per branch:
+- 4 to 10 short keyword nodes (labels 1–4 words, not sentences)
+- Labeled relationships (from, to, label)
+- Mark the student mix-up node kind as "mixup" — never as if it were true
+- Include a node for the assessment correct idea (kind "correct")
+- Include learningPath (max 5 steps) and one practice question that tests the CONCEPT, not the original quiz item
+- Do not invent a different correct answer
 
 JSON schema:
 {
@@ -459,16 +448,17 @@ JSON schema:
   "branches": [
     {
       "miss_index": 1,
-      "topic": "…",
-      "icon": "emoji",
       "question": "copy from input",
       "student_answer": "copy from input",
       "correct_answer": "copy from input",
-      "student_idea_in_the_world": "everyday sentence about the WRONG term, or empty",
-      "why_wrong": "",
-      "key_concept": "short correct concept label",
-      "key_concept_explain": "",
-      "farm_link": "one sentence how the CORRECT idea shows up on a farm"
+      "concept_graph": {
+        "concept": "Plant water absorption",
+        "misconception": { "summary": "…", "type": "related_concept_confusion" },
+        "nodes": [{ "id": "roots", "label": "Roots", "kind": "correct", "explanation": "…" }],
+        "relationships": [{ "from": "roots", "to": "water", "label": "absorb" }],
+        "learningPath": ["…"],
+        "practice": { "question": "…", "expectedConcept": "…" }
+      }
     }
   ]
 }`;
@@ -522,7 +512,7 @@ export async function generateMindMapFromMistakes(body = {}) {
         {
           role: 'system',
           content:
-            'You only name what the student’s wrong word means in everyday life if you are certain. Leave student_idea_in_the_world empty if unsure. Never invent science. The server writes the lesson. JSON only. One branch per miss. Never mention frustration.',
+            'The assessment engine owns the correct answer. Copy student_answer and correct_answer exactly. Never invent a different key. Never mix questions. Leave student_idea_in_the_world empty if unsure. JSON only. Never mention frustration.',
         },
         { role: 'user', content: buildPrompt(capped, adaptation) },
       ],
@@ -535,18 +525,19 @@ export async function generateMindMapFromMistakes(body = {}) {
 
     const parsed = extractJson(result.content);
     const merged = mergeAiOntoAttempts(capped, parsed, adaptation);
+    const check = validateMindMapAgainstAssessments(toClientShape(merged), capped);
+    const safe = check.ok ? merged : local;
     return {
       ok: true,
       mindMap: toClientShape({
-        ...merged,
-        summary: merged.summary || `${adaptation.mindMap.label} map`,
+        ...safe,
+        summary: safe.summary || `${adaptation.mindMap.label} map`,
       }),
-      provider: result.provider,
-      model: result.model,
-      note:
-        merged.generatedBy === 'ai'
-          ? `AI personalized mind map (${adaptation.mindMap.label}).`
-          : 'Mind map of every incorrect answer.',
+      provider: check.ok ? result.provider : 'local-fallback',
+      model: check.ok ? result.model : undefined,
+      note: check.ok
+        ? `AI personalized mind map (${adaptation.mindMap.label}).`
+        : 'AI map did not match the assessment result — showing the local lesson.',
       frustrationLevel: adaptation.level,
       frustrationScore: Number.isFinite(frustrationScore)
         ? frustrationScore
@@ -627,6 +618,9 @@ export function toClientShape(map) {
   const branches = (map.branches || []).map((b, i) => ({
     id: `miss-${i}`,
     index: b.miss_index || i + 1,
+    questionId: b.questionId || null,
+    questionType: b.questionType || '',
+    blankIndex: b.blankIndex || null,
     topic: b.topic,
     label: b.topic,
     shortLabel: String(b.topic || 'Science').slice(0, 18),
@@ -635,6 +629,7 @@ export function toClientShape(map) {
     prompt: b.question,
     studentAnswer: b.student_answer,
     correctAnswer: b.correct_answer,
+    missedBlanks: b.missed_blanks || [],
     options: b.options || [],
     why: b.why_wrong,
     keyConcept: b.key_concept,
@@ -642,6 +637,7 @@ export function toClientShape(map) {
     farmLink: b.farm_link,
     summary: b.key_concept_explain,
     lesson: b.lesson || null,
+    conceptGraph: b.concept_graph || b.conceptGraph || null,
   }));
 
   return {

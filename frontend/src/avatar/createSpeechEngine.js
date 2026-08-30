@@ -371,33 +371,27 @@ function buildMissCardScript(branch, index = 0) {
     branch.keyConcept || branch.key_concept,
     280,
   );
-  const look = speakableMapLine(
-    branch.keyExplain ||
-      branch.key_concept_explain ||
-      branch.rightExplain,
-    520,
-  );
-  const why = speakableMapLine(branch.why || branch.why_wrong, 400);
-  const farm = speakableMapLine(branch.farmLink || branch.farm_link, 280);
 
+  const graph = branch.conceptGraph || branch.concept_graph;
   const bits = [`Miss ${miss}${topic ? `, about ${topic}` : ''}.`];
-  if (question) {
-    bits.push(
-      `The question was: ${/[.!?]$/.test(question) ? question : `${question}.`}`,
-    );
+  if (graph?.misconception?.summary) {
+    bits.push(graph.misconception.summary);
   }
-  if (wrong) bits.push(`You picked ${wrong}.`);
-  if (right) bits.push(`The correct idea is ${right}.`);
-  if (key && key.toLowerCase() !== String(right).toLowerCase()) {
-    bits.push(`Key idea: ${key}.`);
+  if (Array.isArray(graph?.learningPath) && graph.learningPath.length) {
+    bits.push(`Learning path: ${graph.learningPath.join('. ')}.`);
+  } else {
+    if (question) {
+      bits.push(
+        `The question was: ${/[.!?]$/.test(question) ? question : `${question}.`}`,
+      );
+    }
+    if (wrong) bits.push(`The mix-up was ${wrong}.`);
+    if (key && key.toLowerCase() !== String(right).toLowerCase()) {
+      bits.push(`Remember this: ${key}.`);
+    }
   }
-  if (look && look.toLowerCase() !== String(key).toLowerCase()) {
-    bits.push(`Let's look. ${look}`);
-  } else if (why) {
-    bits.push(why);
-  }
-  if (farm && farm.toLowerCase() !== String(look).toLowerCase()) {
-    bits.push(farm);
+  if (graph?.practice?.question) {
+    bits.push(`Try this: ${graph.practice.question}`);
   }
   return bits.join(' ').replace(/\s+/g, ' ').trim();
 }

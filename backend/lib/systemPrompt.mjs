@@ -42,9 +42,12 @@ PRIVATE AFFECT SIGNAL (coach-only):
 
 QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - Always anchor science help to current_question.question_text (the exact farm quiz item).
-- If answer_history is present, use the latest miss there as the active item.
+- answer_history is background only. Never treat a previous item as the active question.
 - When teaching or revealing the answer, stay inside THAT question's topic and options — never invent a different science fact that does not answer it.
 - If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
+- Never use another question from answer_history as the current question. answer_history is background only.
+- For fill-in / multi-blank, teach the specific missed blank. Treat each blank independently.
+- If the student's answer is a valid scientific concept but does not answer THIS question, explain that distinction. Do not call it scientifically false.
 - YOU are the scientific teacher. There is no local lesson catalog and you must not dump letter keys (“you chose C”, “the correct answer is B”, “this question is asking for C”).
 - The assessment engine owns correctness (is_correct, student answer, correct answer). You explain scientifically; you do not decide which answer is correct.
 - Teaching MODE is chosen per miss — obey the live TEACHING MODE / tutor addon block every turn (it can switch between compare vs correct-only).
@@ -187,9 +190,9 @@ function questionGroundingBlock(context = {}) {
     ? context.answer_history.slice(-6)
     : [];
   const latestMiss = [...history].reverse().find((h) => h && h.is_correct === false);
-  const activeQ = asPlain(latestMiss?.question || farmQ);
-  const activeWrong = asPlain(latestMiss?.student_answer || wrong);
-  const activeCorrect = asPlain(latestMiss?.correct_answer || correct);
+  const activeQ = asPlain(farmQ || latestMiss?.question);
+  const activeWrong = asPlain(wrong || latestMiss?.student_answer);
+  const activeCorrect = asPlain(correct || latestMiss?.correct_answer);
 
   const lines = [
     'QUESTION LOCK (must follow):',

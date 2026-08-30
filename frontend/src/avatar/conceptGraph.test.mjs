@@ -1,0 +1,110 @@
+/**
+ * Concept-graph mind maps: keywords + relationships, not answer keys.
+ * Run: node --test frontend/src/avatar/conceptGraph.test.mjs
+ */
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import {
+  buildConceptGraph,
+  diagnoseMisconception,
+  MISCONCEPTION_TYPES,
+  validateConceptGraph,
+} from './conceptGraph.js';
+
+describe('misconception diagnosis', () => {
+  it('sees stem vs roots as related-concept confusion', () => {
+    const d = diagnoseMisconception({
+      question: 'Which part of a plant absorbs water from the soil?',
+      studentAnswer: 'Stem',
+      correctAnswer: 'Roots',
+    });
+    assert.equal(d.type, MISCONCEPTION_TYPES.RELATED);
+  });
+
+  it('sees oxygen vs CO2 as related', () => {
+    const d = diagnoseMisconception({
+      question: 'What gas do plants use during photosynthesis?',
+      studentAnswer: 'Oxygen',
+      correctAnswer: 'Carbon dioxide',
+    });
+    assert.equal(d.type, MISCONCEPTION_TYPES.RELATED);
+  });
+});
+
+describe('concept graphs teach relationships', () => {
+  it('builds a plant water tree for stem vs roots', () => {
+    const g = buildConceptGraph({
+      question: 'Which part of a plant absorbs water from the soil?',
+      studentAnswer: 'Stem',
+      correctAnswer: 'Roots',
+      topic: 'Plant Biology',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('root')));
+    assert.ok(labels.some((l) => l.includes('stem')));
+    assert.ok(labels.some((l) => l.includes('absorb')));
+    assert.ok(g.relationships.some((r) => /absorb|do|take/i.test(r.label)));
+    assert.equal(g.nodes.find((n) => /stem/i.test(n.label))?.kind, 'mixup');
+    assert.equal(g.nodes.find((n) => /root/i.test(n.label))?.kind, 'correct');
+    assert.ok(g.practice?.question);
+    assert.equal(/which part of a plant absorbs/i.test(g.practice.question), false);
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'Roots' }).ok, true);
+  });
+
+  it('does not treat a mix-up as the correct node', () => {
+    const g = buildConceptGraph({
+      question: 'What gas do plants take in for photosynthesis?',
+      studentAnswer: 'Oxygen',
+      correctAnswer: 'Carbon dioxide',
+    });
+    assert.ok(g.nodes.some((n) => n.kind === 'correct' && /co₂|co2|carbon/i.test(n.label)));
+    assert.ok(g.nodes.some((n) => n.kind === 'mixup'));
+  });
+
+  it('still builds a graph for True/False', () => {
+    const g = buildConceptGraph({
+      question: 'Dicotyledonous plants are named for having two seed lobes.',
+      studentAnswer: 'False',
+      correctAnswer: 'True',
+      questionType: 'TrueFalse',
+    });
+    assert.ok(g.nodes.length >= 3);
+    assert.ok(g.relationships.length);
+  });
+
+  it('builds a graph for fill-in flowers vs roots', () => {
+    const g = buildConceptGraph({
+      question: 'Plants absorb water through ______.',
+      studentAnswer: 'flowers',
+      correctAnswer: 'roots',
+      questionType: 'FillInTheBlank',
+    });
+    assert.ok(g.nodes.some((n) => /root/i.test(n.label)));
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'roots' }).ok, true);
+  });
+
+  it('marks partial typed answers as partial', () => {
+    const d = diagnoseMisconception({
+      question: 'What is photosynthesis?',
+      studentAnswer: 'Plants use sunlight to make food.',
+      correctAnswer: 'Plants use light to make glucose from carbon dioxide and water.',
+      completeness: 'partial',
+      missingKeywords: ['carbon dioxide', 'water'],
+    });
+    assert.equal(d.type, MISCONCEPTION_TYPES.PARTIAL);
+  });
+});
+
+describe('personalized map carries concept graphs', () => {
+  it('attaches graph data that the UI can render', () => {
+    const g = buildConceptGraph({
+      prompt: 'Which part of a plant absorbs water from the soil?',
+      studentAnswer: 'Stem',
+      correctAnswer: 'Roots',
+      questionType: 'MCQ',
+      topic: 'Plant Biology',
+    });
+    assert.ok(g.nodes.length >= 4);
+    assert.ok(g.relationships.length);
+  });
+});

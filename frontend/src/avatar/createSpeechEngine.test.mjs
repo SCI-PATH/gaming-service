@@ -54,10 +54,8 @@ describe('buildMindMapNarration', () => {
     assert.ok(branch?.text);
     assert.match(branch.text, /Miss 1/);
     assert.match(branch.text, /Which device stores electric charge/);
-    assert.match(branch.text, /You picked Resistor/);
-    assert.match(branch.text, /The correct idea is Capacitor/);
-    assert.match(branch.text, /Key idea:/);
-    assert.match(branch.text, /Let's look/);
+    assert.match(branch.text, /mix-up was Resistor/);
+    assert.match(branch.text, /Remember this:/);
     assert.doesNotMatch(branch.text, /Exam lock/i);
   });
 
@@ -74,7 +72,7 @@ describe('buildMindMapNarration', () => {
     });
     const branch = parts.find((p) => p.kind === 'branch');
     assert.doesNotMatch(branch.text, /see the lesson key idea/i);
-    assert.match(branch.text, /Key idea: A capacitor stores electric charge/);
+    assert.match(branch.text, /Remember this: A capacitor stores electric charge/);
   });
 });
 
@@ -91,8 +89,7 @@ describe('buildMissCardNarration', () => {
       keyExplain: 'Leaves take in carbon dioxide and use sunlight to make food.',
     });
     assert.match(seg.text, /What gas do plants take in/);
-    assert.match(seg.text, /You picked Oxygen/);
-    assert.match(seg.text, /Carbon dioxide/);
-    assert.match(seg.text, /Let's look/);
+    assert.match(seg.text, /You answered Oxygen|mix-up was Oxygen/);
+    assert.match(seg.text, /carbon dioxide/i);
   });
 });

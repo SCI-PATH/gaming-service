@@ -357,15 +357,18 @@ export function extractFillInCorrectAnswer(source = {}) {
     .find(Boolean);
 
   const expectedList = fromExpected ? listFromUnknown(fromExpected) : [];
+  const directList = direct ? listFromUnknown(direct) : [];
   if (!acceptedAnswers.length) {
-    if (expectedList.length && expectedList.length >= missed.length) {
+    if (directList.length && directList.length >= missed.length) {
+      acceptedAnswers = directList;
+    } else if (expectedList.length && expectedList.length >= missed.length) {
+      acceptedAnswers = expectedList;
+    } else if (directList.length) {
+      acceptedAnswers = directList;
+    } else if (expectedList.length) {
       acceptedAnswers = expectedList;
     } else if (missed.length) {
       acceptedAnswers = missed;
-    } else if (expectedList.length) {
-      acceptedAnswers = expectedList;
-    } else if (direct) {
-      acceptedAnswers = listFromUnknown(direct);
     }
   }
 
@@ -861,8 +864,9 @@ export function buildSageAssessment(source = {}) {
         : [],
     studentConcept,
     correctConcept,
-    completeness: normalized.completeness || null,
+    completeness: normalized.completeness || (normalized.isCorrect ? 'correct' : 'incorrect'),
     missingKeywords: normalized.missingKeywords || [],
     acceptedAnswers: normalized.acceptedAnswers || [],
+    missedBlanks: source.missedBlanks || source.missed_blanks || [],
   };
 }

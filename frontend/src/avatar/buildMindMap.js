@@ -19,11 +19,10 @@ import {
   explainCorrectIdea,
   scienceKeyIdea,
   shortConceptLabel,
-  composeFiveStepLesson,
-  validateStructuredLesson,
   looksLikeSymbolicTypedAnswer,
-  resolveFreeTextCorrectAnswer,
 } from './explainMisconception.js';
+import { buildTypeAwareLesson, collectAssessmentMisses } from './assessmentMiss.js';
+import { buildConceptGraph } from './conceptGraph.js';
 import {
   isFillInQuestionType,
   isTypedAnswerQuestionType,
@@ -394,13 +393,15 @@ export function buildPersonalizedMindMap({
     frustrationLevel,
   });
 
-  const attempts = collectAttempts({
-    attemptsIn,
-    misconceptions,
-    questionData,
-    studentWrongAnswer,
-    topic,
-    prompt,
+  const attempts = collectAssessmentMisses({
+    attempts: collectAttempts({
+      attemptsIn,
+      misconceptions,
+      questionData,
+      studentWrongAnswer,
+      topic,
+      prompt,
+    }),
   });
 
   if (!attempts.length) {
@@ -421,13 +422,19 @@ export function buildPersonalizedMindMap({
     const color = BRANCH_COLORS[i % BRANCH_COLORS.length];
     const t = resolveTopicKey(a.topic) || a.topic || 'Science';
     topicsSeen.add(t);
-    const fillIn =
-      isFillInQuestionType(a.questionType) ||
-      isFillInQuestionType(a) ||
-      /_{2,}|\[\s*_{0,4}\s*\]/.test(String(a.prompt || a.question || ''));
-    const typed =
-      isTypedAnswerQuestionType(a.questionType) ||
-      isTypedAnswerQuestionType(a);
+    const miss = {
+      ...a,
+      question: a.prompt || a.question,
+      studentAnswer: a.studentAnswer,
+      correctAnswer:
+        a.correctAnswer ||
+        a.canonicalCorrectAnswer ||
+        a.grade?.ideal_answer ||
+        a.grade?.idealAnswer ||
+        '',
+    };
+    const fillIn = isFillInQuestionType(miss.questionType) || isFillInQuestionType(a);
+    const typed = isTypedAnswerQuestionType(a.questionType) || isTypedAnswerQuestionType(a);
     const freeText = fillIn || typed;
     const cleanWrong = freeText
       ? safeScienceLine(a.studentAnswer, null) ||
@@ -438,37 +445,15 @@ export function buildPersonalizedMindMap({
         friendlyWrongAnswer(a.studentAnswer, 80) ||
         a.studentAnswer ||
         'no pick yet';
-    const fromGrade =
-      a.grade?.ideal_answer ||
-      a.grade?.idealAnswer ||
-      a.canonicalCorrectAnswer ||
-      '';
-    const resolvedCorrect = freeText
-      ? resolveFreeTextCorrectAnswer({
-          ...a,
-          correctAnswer: a.correctAnswer || fromGrade,
-          prompt: a.prompt || a.question,
-        })
-      : '';
     const cleanRight = freeText
-      ? safeScienceLine(resolvedCorrect, null) ||
-        safeScienceLine(a.correctAnswer, null) ||
-        safeScienceLine(fromGrade, null) ||
-        resolvedCorrect ||
-        a.correctAnswer ||
+      ? safeScienceLine(miss.correctAnswer, null) ||
+        miss.correctAnswer ||
         'the idea in this farm question'
-      : shortConceptLabel(a.correctAnswer, 48) ||
+      : shortConceptLabel(miss.correctAnswer, 48) ||
         safeScienceLine(a.correctAnswer, null) ||
-        scienceKeyIdea(a) ||
+        scienceKeyIdea(miss) ||
         'the idea in this farm question';
     const related = catalogRelated(t, cleanRight, usedRelated);
-    const conceptual = {
-      ...a,
-      studentAnswer: a.studentAnswer,
-      correctAnswer: freeText
-        ? resolvedCorrect || a.correctAnswer || fromGrade
-        : a.correctAnswer,
-    };
     const noUsablePick =
       looksLikeSymbolicTypedAnswer(a.studentAnswer) ||
       /ran out of time|no pick yet|nothing typed|left blank/i.test(
@@ -476,12 +461,15 @@ export function buildPersonalizedMindMap({
       );
     const lesson = noUsablePick
       ? null
-      : composeFiveStepLesson(conceptual, {
-          tone: profile.tone,
-          frustrationLevel: profile.frustrationLevel,
-          explainDepth: profile.explainDepth,
-        });
-    const lessonOk = validateStructuredLesson(lesson);
+      : buildTypeAwareLesson(
+          { ...miss, studentAnswer: a.studentAnswer, correctAnswer: miss.correctAnswer },
+          {
+            tone: profile.tone,
+            frustrationLevel: profile.frustrationLevel,
+            explainDepth: profile.explainDepth,
+          },
+        );
+    const lessonOk = Boolean(lesson && !lesson.insufficientKnowledge && lesson.sections?.length);
     const why = lessonOk
       ? lesson.comparisonFields?.keyScientificDifference ||
         lesson.comparison ||
@@ -489,7 +477,7 @@ export function buildPersonalizedMindMap({
       : '';
     const rightExplain = lessonOk
       ? lesson.correctAnswer.scientificDefinition
-      : explainCorrectIdea(conceptual, {
+      : explainCorrectIdea(miss, {
           tone: profile.tone,
           frustrationLevel: profile.frustrationLevel,
           explainDepth: profile.explainDepth,
@@ -500,24 +488,20 @@ export function buildPersonalizedMindMap({
     const keyIdea = lessonOk
       ? lesson.correctAnswer?.concept ||
         lesson.comparisonFields?.correctConcept ||
-        scienceKeyIdea(conceptual)
-      : scienceKeyIdea(conceptual);
+        scienceKeyIdea(miss)
+      : scienceKeyIdea(miss);
     // Never paste the ideal answer into Key idea / Let's look.
     const keyConcept = (() => {
       const raw = clip(keyIdea, 90) || t;
-      if (
-        sameLine(raw, cleanRight) ||
-        sameLine(raw, a.correctAnswer) ||
-        sameLine(raw, fromGrade)
-      ) {
-        return clip(scienceKeyIdea(conceptual), 90) || t;
+      if (sameLine(raw, cleanRight) || sameLine(raw, miss.correctAnswer)) {
+        return clip(scienceKeyIdea(miss), 90) || t;
       }
       return raw;
     })();
     const keyExplain = (() => {
       const raw = String(rightExplain || '').trim();
       if (!raw || sameLine(raw, cleanRight) || sameLine(raw, keyConcept)) {
-        return explainCorrectIdea(conceptual, {
+        return explainCorrectIdea(miss, {
           tone: profile.tone,
           frustrationLevel: profile.frustrationLevel,
           explainDepth: profile.explainDepth,
@@ -526,49 +510,58 @@ export function buildPersonalizedMindMap({
       return raw;
     })();
     const catalog = CONCEPT_CATALOG[resolveTopicKey(t)];
+    const conceptGraph = buildConceptGraph({
+      ...miss,
+      studentAnswer: a.studentAnswer,
+      correctAnswer: miss.correctAnswer,
+      completeness: a.completeness,
+      missingKeywords: a.missingKeywords,
+    });
+    const layout = String(lesson?.layout || miss.questionType || '').toLowerCase();
 
     let nodes = [
+      {
+        id: `m${i}-ask`,
+        kind: 'ask',
+        label: miss.blankIndex ? `Blank ${miss.blankIndex}` : shortLabel(clip(a.prompt, 26), 26) || 'Question',
+        title: miss.blankIndex ? `Blank ${miss.blankIndex}` : 'Question',
+        icon: '❓',
+        body: clip(a.prompt, 180),
+        meta: { prompt: a.prompt },
+      },
       {
         id: `m${i}-wrong`,
         kind: 'wrong',
         label: shortLabel(cleanWrong, 22) || 'Your pick',
-        title: 'Your answer',
+        title: layout.includes('true') ? 'Your answer' : 'Your answer',
         icon: '✗',
-        body: wrongExplain || why,
+        body: clip(wrongExplain || why, 180),
         meta: { studentAnswer: cleanWrong },
       },
       {
         id: `m${i}-diff`,
         kind: 'ask',
-        label: 'Difference',
-        title: "What's the difference?",
+        label: 'Why',
+        title: "Why it doesn't fit",
         icon: '↔',
-        body: why,
+        body: clip(why, 180),
         meta: {},
       },
       {
         id: `m${i}-right`,
         kind: 'right',
         label: shortLabel(cleanRight, 22) || 'Correct idea',
-        title: 'Correct idea',
+        title: 'Correct answer',
         icon: '✓',
-        body: keyExplain,
+        body: clip(keyExplain, 180),
         meta: {
           correctAnswer: cleanRight,
           hint: a.hint,
         },
       },
     ];
-    if (complexity !== 'micro') {
-      nodes.push({
-        id: `m${i}-ask`,
-        kind: 'ask',
-        label: shortLabel(clip(a.prompt, 26), 26) || 'The question',
-        title: 'What was asked',
-        icon: '❓',
-        body: clip(a.prompt, 180),
-        meta: { prompt: a.prompt },
-      });
+    if (complexity === 'micro') {
+      nodes = nodes.filter((n) => n.id !== `m${i}-ask`);
     }
     if (complexity === 'broader') {
       nodes.push({
@@ -603,10 +596,13 @@ export function buildPersonalizedMindMap({
       icon: pickTopicIcon(t),
       color,
       colorIndex: i,
-      prompt: a.prompt,
-      question: a.prompt,
+      questionType: miss.questionType || a.questionType || '',
+      blankIndex: miss.blankIndex || null,
+      prompt: a.prompt || miss.question,
+      question: a.prompt || miss.question,
       studentAnswer: cleanWrong,
       correctAnswer: cleanRight,
+      missedBlanks: miss.missedBlanks || [],
       options: Array.isArray(a.options) ? a.options : [],
       hint: a.hint,
       why,
@@ -617,6 +613,7 @@ export function buildPersonalizedMindMap({
       keyExplain,
       key_concept_explain: keyExplain,
       lesson: lessonOk ? lesson : null,
+      conceptGraph,
       farmLink: related.explanation,
       farm_link: related.explanation,
       summary:
