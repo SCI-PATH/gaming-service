@@ -23,7 +23,7 @@ export const FARM_EVENTS = {
   SELL_INVENTORY_ACTION: 'SELL_INVENTORY_ACTION',
   INVENTORY_UPDATED: 'INVENTORY_UPDATED',
   FARM_STATE: 'FARM_STATE',
-  /** Live player pin for the farm map HUD (fractional tile coords) */
+  /** Live player pin + enemy/customer pins for the farm map HUD (fractional tile coords) */
   PLAYER_MAP_POS: 'PLAYER_MAP_POS',
   /** true while GameScene (farm) is active — hide map on menu/opening */
   FARM_SCENE_ACTIVE: 'FARM_SCENE_ACTIVE',

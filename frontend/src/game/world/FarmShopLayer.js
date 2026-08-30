@@ -411,6 +411,21 @@ export default class FarmShopLayer {
     }
   }
 
+  getMapPins() {
+    const pins = [];
+    for (const [id, entry] of this.customers) {
+      const x = Number(entry?.body?.x);
+      const y = Number(entry?.body?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      pins.push({
+        id,
+        x: x / TILE_SIZE,
+        y: y / TILE_SIZE,
+      });
+    }
+    return pins;
+  }
+
   flashThanks(customerId) {
     const entry = this.customers.get(customerId);
     if (!entry) return;

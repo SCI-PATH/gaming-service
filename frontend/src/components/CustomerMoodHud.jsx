@@ -10,6 +10,7 @@ export default function CustomerMoodHud({
   customers = [],
   alerts = [],
   onDismissAlert,
+  showToasts = true,
 }) {
   const [open, setOpen] = useState(false);
   const [pickedId, setPickedId] = useState(null);
@@ -34,7 +35,7 @@ export default function CustomerMoodHud({
 
   return (
     <div className="customer-mood-hud">
-      {latest && !latest.read ? (
+      {showToasts && latest && !latest.read ? (
         <div
           className={`customer-toast${latest.improved ? ' is-good' : ' is-warn'}`}
           role="status"

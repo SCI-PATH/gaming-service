@@ -3,7 +3,8 @@
  * Matches tables created in backend/sql/004_all_extra_tables.sql
  */
 import { getFileLeaderboard, upsertLeaderboardEntry } from './db.mjs';
-import { isPostgresEnabled, query } from './pg.mjs';
+import { isPostgresEnabled } from './pg.mjs';
+import { eq as query } from './engagementSchema.mjs';
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -362,30 +363,61 @@ export async function insertPointsLedger(body = {}) {
   return { ledgerId };
 }
 
+const FRUSTRATION_SOURCES = new Set([
+  'gameplay',
+  'quiz',
+  'mentor',
+  'level_end',
+  'manual',
+]);
+
 export async function insertFrustrationSnapshot(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
   const snapshotId = String(body.snapshotId || id('fr'));
   const score = Math.max(0, Math.min(100, Number(body.frustrationScore) || 0));
-  const level = String(body.frustrationLevel || 'low');
+  const levelRaw = String(body.frustrationLevel || 'low').toLowerCase();
+  const level = ['low', 'moderate', 'high', 'very_high'].includes(levelRaw)
+    ? levelRaw
+    : 'low';
+  const source = FRUSTRATION_SOURCES.has(String(body.source || ''))
+    ? String(body.source)
+    : 'gameplay';
 
-  await query(
-    `INSERT INTO engagement_gaming.frustration_snapshots (
+  await upsertStudent({
+    studentId,
+    studentName: body.studentName || body.displayName || studentId,
+    displayName: body.displayName || body.studentName || studentId,
+    frustrationScore: score,
+    frustrationLevel: level,
+  });
+
+  const insertSql = `INSERT INTO engagement_gaming.frustration_snapshots (
        snapshot_id, student_id, session_id, level_number,
        frustration_score, frustration_level, signals, dominant_indicators, source
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::text[],$9)`,
-    [
-      snapshotId,
-      studentId,
-      body.sessionId || null,
-      body.levelNumber ?? null,
-      score,
-      level,
-      JSON.stringify(body.signals || {}),
-      Array.isArray(body.dominantIndicators) ? body.dominantIndicators : [],
-      body.source || 'gameplay',
-    ],
-  );
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::text[],$9)`;
+  const row = [
+    snapshotId,
+    studentId,
+    body.sessionId || null,
+    body.levelNumber ?? null,
+    score,
+    level,
+    JSON.stringify(body.signals || {}),
+    Array.isArray(body.dominantIndicators) ? body.dominantIndicators : [],
+    source,
+  ];
+  try {
+    await query(insertSql, row);
+  } catch (err) {
+    const msg = String(err?.message || '');
+    if (row[2] && /uuid|foreign key|session_id/i.test(msg)) {
+      row[2] = null;
+      await query(insertSql, row);
+    } else {
+      throw err;
+    }
+  }
 
   await query(
     `UPDATE engagement_gaming.students SET

@@ -2336,6 +2336,136 @@ body {
   border: 1px solid #ffe08a;
 }
 
+.farm-map-key-enemy {
+  background: #e24b4b;
+  border-radius: 50%;
+}
+
+.farm-map-key-customer {
+  background: #f3c56b;
+  border-radius: 50%;
+}
+
+.farm-map-enemy,
+.farm-map-customer {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.farm-map-enemy {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e24b4b;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  box-shadow: 0 0 0 2px rgba(226, 75, 75, 0.35);
+}
+
+.farm-map-enemy.is-watch {
+  opacity: 0.7;
+  transform: translate(-50%, -50%) scale(0.85);
+}
+
+.farm-map-enemy.is-near,
+.farm-map-enemy.is-hit {
+  animation: farm-map-alert-pulse 0.7s ease-in-out infinite;
+}
+
+.farm-map-enemy.is-hit {
+  background: #ff2d2d;
+  box-shadow: 0 0 0 3px rgba(255, 80, 80, 0.55);
+}
+
+.farm-map-customer {
+  font-size: 0.85rem;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+}
+
+.farm-map-customer.is-alert {
+  animation: farm-map-alert-pulse 0.9s ease-in-out infinite;
+}
+
+.farm-map-alerts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.farm-map-alert {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid #c45c5c;
+  background: #fff3ea;
+  color: #2a1810;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.farm-map-alert strong {
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.farm-map-alert.is-danger {
+  border-color: #c43b3b;
+  background: #ffe4e0;
+}
+
+.farm-map-alert.is-warn {
+  border-color: #c47a3b;
+  background: #fff0e0;
+}
+
+.farm-map-alert.is-good {
+  border-color: #3b8c4a;
+  background: #e8f6ea;
+}
+
+.farm-map-alert.is-watch {
+  border-color: #8a6b2a;
+  background: #fff8e6;
+}
+
+.farm-map-alert button {
+  justify-self: start;
+  margin-top: 2px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+}
+
+.farm-map-alerts-empty {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: #c5efd0;
+}
+
+.farm-map-panel.is-quiz-live .farm-map-alerts,
+.farm-map-panel.is-quiz-live .farm-map-alerts-empty {
+  outline: 1px dashed rgba(255, 180, 80, 0.55);
+  outline-offset: 2px;
+}
+
+@keyframes farm-map-alert-pulse {
+  50% {
+    transform: translate(-50%, -50%) scale(1.18);
+  }
+}
+
 .science-quiz-carry {
   margin: 4px 0 0;
   color: #7ec8ff;
@@ -2641,6 +2771,8 @@ body {
 }
 
 .farm-side-panels {
+  position: relative;
+  z-index: 5100;
   display: flex;
   flex-direction: column;
   gap: 12px;

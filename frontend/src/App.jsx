@@ -458,7 +458,6 @@ export default function App() {
     );
     const freezeCombat = Boolean(
       avatarOpen ||
-        quizOpen ||
         questScrollOpen ||
         shopOpen ||
         motivationOpen ||
@@ -1855,10 +1854,17 @@ export default function App() {
               cropName={farm.cropName || 'crops'}
               challenges={challenges}
               questStep={wizardStep?.pin || null}
+              customerAlerts={customerAlerts}
+              onDismissAlert={(id) =>
+                setCustomerAlerts((prev) =>
+                  prev.map((a) => (a.id === id ? { ...a, read: true } : a)),
+                )
+              }
             />
             <CustomerMoodHud
               customers={shopHud.customers}
               alerts={customerAlerts}
+              showToasts={false}
               onDismissAlert={(id) =>
                 setCustomerAlerts((prev) =>
                   prev.map((a) => (a.id === id ? { ...a, read: true } : a)),

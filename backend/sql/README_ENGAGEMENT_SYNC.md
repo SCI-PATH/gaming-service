@@ -27,7 +27,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxxx.us-east-2.aws.neon.tech/neondb?
 
 4. Restart backend: `npm run backend`
 5. Confirm health: open `http://127.0.0.1:8002/api/health` — `postgres.enabled` should be `true`.
-6. Play: login → complete a level / open Sage / buy unlock → refresh tables in DBeaver.
+6. If `/api/engagement/frustration` returns `permission denied for schema engagement_gaming`, the `DATABASE_URL` role is not the schema owner. In the Neon SQL Editor (as **neondb_owner**) run `backend/sql/005_grants_engagement_gaming.sql`, then restart the backend.
+7. Play: login → complete a level / open Sage / buy unlock → refresh tables in DBeaver.
 
 ## APIs
 

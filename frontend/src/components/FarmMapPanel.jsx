@@ -26,6 +26,8 @@ export default function FarmMapPanel({
   compact = false,
   questStep = null,
   challenges = [],
+  customerAlerts = [],
+  onDismissAlert,
 }) {
   const { width, height } = FARM_MAP_TILES;
   const pinRef = useRef(null);
@@ -34,6 +36,9 @@ export default function FarmMapPanel({
     x: Number.isFinite(playerMapX) ? playerMapX : 48,
     y: Number.isFinite(playerMapY) ? playerMapY : 32,
   });
+  const [enemies, setEnemies] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [quizOpen, setQuizOpen] = useState(false);
 
   useEffect(() => {
     const apply = (xRaw, yRaw) => {
@@ -46,10 +51,16 @@ export default function FarmMapPanel({
 
     const onBridge = (payload = {}) => {
       apply(Number(payload.playerMapX), Number(payload.playerMapY));
+      if (Array.isArray(payload.enemies)) setEnemies(payload.enemies);
+      if (Array.isArray(payload.customers)) setCustomers(payload.customers);
+      if (payload.quizOpen != null) setQuizOpen(Boolean(payload.quizOpen));
     };
     const onWindow = (event) => {
       const d = event.detail || {};
       apply(Number(d.playerMapX), Number(d.playerMapY));
+      if (Array.isArray(d.enemies)) setEnemies(d.enemies);
+      if (Array.isArray(d.customers)) setCustomers(d.customers);
+      if (d.quizOpen != null) setQuizOpen(Boolean(d.quizOpen));
     };
 
     ForestGameBridge.on(FARM_EVENTS.PLAYER_MAP_POS, onBridge);
@@ -73,15 +84,20 @@ export default function FarmMapPanel({
   const tileX = Math.floor(px);
   const tileY = Math.floor(py);
   const nearest = nearestTarget(px, py);
+  const liveAlerts = buildMapAlerts(enemies, customers, customerAlerts);
 
   return (
     <aside
-      className={`farm-map-panel${compact ? ' is-compact' : ''}`}
+      className={`farm-map-panel${compact ? ' is-compact' : ''}${quizOpen ? ' is-quiz-live' : ''}`}
       aria-label="Farm map with plant beds, farm shop, and unlock locations"
     >
       <div className="farm-map-head">
         <strong>Farm Map</strong>
-        <span>Gold = plant · Shop = unload</span>
+        <span>
+          {quizOpen
+            ? 'Watch alerts — enemies and customers keep moving'
+            : 'Gold = plant · Shop = unload'}
+        </span>
       </div>
 
       <div
@@ -215,8 +231,54 @@ export default function FarmMapPanel({
             <span className="farm-map-you-dot" />
             <span className="farm-map-you-label">YOU</span>
           </div>
+
+          {customers.map((c) => (
+            <div
+              key={`cust-${c.id}`}
+              className={`farm-map-customer is-${c.mood || 'waiting'}${c.rank >= 2 ? ' is-alert' : ''}`}
+              style={{ left: `${(c.x / width) * 100}%`, top: `${(c.y / height) * 100}%` }}
+              title={`Customer ${(c.queueIndex ?? 0) + 1}: ${c.label}`}
+            >
+              <span>{c.face || '🙂'}</span>
+            </div>
+          ))}
+
+          {enemies.map((e) => (
+            <div
+              key={`enemy-${e.id}`}
+              className={`farm-map-enemy is-${e.threat || 'far'}`}
+              style={{ left: `${(e.x / width) * 100}%`, top: `${(e.y / height) * 100}%` }}
+              title={`Enemy ${e.dir || ''} · ${e.distTiles} tiles`}
+            >
+              <span>!</span>
+            </div>
+          ))}
         </div>
       </div>
+
+      {liveAlerts.length ? (
+        <ul className="farm-map-alerts" aria-live="assertive">
+          {liveAlerts.slice(0, 4).map((alert) => (
+            <li
+              key={alert.id}
+              className={`farm-map-alert is-${alert.tone}`}
+            >
+              <strong>{alert.title}</strong>
+              <span>{alert.body}</span>
+              {alert.dismissId && onDismissAlert ? (
+                <button
+                  type="button"
+                  onClick={() => onDismissAlert(alert.dismissId)}
+                >
+                  OK
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : quizOpen ? (
+        <p className="farm-map-alerts-empty">No alerts yet — keep answering.</p>
+      ) : null}
 
       <p className="farm-map-location">
         <span className="farm-map-location-dot is-blinking" />
@@ -244,6 +306,12 @@ export default function FarmMapPanel({
         </li>
         <li>
           <i className="farm-map-key farm-map-key-task" /> Task
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-enemy" /> Enemy
+        </li>
+        <li>
+          <i className="farm-map-key farm-map-key-customer" /> Customer
         </li>
       </ul>
 
@@ -274,6 +342,49 @@ export default function FarmMapPanel({
       </div>
     </aside>
   );
+}
+
+function buildMapAlerts(enemies = [], customers = [], customerAlerts = []) {
+  const alerts = [];
+  const unread = (customerAlerts || []).filter((a) => !a.read);
+  for (const a of unread) {
+    alerts.push({
+      id: a.id,
+      dismissId: a.id,
+      tone: a.improved ? 'good' : a.to === 'left' || a.to === 'angry' ? 'danger' : 'warn',
+      title: a.improved ? 'Customer calmed' : 'Customer reaction',
+      body: `${a.toFace || ''} ${a.toLabel || ''} — ${a.reason || a.action || 'Waiting at the shop'}`.trim(),
+      rank: a.improved ? 1 : a.to === 'left' ? 5 : a.to === 'angry' ? 4 : 3,
+    });
+  }
+  for (const e of enemies) {
+    if (e.threat === 'far') continue;
+    const title =
+      e.threat === 'hit'
+        ? 'Enemy on you'
+        : e.threat === 'near'
+          ? 'Enemy close'
+          : 'Enemy nearby';
+    alerts.push({
+      id: `enemy-${e.id}`,
+      tone: e.threat === 'hit' ? 'danger' : e.threat === 'near' ? 'warn' : 'watch',
+      title,
+      body: `Coming from the ${e.dir || 'field'} · ${e.distTiles} tiles away`,
+      rank: e.threat === 'hit' ? 6 : e.threat === 'near' ? 4 : 2,
+    });
+  }
+  for (const c of customers) {
+    if (unread.some((a) => a.customerId === c.id)) continue;
+    if ((c.rank || 0) < 2) continue;
+    alerts.push({
+      id: `cust-live-${c.id}`,
+      tone: c.rank >= 3 ? 'danger' : 'warn',
+      title: `Customer ${(c.queueIndex ?? 0) + 1} ${c.label || ''}`.trim(),
+      body: c.speech || c.reason || c.action || 'Waiting at the shop',
+      rank: c.rank,
+    });
+  }
+  return alerts.sort((a, b) => b.rank - a.rank);
 }
 
 function movePin(pinEl, guideEl, x, y, mapW, mapH) {

@@ -87,6 +87,7 @@ import {
   syncWorldShopSellableIds,
   SHOP_EVENTS,
 } from '../../data/farmCustomerShop.js';
+import { customerMoodState } from '../../data/customerMood.js';
 import {
   ANIMAL_CHALLENGE_COUNT,
   animalGoalText,
@@ -1169,12 +1170,11 @@ export default class GameScene extends Phaser.Scene {
     return Boolean(document.querySelector('.avatar-assistant-overlay'));
   }
 
-  /** True while a modal should freeze combat (quiz, Sage, quest scroll, shop, motivation). */
+  /** True while a modal should freeze combat (Sage, quest scroll, shop, motivation).
+   * Science quizzes stay live: enemies and customers keep moving so the map can warn. */
   isFarmCombatFrozen() {
     return Boolean(
-      this.pendingQuizMode ||
-        this.isScienceQuizOpen() ||
-        this.isQuestScrollOpen() ||
+      this.isQuestScrollOpen() ||
         this.isUnlockShopOpen() ||
         this.isMotivationOpen() ||
         this.isPauseOpen() ||
@@ -1182,7 +1182,21 @@ export default class GameScene extends Phaser.Scene {
     );
   }
 
-  /** Freeze player + enemies while quiz / quest scroll / shop owns the screen. */
+  isAnswerLockActive() {
+    return Boolean(this.pendingQuizMode || this.isScienceQuizOpen());
+  }
+
+  /** Stop walking/shooting during a quiz without pausing the farm world. */
+  lockPlayerForAnswer() {
+    this.farmInputLocked = true;
+    this.player?.setVelocity(0);
+    this._clearMoveKeys?.();
+    if (this._farmCombatFrozen || this.physics?.world?.isPaused) {
+      this.thawFarmCombat();
+    }
+  }
+
+  /** Freeze player + enemies while quest scroll / shop / Sage owns the screen. */
   freezeFarmForQuiz() {
     this.farmInputLocked = true;
     this._farmCombatFrozen = true;
@@ -1260,7 +1274,7 @@ export default class GameScene extends Phaser.Scene {
    * Walking is restored whenever quiz / quest scroll are not on screen.
    */
   releaseStaleFarmLocks() {
-    if (this.isFarmCombatFrozen()) return;
+    if (this.isFarmCombatFrozen() || this.isAnswerLockActive()) return;
     const needsThaw =
       this._farmCombatFrozen || Boolean(this.physics?.world?.isPaused);
     this.farmInputLocked = false;
@@ -1361,7 +1375,7 @@ export default class GameScene extends Phaser.Scene {
       }
       if (locked) {
         this.player?.setVelocity(0);
-        // Freeze Arcade for quiz / quest scroll / shop so enemies cannot end the run.
+        // Freeze Arcade for Sage / quest scroll / shop. Quizzes keep the farm live.
         if (freezeCombat) {
           this.freezeFarmForQuiz();
           this._uiOwnedWorldPause = true;
@@ -1700,13 +1714,18 @@ export default class GameScene extends Phaser.Scene {
     const mapH = this.map?.heightInPixels ?? 75 * TILE_SIZE;
     const x = Phaser.Math.Clamp(this.player.x, 0, mapW);
     const y = Phaser.Math.Clamp(this.player.y, 0, mapH);
+    const playerMapX = x / TILE_SIZE;
+    const playerMapY = y / TILE_SIZE;
     const payload = {
-      playerMapX: x / TILE_SIZE,
-      playerMapY: y / TILE_SIZE,
+      playerMapX,
+      playerMapY,
       playerTileX: Math.floor(x / TILE_SIZE),
       playerTileY: Math.floor(y / TILE_SIZE),
       mapWidth: this.map?.width ?? 100,
       mapHeight: this.map?.height ?? 75,
+      quizOpen: this.isAnswerLockActive(),
+      enemies: this.collectEnemyMapPins(playerMapX, playerMapY),
+      customers: this.collectCustomerMapPins(),
     };
 
     ForestGameBridge.emit(FARM_EVENTS.PLAYER_MAP_POS, payload);
@@ -1717,6 +1736,70 @@ export default class GameScene extends Phaser.Scene {
     } catch {
       // ignore
     }
+  }
+
+  collectEnemyMapPins(playerMapX, playerMapY) {
+    const pins = [];
+    const kids = this.enemiesGroup?.getChildren?.() || [];
+    for (let i = 0; i < kids.length; i += 1) {
+      const enemy = kids[i];
+      if (!enemy?.active) continue;
+      const ex = enemy.x / TILE_SIZE;
+      const ey = enemy.y / TILE_SIZE;
+      if (!Number.isFinite(ex) || !Number.isFinite(ey)) continue;
+      const dx = ex - playerMapX;
+      const dy = ey - playerMapY;
+      const distTiles = Math.hypot(dx, dy);
+      let threat = 'far';
+      if (distTiles < 2.4) threat = 'hit';
+      else if (distTiles < 6) threat = 'near';
+      else if (distTiles < 12) threat = 'watch';
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      const dir =
+        absX > absY
+          ? dx > 0
+            ? 'east'
+            : 'west'
+          : dy > 0
+            ? 'south'
+            : 'north';
+      pins.push({
+        id: enemy.name || `enemy-${i}`,
+        x: ex,
+        y: ey,
+        distTiles: Math.round(distTiles * 10) / 10,
+        threat,
+        dir,
+      });
+    }
+    return pins;
+  }
+
+  collectCustomerMapPins() {
+    const byId = new Map(
+      (this.farmShopLayer?.getMapPins?.() || []).map((p) => [p.id, p]),
+    );
+    const living = (this.worldShop?.customers || []).filter(
+      (c) => c.status !== 'SERVED' && c.status !== 'LEFT',
+    );
+    return living.map((c, i) => {
+      const pin = byId.get(c.id);
+      const mood = customerMoodState(c);
+      return {
+        id: c.id,
+        x: pin?.x ?? 43 + i * 2.8,
+        y: pin?.y ?? 36,
+        queueIndex: Number.isFinite(c.queueIndex) ? c.queueIndex : i,
+        face: mood.face,
+        label: mood.label,
+        mood: mood.key,
+        rank: mood.rank,
+        reason: mood.reason,
+        action: mood.action,
+        speech: c.speech || '',
+      };
+    });
   }
 
   emitInventoryUpdated() {
@@ -3011,7 +3094,7 @@ export default class GameScene extends Phaser.Scene {
     };
 
     this.quizOpenedAt = Date.now();
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
 
     const question = {
       id: step.id,
@@ -3393,7 +3476,7 @@ export default class GameScene extends Phaser.Scene {
     };
 
     this.quizOpenedAt = Date.now();
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
 
     const question = {
       id: step.id,
@@ -3462,7 +3545,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.pinFarmCamera();
     this.quizOpenedAt = Date.now();
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
 
     ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
       type: 'challenge_started',
@@ -3818,7 +3901,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.pendingQuizMode = 'animal_tend';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('animal_tend', 'plant', () => ({
       animalName: this.animalChallenge?.animalName,
@@ -3829,7 +3912,7 @@ export default class GameScene extends Phaser.Scene {
   openAnimalCollectQuestion() {
     if (!this.player || this.farmInputLocked) return;
     this.pendingQuizMode = 'animal_collect';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('animal_collect', 'harvest', () => ({
       animalName: this.animalChallenge?.animalName,
@@ -3884,7 +3967,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.pendingQuizMode = 'clean_start';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('clean_start', 'plant', () => ({
       messName: this.cleaningChallenge?.messName,
@@ -3895,7 +3978,7 @@ export default class GameScene extends Phaser.Scene {
   openCleanSweepQuestion() {
     if (!this.player || this.farmInputLocked) return;
     this.pendingQuizMode = 'clean_sweep';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('clean_sweep', 'harvest', () => ({
       messName: this.cleaningChallenge?.messName,
@@ -4087,7 +4170,7 @@ export default class GameScene extends Phaser.Scene {
     };
 
     this.pendingQuizMode = 'plant';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('plant', 'plant', () => ({
       tileX: cell.gridX,
@@ -4107,7 +4190,7 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
     this.pendingQuizMode = 'practice';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     const question = pickScienceQuestion(
       this.farmLevel,
       this.lastQuestionId,
@@ -4417,7 +4500,7 @@ export default class GameScene extends Phaser.Scene {
     if (!this.player || this.farmInputLocked) return;
     if (this.pendingQuizMode === 'harvest') return;
     this.pendingQuizMode = 'harvest';
-    this.freezeFarmForQuiz();
+    this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
     void this.emitScienceQuizFromEngine('harvest', 'harvest', () => ({
       cropType: this.farmLevel.cropId,
@@ -4965,7 +5048,7 @@ export default class GameScene extends Phaser.Scene {
 
   tickPhysicalFarmShop() {
     if (!this.worldShop || this.worldShop.closed) return;
-    if (this.farmShopUnloadOpen || this.farmInputLocked) return;
+    if (this.farmShopUnloadOpen || this.isFarmCombatFrozen()) return;
     const { left, events } = tickWorldShopPatience(this.worldShop, Date.now());
     if (left?.length) {
       this._farmShopLeftSession =
@@ -4979,6 +5062,7 @@ export default class GameScene extends Phaser.Scene {
     }
     if (events?.length) this.emitFarmShopTelemetry(events);
     this.farmShopLayer?.sync?.(this.worldShop);
+    if (events?.length || left?.length) this.emitFarmShopState();
   }
 
   completeSellInventory() {
@@ -5073,6 +5157,14 @@ export default class GameScene extends Phaser.Scene {
     this.emitPlayerMapPos();
     if (this.isFarmCombatFrozen() || this.farmShopUnloadOpen) {
       this.freezeFarmForQuiz();
+      return;
+    }
+    if (this.isAnswerLockActive()) {
+      this.lockPlayerForAnswer();
+      this.tickPhysicalFarmShop?.(time);
+      this.animateEnemies();
+      this.handleCollisions();
+      this.cullOffscreenArrows();
       return;
     }
     this.worldLayer?.update(
@@ -5572,9 +5664,6 @@ export default class GameScene extends Phaser.Scene {
 
   hurtPlayer(player) {
     if (
-      this.farmInputLocked ||
-      this.pendingQuizMode ||
-      this.isScienceQuizOpen() ||
       this.isQuestScrollOpen() ||
       this.isUnlockShopOpen() ||
       this.isMotivationOpen() ||

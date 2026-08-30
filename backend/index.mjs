@@ -81,7 +81,39 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/health') {
     const { dbPath } = await import('./lib/db.mjs');
-    const { getPgStatus, isPostgresEnabled } = await import('./lib/pg.mjs');
+    const { getPgStatus, isPostgresEnabled, query } = await import('./lib/pg.mjs');
+    let engagement = { schema: null };
+    let privileges = null;
+    try {
+      if (isPostgresEnabled()) {
+        const priv = await query(`
+          SELECT
+            current_user AS db_user,
+            current_database() AS db_name,
+            has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_db,
+            has_schema_privilege('public', 'USAGE') AS public_usage,
+            has_schema_privilege('public', 'CREATE') AS public_create,
+            has_schema_privilege('engagement_gaming', 'USAGE') AS engagement_usage
+        `);
+        privileges = priv.rows?.[0] || null;
+      }
+    } catch (err) {
+      privileges = {
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    try {
+      const schema = await import('./lib/engagementSchema.mjs');
+      if (isPostgresEnabled()) {
+        await schema.ensureEngagementSchema();
+      }
+      engagement = schema.getEngagementSchemaStatus();
+    } catch (err) {
+      engagement = {
+        schema: null,
+        lastError: err instanceof Error ? err.message : String(err),
+      };
+    }
     sendJson(res, 200, {
       ok: true,
       service: 'gaming-service-backend',
@@ -89,6 +121,8 @@ const server = http.createServer(async (req, res) => {
       postgres: {
         ...getPgStatus(),
         enabled: isPostgresEnabled(),
+        privileges,
+        engagement,
       },
     });
     return;
@@ -184,8 +218,12 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, ...result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      sendJson(res, 400, {
+      const skipped = /permission denied|DATABASE_URL|Could not open schema/i.test(
+        message,
+      );
+      sendJson(res, skipped ? 200 : 400, {
         ok: false,
+        skipped,
         error: message,
         frustrationScore: null,
         frustrationLevel: null,
@@ -347,6 +385,19 @@ server.listen(PORT, HOST, () => {
       console.log(`[backend] database ${dbPath()}`);
     })
     .catch(() => {});
+  import('./lib/engagementSchema.mjs')
+    .then((schema) =>
+      schema.ensureEngagementSchema().then((name) => {
+        // eslint-disable-next-line no-console
+        console.log(`[backend] engagement schema ${name}`);
+      }),
+    )
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[backend] engagement schema: ${err instanceof Error ? err.message : err}`,
+      );
+    });
   // eslint-disable-next-line no-console
   console.log(
     `[backend] LLAMA_PROVIDER=${process.env.LLAMA_PROVIDER || 'offline'} MODEL=${process.env.LLAMA_MODEL || 'openai/gpt-oss-120b'} groqKey=${process.env.GROQ_API_KEY ? 'set' : 'missing'} openrouterKey=${process.env.OPENROUTER_API_KEY ? 'set' : 'missing'}`,
