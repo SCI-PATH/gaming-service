@@ -263,7 +263,10 @@ function collectAttempts({
 
   const seen = new Set();
   return out.filter((a) => {
-    const key = `${a.questionId || ''}|${String(a.prompt || '').slice(0, 80)}|${a.studentAnswer}|${a.correctAnswer}`;
+    const key = String(a.questionId || a.prompt || a.question || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return Boolean(a.prompt || a.correctAnswer || a.topic);
@@ -598,6 +601,7 @@ export function buildPersonalizedMindMap({
       colorIndex: i,
       questionType: miss.questionType || a.questionType || '',
       blankIndex: miss.blankIndex || null,
+      blankIndexes: miss.blankIndexes || (miss.missedBlanks || []).map((b) => b.blankIndex),
       prompt: a.prompt || miss.question,
       question: a.prompt || miss.question,
       studentAnswer: cleanWrong,

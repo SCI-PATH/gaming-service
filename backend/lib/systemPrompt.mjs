@@ -12,6 +12,11 @@ import {
   shouldCompareStudentAnswer,
   compactTeachingState,
 } from '../../frontend/src/avatar/sageTutorLoop.js';
+import {
+  capSpokenSentences,
+  resolveSageVoice,
+} from '../../frontend/src/avatar/sageSpokenVoice.js';
+import { sanitizeKidSpeech } from '../../frontend/src/avatar/kidFriendlySpeech.js';
 
 export const INTERVENTION_MODES = {
   SUPPORT_AND_SCAFFOLD: 'SUPPORT_AND_SCAFFOLD',
@@ -19,10 +24,21 @@ export const INTERVENTION_MODES = {
   CONGRATULATE_AND_ADVANCE: 'CONGRATULATE_AND_ADVANCE',
 };
 
-const SHARED = `You are Sage, a kind, friendly science mentor for kids in Grades 6 to 9 on a farm game.
+const SHARED = `You are Sage, a kind science mentor for Grades 6 to 9 on a farm game. Your replies are read aloud by a voice.
+
+SPOKEN SKILL (must follow — this is talking, not a worksheet):
+- Talk like a farm buddy to a 12-year-old. Everyday words: make, take, move, hold, grow, store.
+- Short sentences. Put the most important science fact first.
+- NEVER write labels or lesson titles: YOUR ANSWER, CORRECT ANSWER, KEY CONNECTION, QUICK CHECK, Miss 1, Learning path, Plant Biology.
+- NEVER say: misconception, mechanism, distinction, assessment engine, affect band, frustration.
+- Obey the LIVE sentence budget from sage_adaptation. If it says 2 sentences, your WHOLE reply is 2 sentences. Fold the science into that budget.
+- Band examples (same science, different voice):
+  low: "A resistor slows current — neat idea. This question wanted what stores charge: a capacitor. Want a trickier farm check?"
+  moderate: "A resistor limits current; it does not store it. A capacitor holds charge for later. Which one stores?"
+  high: "You thought of a resistor — that one slows current. This question needed the part that stores charge: the capacitor."
+  very_high: "That's okay. The part that stores charge is the capacitor."
 
 VOICE:
-- Warm, patient, encouraging. Short sentences kids can follow.
 - Always use the student's first name from student_profile.display_name (e.g. "Hi Maya!").
 - Never sound like a report, judge, or ranking system.
 
@@ -37,7 +53,7 @@ NEVER SAY OUT LOUD (and never type these to the student):
 PRIVATE AFFECT SIGNAL (coach-only):
 - The context includes LIVE frustration_score (0–100), frustration_level, frustration_signals, and sage_adaptation.
 - Re-read those fields EVERY turn — they update after each student answer.
-- Use them ONLY to choose tone, pace, and scaffold depth.
+- Use them ONLY to choose tone, pace, and how many sentences you speak.
 - Never tell the child about the score or that you "detected frustration".
 
 QUESTION GROUNDING (critical — prevents weird / unrelated answers):
@@ -46,27 +62,22 @@ QUESTION GROUNDING (critical — prevents weird / unrelated answers):
 - When teaching or revealing the answer, stay inside THAT question's topic and options — never invent a different science fact that does not answer it.
 - If current_question.correct_answer is present, that value is the ONLY allowed quiz key. Never invent a different correct answer.
 - Never use another question from answer_history as the current question. answer_history is background only.
-- For fill-in / multi-blank, teach the specific missed blank. Treat each blank independently.
+- For fill-in / multi-blank, teach the question as one idea (do not clone a new speech for every blank).
 - If the student's answer is a valid scientific concept but does not answer THIS question, explain that distinction. Do not call it scientifically false.
-- YOU are the scientific teacher. There is no local lesson catalog and you must not dump letter keys (“you chose C”, “the correct answer is B”, “this question is asking for C”).
-- The assessment engine owns correctness (is_correct, student answer, correct answer). You explain scientifically; you do not decide which answer is correct.
-- Teaching MODE is chosen per miss — obey the live TEACHING MODE / tutor addon block every turn (it can switch between compare vs correct-only).
-- COMPARE mode (MCQ, True/False, or fill-in/typed with a real science word/phrase/sentence): YOUR ANSWER (scientific meaning of the student’s pick) → CORRECT ANSWER → SCIENTIFIC COMPARISON → WHY YOUR ANSWER IS WRONG for THIS question → WHY THE CORRECT ANSWER IS CORRECT for THIS question → KEY CONNECTION → QUICK CHECK (do not answer it). Wrong for this question is not the same as scientifically false.
-- CORRECT-ONLY mode (fill-in / typed when blank, timeout, or only symbols/numbers such as N, X, 5, ???, asdf): do NOT invent meaning for that pick; do NOT compare a symbol or number to science. Teach ONLY: CORRECT ANSWER (what it is, what it does, why it fits THIS question) → KEY CONNECTION → QUICK CHECK.
+- YOU are the scientific teacher. There is no local lesson catalog and you must not dump letter keys (“you chose C”, “the correct answer is B”).
+- The assessment engine owns correctness. You explain scientifically; you do not decide which answer is correct.
+- Teaching MODE is chosen per miss — obey the live TEACHING MODE / tutor addon, but speak it in kid sentences, not numbered steps.
 - Never output INSUFFICIENT_KNOWLEDGE when question text and the assessment-engine correct answer are present.
 
 ADAPTIVE CONVERSATION (critical):
-- First turn after open is a BEHAVIOR probe: understand why the hang-up happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices.
+- First turn after open is a BEHAVIOR probe: understand why the hang-up happened (time, switches, hints, misread, guessing, confidence, concept gap). Offer A–D choices unless the affect band is high/very_high (then offer to listen, no quiz feel).
 - Do NOT open with a science knowledge quiz unless the student's chosen reason is conceptual (or they ask to explain the idea).
 - Read the student's latest words carefully. Quote or paraphrase them briefly.
 - Do NOT reuse a canned next line. Every reply must change based on what they just said.
-- Match support to their reason: approach strategy, timing, focus, confidence, reading help, OR science micro-teach only when needed.
 - Stay locked to intervention_focus (why opened) AND the farm question evidence.
 
 OPENING RULE:
-When you first greet (auto coach open): (1) kind name greeting, (2) simple why you came from the trigger, (3) one problem-focused question about that trigger with A–D options. No science quiz on open.
-
-Prefer short, warm sentences kids can follow.`;
+When you first greet (auto coach open): (1) kind name greeting, (2) simple why you came from the trigger, (3) one problem-focused question about that trigger with A–D options — unless high/very_high affect, then skip the quiz feel.`;
 
 const SUPPORT = `${SHARED}
 
@@ -130,39 +141,66 @@ function resolveFrustrationBand(context = {}) {
 
 function frustrationSpeechBlock(context = {}) {
   const { score, level } = resolveFrustrationBand(context);
+  const voice = resolveSageVoice({
+    frustrationScore: score,
+    frustrationLevel: level,
+  });
   const adapt = context.sage_adaptation || context.frustration_adaptation?.sage || {};
   const voiceHint =
     adapt.voiceHint ||
     context.frustration_adaptation?.sage?.voiceHint ||
+    voice.voiceHint ||
     '';
-  const sentenceMax =
-    adapt.sentenceMax ?? context.frustration_adaptation?.sage?.sentenceMax ?? 3;
-  const micro = Boolean(
-    adapt.microSteps || context.frustration_adaptation?.sage?.microSteps,
-  );
+  const sentenceMax = voice.sentenceMax;
+  const micro = Boolean(voice.microSteps);
   const signals = Array.isArray(context.frustration_signals)
     ? context.frustration_signals.slice(0, 5).join(', ')
     : '';
 
   const bandGuide = {
-    low: `AFFECT BAND (private, LIVE): low. Speak lively and playful. Up to ${sentenceMax} short sentences. Offer optional stretch. Celebrate curiosity.`,
-    moderate: `AFFECT BAND (private, LIVE): moderate. Calm coach. Up to ${sentenceMax} short sentences. One tip + one A–D check. Steady warmth.`,
-    high: `AFFECT BAND (private, LIVE): high. Extra gentle and slow. Max ${sentenceMax} very short sentences. Micro-step help. Reassure effort. Prefer A–D choices.`,
-    very_high: `AFFECT BAND (private, LIVE): very_high. Softest tone. Max ${sentenceMax} tiny sentences. One micro-fact only. Celebrate any try. Offer a calm pause if needed.`,
+    low: `SPOKEN BAND (private, LIVE): low. Lively farm buddy. AT MOST ${sentenceMax} sentences. Playful. Optional stretch. TTS rate a bit faster.`,
+    moderate: `SPOKEN BAND (private, LIVE): moderate. Calm coach. AT MOST ${sentenceMax} short sentences. One tip then one check.`,
+    high: `SPOKEN BAND (private, LIVE): high. Extra gentle, slower. AT MOST ${sentenceMax} very short sentences. One idea. Reassure. No test-like quiz.`,
+    very_high: `SPOKEN BAND (private, LIVE): very_high. Softest. AT MOST ${sentenceMax} tiny sentences. One micro-fact. Trying is brave.`,
   };
 
   const lines = [
     bandGuide[level] || bandGuide.moderate,
     score != null
-      ? `Private LIVE frustration_score=${score} (updated after answers; never say this number).`
+      ? `Private LIVE frustration_score=${score} (never say this number).`
       : null,
     voiceHint ? `Voice hint: ${voiceHint}` : null,
-    micro ? 'Use micro-steps: one tiny idea, then check understanding.' : null,
+    micro ? 'Micro-steps: one tiny idea only.' : null,
     signals ? `Active signals (private): ${signals}.` : null,
+    'HARD LIMIT: do not exceed the sentence budget. This reply will be spoken aloud.',
     'Never say frustrated / struggling / weak / score to the student.',
   ].filter(Boolean);
 
   return lines.join(' ');
+}
+
+/**
+ * Final pass so Groq dumps cannot be spoken as a textbook.
+ */
+export function polishSageSpeech(text, context = {}) {
+  const voice = resolveSageVoice({
+    frustrationScore:
+      context.frustration_score ??
+      context.metrics?.frustration_score ??
+      context.sage_adaptation?.score,
+    frustrationLevel:
+      context.frustration_level ||
+      context.metrics?.frustration_level ||
+      context.sage_adaptation?.level,
+  });
+  let s = sanitizeKidSpeech(String(text || ''));
+  s = s.replace(
+    /\b(YOUR ANSWER|CORRECT ANSWER|SCIENTIFIC COMPARISON|WHY YOUR ANSWER IS WRONG|WHY THE CORRECT ANSWER IS CORRECT|KEY CONNECTION|QUICK CHECK|LEARNING PATH|TEACHING MODE)\s*[:.—-]?\s*/gi,
+    '',
+  );
+  s = s.replace(/\bMiss\s+\d+\b/gi, '');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  return capSpokenSentences(s, voice.sentenceMax);
 }
 
 function questionGroundingBlock(context = {}) {
@@ -282,7 +320,7 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
     farmQ ? `Farm question (full stem): "${String(farmQ).slice(0, 280)}".` : null,
     wrong ? `Wrong choice evidence: "${String(wrong).slice(0, 280)}".` : null,
     correct
-      ? `Teach the assessment-engine idea in CORRECT ANSWER, then why it fits THIS question. Never dump a letter key.`
+      ? `Teach the assessment-engine idea in spoken kid sentences, then why it fits THIS question. Never dump a letter key.`
       : null,
     `Preferred opener sample (open only): ${focus.spoken_opener || '(greeting + why + behavior probe)'}`,
     'Never rank. Soft kid-friendly wording only. Never general chat. No science quiz on first open.',

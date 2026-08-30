@@ -64,10 +64,25 @@ function localMapFromAttempts(attempts, misconceptions, frustration = {}) {
   return null;
 }
 
+function uniqueQuestionBranches(branches) {
+  const seen = new Set();
+  const out = [];
+  for (const b of branches) {
+    const key = String(b.question || b.prompt || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push({ ...b, index: out.length + 1, id: b.id || `miss-${out.length}` });
+  }
+  return out;
+}
+
 function toDisplayBranches(map) {
   if (!map) return [];
   if (Array.isArray(map.branches) && map.branches.length) {
-    return map.branches.map((b, i) => ({
+    const mapped = map.branches.map((b, i) => ({
       id: b.id || `miss-${i}`,
       index: b.index || i + 1,
       topic: b.topic || b.label || 'Science',
@@ -105,8 +120,14 @@ function toDisplayBranches(map) {
       prompt: b.prompt || b.question || '',
       questionType: b.questionType || b.question_type || '',
       blankIndex: b.blankIndex || b.blank_index || null,
+      blankIndexes: Array.isArray(b.blankIndexes)
+        ? b.blankIndexes
+        : Array.isArray(b.blank_indexes)
+          ? b.blank_indexes
+          : [],
       conceptGraph: b.conceptGraph || b.concept_graph || null,
     }));
+    return uniqueQuestionBranches(mapped);
   }
   return [];
 }
@@ -565,7 +586,11 @@ export default function ConceptMindMap({
               <header>
                 <span className="mm-card-num">
                   {b.icon} Miss {b.index}
-                  {b.blankIndex ? (
+                  {Array.isArray(b.blankIndexes) && b.blankIndexes.length > 1 ? (
+                    <span className="mm-card-type">
+                      Blanks {b.blankIndexes.join(', ')}
+                    </span>
+                  ) : b.blankIndex ? (
                     <span className="mm-card-type">Blank {b.blankIndex}</span>
                   ) : b.questionType ? (
                     <span className="mm-card-type">{String(b.questionType).replace(/_/g, ' ')}</span>
@@ -624,7 +649,11 @@ export default function ConceptMindMap({
         >
           <p className="mm-focus-kicker">
             Focus · Miss {active.index} of {n}
-            {active.blankIndex ? ` · Blank ${active.blankIndex}` : ''} · {active.topic}
+            {active.blankIndexes?.length > 1
+              ? ` · Blanks ${active.blankIndexes.join(', ')}`
+              : active.blankIndex
+                ? ` · Blank ${active.blankIndex}`
+                : ''} · {active.topic}
           </p>
           <h4>
             {active.icon} {active.conceptGraph?.concept || active.topic}

@@ -134,7 +134,7 @@ describe('Fill-in blanks', () => {
     assert.equal(rows[0].studentAnswer, 'flowers');
   });
 
-  it('treats multiple missed blanks independently', () => {
+  it('keeps multiple missed blanks on one question card', () => {
     const miss = normalizeAssessmentMiss({
       questionType: 'MultiBlank',
       question: 'Plants have ______, ______ and ______.',
@@ -143,13 +143,36 @@ describe('Fill-in blanks', () => {
       missed_blanks: { 0: 'roots', 2: 'leaves' },
     });
     const expanded = expandAssessmentMisses(miss);
-    assert.equal(expanded.length, 2);
-    assert.equal(expanded[0].correctAnswer, 'roots');
-    assert.equal(expanded[0].studentAnswer, 'flowers');
-    assert.equal(expanded[1].correctAnswer, 'leaves');
-    assert.equal(expanded[1].studentAnswer, 'seeds');
-    assert.equal(expanded[0].blankIndex, 1);
-    assert.equal(expanded[1].blankIndex, 3);
+    assert.equal(expanded.length, 1);
+    assert.equal(expanded[0].correctAnswer, 'roots · leaves');
+    assert.equal(expanded[0].studentAnswer, 'flowers · seeds');
+    assert.deepEqual(expanded[0].blankIndexes, [1, 3]);
+    assert.equal(expanded[0].blankIndex, null);
+  });
+
+  it('does not clone the same fill-in into several mind maps', () => {
+    const prompt =
+      'Plant stems can be classified based on their ability to [____] or not.';
+    const misses = collectAssessmentMisses({
+      attempts: [
+        {
+          questionType: 'FillInTheBlank',
+          question: prompt,
+          studentAnswer: 'a | b | c',
+          correctAnswer: 'lignify | woody | herbaceous',
+          missed_blanks: { 0: 'lignify', 1: 'woody', 2: 'herbaceous' },
+        },
+        {
+          questionType: 'FillInTheBlank',
+          question: prompt,
+          studentAnswer: 'a',
+          correctAnswer: 'lignify',
+          blankIndex: 4,
+        },
+      ],
+    });
+    assert.equal(misses.length, 1);
+    assert.equal(misses[0].question, prompt);
   });
 
   it('ignores capitalization and extra whitespace', () => {

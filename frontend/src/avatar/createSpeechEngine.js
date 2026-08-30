@@ -1,6 +1,13 @@
 /**
  * Browser text-to-speech with per-word callbacks (Chrome/Edge friendly).
  */
+import {
+  sageGreeting,
+  sageMapOutro,
+  buildSageMissScript,
+  resolveSageVoice,
+} from './sageSpokenVoice.js';
+
 function pickVoice() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices() || [];
@@ -351,60 +358,18 @@ export function splitForTts(text, maxLen = 180) {
   return chunks.length ? chunks : [clean];
 }
 
-const WEAK_MAP_LINE =
-  /^(see the lesson key idea|the idea in this farm question|your pick|that choice|the correct idea|the better idea|science)$/i;
-
-function speakableMapLine(value, max = 420) {
-  const t = clip(value, max);
-  if (!t || WEAK_MAP_LINE.test(t)) return '';
-  return t.replace(/[.…]+$/u, '').trim();
-}
-
-function buildMissCardScript(branch, index = 0) {
-  if (!branch) return '';
-  const miss = branch.index || index + 1;
-  const topic = speakableMapLine(branch.topic || branch.label, 80);
-  const question = speakableMapLine(branch.prompt || branch.question, 420);
-  const wrong = speakableMapLine(branch.studentAnswer, 180);
-  const right = speakableMapLine(branch.correctAnswer, 180);
-  const key = speakableMapLine(
-    branch.keyConcept || branch.key_concept,
-    280,
-  );
-
-  const graph = branch.conceptGraph || branch.concept_graph;
-  const bits = [`Miss ${miss}${topic ? `, about ${topic}` : ''}.`];
-  if (graph?.misconception?.summary) {
-    bits.push(graph.misconception.summary);
-  }
-  if (Array.isArray(graph?.learningPath) && graph.learningPath.length) {
-    bits.push(`Learning path: ${graph.learningPath.join('. ')}.`);
-  } else {
-    if (question) {
-      bits.push(
-        `The question was: ${/[.!?]$/.test(question) ? question : `${question}.`}`,
-      );
-    }
-    if (wrong) bits.push(`The mix-up was ${wrong}.`);
-    if (key && key.toLowerCase() !== String(right).toLowerCase()) {
-      bits.push(`Remember this: ${key}.`);
-    }
-  }
-  if (graph?.practice?.question) {
-    bits.push(`Try this: ${graph.practice.question}`);
-  }
-  return bits.join(' ').replace(/\s+/g, ' ').trim();
-}
-
 /**
  * Turn a mind map into student-friendly narration that reads each card.
  * Returns segments with focus targets so the map can highlight while speaking.
  * @returns {{ text: string, kind: string, branchId?: string|null, highlights: string[] }[]}
  */
-export function buildMindMapNarration(map) {
+export function buildMindMapNarration(map, opts = {}) {
   if (!map) return [];
+  const voice = resolveSageVoice({
+    frustrationScore: opts.frustrationScore ?? map.frustrationScore,
+    frustrationLevel: opts.frustrationLevel || map.frustrationLevel,
+  });
   const branches = map.branches || [];
-  const n = map.missCount || branches.length || 0;
   /** @type {{ text: string, kind: string, branchId?: string|null, highlights: string[] }[]} */
   const parts = [];
 
@@ -412,7 +377,6 @@ export function buildMindMapNarration(map) {
     map.root,
     map.title,
     map.topic,
-    'incorrect',
     'mind map',
   ]);
 
@@ -420,28 +384,10 @@ export function buildMindMapNarration(map) {
     kind: 'intro',
     branchId: null,
     highlights: rootTerms,
-    text: `Hi, I'm Sage, your farm science mentor. You have ${n} incorrect answer${n === 1 ? '' : 's'} on this mind map. I'll read every card. Explore while I talk — the map still works.`,
+    text: sageGreeting(voice, opts.studentName),
   });
 
-  if (map.bigPicture || map.summary) {
-    const overviewText = speakableMapLine(map.bigPicture || map.summary, 360);
-    if (overviewText) {
-      parts.push({
-        kind: 'overview',
-        branchId: null,
-        highlights: uniqueHighlightTerms([
-          overviewText,
-          map.centralIdea,
-          map.topic,
-          map.root,
-        ]),
-        text: overviewText,
-      });
-    }
-  }
-
   branches.forEach((b, i) => {
-    const miss = b.index || i + 1;
     const topic = b.topic || b.label || 'Science';
     const q = b.prompt || b.question || '';
     const wrong = b.studentAnswer || '';
@@ -449,7 +395,7 @@ export function buildMindMapNarration(map) {
     const why = b.why || b.why_wrong || '';
     const key = b.keyExplain || b.key_concept_explain || b.keyConcept || '';
     const branchId = b.id || `miss-${i}`;
-    const line = buildMissCardScript(b, i);
+    const line = buildSageMissScript(b, voice);
     if (!line) return;
 
     parts.push({
@@ -463,7 +409,6 @@ export function buildMindMapNarration(map) {
         key,
         why,
         b.farmLink || b.farm_link,
-        `Miss ${miss}`,
         ...clip(q, 100)
           .split(/\s+/)
           .filter((w) => w.length > 4)
@@ -477,7 +422,7 @@ export function buildMindMapNarration(map) {
     kind: 'outro',
     branchId: null,
     highlights: [],
-    text: "That's the whole map. Tap a card if you want me to read that miss again.",
+    text: sageMapOutro(voice),
   });
 
   return parts;
@@ -545,15 +490,18 @@ export function isTermSpoken(term, spokenSoFar) {
   return false;
 }
 
-export function buildMissCardNarration(branch) {
+export function buildMissCardNarration(branch, opts = {}) {
   if (!branch) return null;
-  const miss = branch.index || '';
+  const voice = resolveSageVoice({
+    frustrationScore: opts.frustrationScore ?? branch.frustrationScore,
+    frustrationLevel: opts.frustrationLevel || branch.frustrationLevel,
+  });
   const topic = branch.topic || 'Science';
   const wrong = branch.studentAnswer || '';
   const right = branch.correctAnswer || '';
   const why = branch.why || '';
   const farm = branch.farmLink || branch.farm_link || '';
-  const text = buildMissCardScript(branch);
+  const text = buildSageMissScript(branch, voice);
 
   return {
     kind: 'branch',
@@ -566,7 +514,6 @@ export function buildMissCardNarration(branch) {
       why,
       branch.keyExplain || branch.key_concept_explain,
       farm,
-      `Miss ${miss}`,
     ]),
     text,
   };

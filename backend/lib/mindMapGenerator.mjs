@@ -413,8 +413,7 @@ AUTHORITATIVE RULES (must follow):
 - Explain the student's answer only in relation to this specific question.
 - Do not introduce an unrelated misconception.
 - If the student's answer is a valid scientific concept but does not answer this question, explain that distinction.
-- For fill-in questions, focus on the specific missed blank (blank_index).
-- For multiple blanks, treat each miss_number as an independent blank. Do not mix blanks.
+- For fill-in questions, keep one branch per question (do not clone a branch per blank).
 - Never use another question from answer history. Only the questions in this payload exist.
 - Copy question, student_answer, and correct_answer exactly from input.
 
@@ -439,7 +438,7 @@ Return a concept_graph per branch:
 - Labeled relationships (from, to, label) such as has, do, absorb, transport
 - Mark the student mix-up node kind as "mixup" — never as if it were true
 - Include a node for the assessment correct idea (kind "correct")
-- Include learningPath (max 5 steps) and one practice question that tests the CONCEPT, not the original quiz item
+- Write learningPath as spoken kid sentences (no "Miss 1", no "Learning path")
 - Do not invent a different correct answer
 
 JSON schema:
@@ -448,7 +447,7 @@ JSON schema:
   "central_idea": "what this whole map is about",
   "summary": "1–2 sentences matching tone ${tone}",
   "big_picture": "how misses connect (2–3 sentences; shorter if high/very_high)",
-  "study_path": ["Miss 1: …", "Miss 2: …"],
+  "study_path": ["Flowering plants make flowers", "Non-flowering plants make spores"],
   "branches": [
     {
       "miss_index": 1,

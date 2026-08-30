@@ -123,8 +123,8 @@ describe('MCQ letter labels for Grok', () => {
     });
     assert.match(addon, /C — Resistor/);
     assert.match(addon, /B — Capacitor/);
-    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
-    assert.match(addon, /WHY THE CORRECT ANSWER IS CORRECT/);
+    assert.match(addon, /TEACHING MODE = COMPARE/);
+    assert.match(addon, /spoken sentences/);
     assert.match(addon, /YOU are the scientific teacher/);
     assert.match(addon, /Tiny sentences/);
     assert.equal(/INSUFFICIENT_KNOWLEDGE when the ground truth above is present/i.test(addon), true);
@@ -773,8 +773,7 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     assert.match(addon, /respiration/);
     assert.match(addon, /photosynthesis/);
     assert.match(addon, /YOU are the scientific teacher/);
-    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
-    assert.match(addon, /YOUR ANSWER/);
+    assert.match(addon, /TEACHING MODE = COMPARE/);
   });
 
   it('keeps the full typed sentence for Grok', () => {
@@ -803,7 +802,7 @@ describe('shared SAGE assessment survives after the quiz closes', () => {
     });
     assert.match(addon, /A resistor stores electrical energy/);
     assert.match(addon, /A capacitor stores electrical energy/);
-    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
+    assert.match(addon, /TEACHING MODE = COMPARE/);
     assert.equal(/studentAnswer="incorrect"/.test(addon), false);
   });
 });
@@ -839,7 +838,7 @@ describe('fill-in / typed: blank or symbols describe the correct answer only', (
     assert.equal(shouldCompareStudentAnswer(state), false);
     const addon = tutorLoopSystemAddon(context);
     assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
-    assert.match(addon, /CORRECT ANSWER/);
+    assert.match(addon, /assessment-engine idea/);
     assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
     assert.equal(/1\) YOUR ANSWER/.test(addon), false);
   });
@@ -858,7 +857,7 @@ describe('fill-in / typed: blank or symbols describe the correct answer only', (
     const state = compactTeachingState(context);
     assert.equal(shouldCompareStudentAnswer(state), false);
     const addon = tutorLoopSystemAddon(context);
-    assert.match(addon, /CORRECT ANSWER/);
+    assert.match(addon, /assessment-engine idea/);
     assert.match(addon, /TEACHING MODE = CORRECT-ONLY/);
     assert.match(addon, /placeholder symbols/);
     assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
@@ -888,7 +887,7 @@ describe('fill-in / typed: blank or symbols describe the correct answer only', (
     };
     const addon = tutorLoopSystemAddon(context);
     assert.equal(shouldCompareStudentAnswer(compactTeachingState(context)), false);
-    assert.match(addon, /CORRECT ANSWER/);
+    assert.match(addon, /assessment-engine idea/);
     assert.equal(/WHY YOUR ANSWER IS WRONG/.test(addon), false);
     assert.equal(/SCIENTIFIC COMPARISON/.test(addon), false);
   });
@@ -904,8 +903,7 @@ describe('fill-in / typed: blank or symbols describe the correct answer only', (
         is_correct: false,
       },
     });
-    assert.match(addon, /WHY YOUR ANSWER IS WRONG/);
-    assert.match(addon, /YOUR ANSWER/);
+    assert.match(addon, /TEACHING MODE = COMPARE/);
   });
 });
 

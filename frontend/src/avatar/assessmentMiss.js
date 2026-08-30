@@ -241,7 +241,7 @@ export function normalizeAssessmentMiss(source = {}) {
 }
 
 /**
- * One mind-map miss per question, except fill-in: one miss per missed blank.
+ * One mind-map miss per question. Fill-in blanks stay on that one record.
  */
 export function expandAssessmentMisses(miss) {
   if (!miss || miss.isCorrect) return [];
@@ -249,32 +249,31 @@ export function expandAssessmentMisses(miss) {
     return [];
   }
   const fillIn = isFillInQuestionType(miss.questionType);
-  if (fillIn && miss.missedBlanks.length > 1) {
-    return miss.missedBlanks.map((blank) => ({
-      ...miss,
-      questionId: miss.questionId
-        ? `${miss.questionId}:blank-${blank.blankIndex}`
-        : `${miss.question}:blank-${blank.blankIndex}`,
-      studentAnswer: blank.studentAnswer,
-      correctAnswer: blank.correctAnswer,
-      canonicalCorrectAnswer: blank.correctAnswer,
-      blankIndex: blank.blankIndex,
-      missedBlanks: [blank],
-    }));
-  }
-  if (fillIn && miss.missedBlanks.length === 1) {
-    const blank = miss.missedBlanks[0];
+  if (fillIn && miss.missedBlanks.length) {
+    const blanks = miss.missedBlanks;
+    const studentJoined =
+      blanks.map((b) => compactText(b.studentAnswer)).filter(Boolean).join(' · ') ||
+      miss.studentAnswer;
+    const correctJoined =
+      blanks.map((b) => compactText(b.correctAnswer)).filter(Boolean).join(' · ') ||
+      miss.correctAnswer;
     return [
       {
         ...miss,
-        studentAnswer: blank.studentAnswer || miss.studentAnswer,
-        correctAnswer: blank.correctAnswer || miss.correctAnswer,
-        canonicalCorrectAnswer: blank.correctAnswer || miss.canonicalCorrectAnswer,
-        blankIndex: blank.blankIndex || 1,
+        studentAnswer: studentJoined,
+        correctAnswer: correctJoined,
+        canonicalCorrectAnswer: correctJoined,
+        blankIndex: blanks.length === 1 ? blanks[0].blankIndex : null,
+        blankIndexes: blanks.map((b) => b.blankIndex),
+        missedBlanks: blanks,
       },
     ];
   }
   return [miss];
+}
+
+function questionIdentity(row = {}) {
+  return compactText(row.questionId || row.question || row.prompt).toLowerCase();
 }
 
 export function collectAssessmentMisses(body = {}) {
@@ -302,8 +301,8 @@ export function collectAssessmentMisses(body = {}) {
     const miss = normalizeAssessmentMiss(item);
     if (!miss.question && !miss.correctAnswer) continue;
     for (const row of expandAssessmentMisses(miss)) {
-      const key = `${row.question}|${row.studentAnswer}|${row.correctAnswer}|${row.blankIndex || ''}`;
-      if (seen.has(key)) continue;
+      const key = questionIdentity(row);
+      if (!key || seen.has(key)) continue;
       seen.add(key);
       expanded.push(row);
     }
@@ -345,9 +344,12 @@ function remapLessonForType(lesson, miss, voice = {}) {
     if (correct) correct.title = 'CORRECT ANSWER';
     if (diff) diff.title = 'WHY';
   }
-  if (layout === 'fill_in' && miss.blankIndex) {
-    if (your) your.title = `BLANK ${miss.blankIndex} — YOUR ANSWER`;
-    if (correct) correct.title = `BLANK ${miss.blankIndex} — CORRECT`;
+  if (layout === 'fill_in' && (miss.blankIndexes?.length || miss.blankIndex)) {
+    const labels = miss.blankIndexes?.length
+      ? miss.blankIndexes.join(', ')
+      : miss.blankIndex;
+    if (your) your.title = `BLANK ${labels} — YOUR ANSWER`;
+    if (correct) correct.title = `BLANK ${labels} — CORRECT`;
   }
   if (layout === 'short_answer') {
     const partial =
