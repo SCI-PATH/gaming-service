@@ -386,14 +386,17 @@ export function useBehavioralTelemetry({
     next.frustration_score = next.frustration.score;
     next.frustration_level = next.frustration.level;
     next.frustration_signals = next.frustration.signals;
-    next.answer_history = behaviorEventsRef.current
+        next.answer_history = behaviorEventsRef.current
       .filter((e) => e && e.type === 'answer')
       .slice(-80)
       .map((e) => ({
         question: e.prompt || null,
-        student_answer: e.selectedText || null,
+        student_answer: e.studentAnswer || e.selectedText || null,
+        studentAnswer: e.studentAnswer || e.selectedText || null,
         is_correct: Boolean(e.isCorrect),
+        isCorrect: Boolean(e.isCorrect),
         correct_answer: e.correctAnswer || null,
+        correctAnswer: e.correctAnswer || null,
         topic: e.topic || null,
         time_sec: e.timeSec ?? null,
         at: e.at || null,
@@ -947,6 +950,17 @@ export function useBehavioralTelemetry({
         null;
       if (questionData) lastQuizDataRef.current = questionData;
 
+      const spokenPick =
+        studentAnswer ||
+        selectedText ||
+        questionData?.studentAnswer ||
+        null;
+      const spokenKey =
+        correctAnswer ||
+        questionData?.correctAnswer ||
+        questionData?.sageAssessment?.correctAnswer ||
+        null;
+
       pushBehaviorEvent({
         type: 'answer',
         isCorrect: Boolean(isCorrect),
@@ -957,11 +971,9 @@ export function useBehavioralTelemetry({
         longPause,
         topic,
         prompt: questionData?.prompt || questionData?.question || null,
-        selectedText: selectedText || null,
-        correctAnswer:
-          correctAnswer ||
-          questionData?.correctAnswer ||
-          null,
+        selectedText: spokenPick,
+        studentAnswer: spokenPick,
+        correctAnswer: spokenKey,
       });
 
       // Post-help: allow hard wrong clusters even during soft grace
@@ -1035,6 +1047,8 @@ export function useBehavioralTelemetry({
           question: questionData?.prompt || questionData?.question || null,
           questionType: farmQuestionType(questionData) || questionData?.questionType || null,
           options: Array.isArray(questionData?.options) ? questionData.options : undefined,
+          studentAnswer: spokenPick,
+          correctAnswer: spokenKey,
           isCorrect: true,
           timeSec: elapsedSec,
           hints: usedHint ? 1 : 0,
@@ -1178,6 +1192,8 @@ export function useBehavioralTelemetry({
         question: questionData?.prompt || questionData?.question || null,
         questionType: farmQuestionType(questionData) || questionData?.questionType || null,
         options: Array.isArray(questionData?.options) ? questionData.options : undefined,
+        studentAnswer: spokenPick,
+        correctAnswer: spokenKey,
         isCorrect: false,
         timeSec: elapsedSec,
         hints: usedHint ? 1 : 0,

@@ -9127,6 +9127,37 @@ body {
   color: #3d2c10;
 }
 
+.dash-quiz-round-answer {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f7f1df;
+  border: 1px solid #ead9a8;
+}
+
+.dash-quiz-round-answer.is-key {
+  background: #eef6e4;
+  border-color: #c5dba8;
+}
+
+.dash-quiz-round-answer span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6a5420;
+}
+
+.dash-quiz-round-answer strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #3d2c10;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .dash-quiz-round-meter {
   margin-top: 6px;
   height: 10px;

@@ -507,9 +507,10 @@ export default function ResearchDashboard({
         <header className="research-panel-head">
           <h3>Recent questions</h3>
           <p>
-            Each line is one farm question you faced — nothing is hidden after
-            question 8. The badge is the type: MCQ, True / False, Fill in the
-            blanks, or Typed answer.
+            Each line is one farm question you faced. You will see the full
+            question, what you answered, and the correct answer when you missed
+            it. The badge is the type: MCQ, True / False, Fill in the blanks, or
+            Typed answer.
           </p>
         </header>
         {perfPoints.length ||

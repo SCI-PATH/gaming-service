@@ -83,13 +83,29 @@ function clampScore(n) {
   return Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 }
 
-function clipPrompt(value, max = 220) {
+function clipPrompt(value, max = 800) {
   const t = String(value || '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!t) return null;
   if (t.length <= max) return t;
   return `${t.slice(0, max - 1).trim()}…`;
+}
+
+function clipAnswer(value, max = 280) {
+  if (Array.isArray(value)) {
+    return clipPrompt(
+      value.map((part) => String(part || '').trim()).filter(Boolean).join(' · '),
+      max,
+    );
+  }
+  if (typeof value === 'object' && value) {
+    return clipAnswer(
+      value.text ?? value.answer ?? value.label ?? value.studentAnswer,
+      max,
+    );
+  }
+  return clipPrompt(String(value || '').replace(/\s*\|\s*/g, ' · '), max);
 }
 
 function isGenericTopic(value) {
@@ -179,6 +195,10 @@ export function recordFrustrationSample(sample = {}) {
     questionType: String(sample.questionType || sample.question_type || '').trim() || null,
     options: Array.isArray(sample.options) ? sample.options.slice(0, 8) : undefined,
     isCorrect: Boolean(sample.isCorrect),
+    studentAnswer: clipAnswer(
+      sample.studentAnswer || sample.student_answer || sample.selectedText,
+    ),
+    correctAnswer: clipAnswer(sample.correctAnswer || sample.correct_answer),
   });
   data.points = data.points.slice(-MAX_SAMPLES);
 

@@ -35,6 +35,7 @@ describe('recent questions list', () => {
           score: 24,
           prompt: 'Stored first question',
           isCorrect: true,
+          studentAnswer: 'Seeds',
         },
       ],
       [
@@ -43,6 +44,8 @@ describe('recent questions list', () => {
           question: 'Live second question about roots',
           is_correct: false,
           score: 30,
+          student_answer: 'leaves',
+          correct_answer: 'roots',
         },
       ],
     );
@@ -50,5 +53,34 @@ describe('recent questions list', () => {
     assert.equal(rows.length, 2);
     assert.match(rows[1].prompt, /roots/);
     assert.equal(rows[1].correct, false);
+    assert.equal(rows[0].studentAnswer, 'Seeds');
+    assert.equal(rows[1].studentAnswer, 'leaves');
+    assert.equal(rows[1].correctAnswer, 'roots');
+  });
+
+  it('attaches the student answer onto a stored question that is missing it', () => {
+    const rows = buildQuizRoundRows(
+      [
+        {
+          at: 50,
+          score: 22,
+          prompt: 'How do flowering plants primarily reproduce?',
+          questionType: 'MCQ',
+          isCorrect: false,
+        },
+      ],
+      [],
+      [
+        {
+          at: 51,
+          question: 'How do flowering plants primarily reproduce?',
+          is_correct: false,
+          student_answer: 'By spores',
+          correct_answer: 'By seeds and flowers',
+        },
+      ],
+    );
+    assert.equal(rows[0].studentAnswer, 'By spores');
+    assert.equal(rows[0].correctAnswer, 'By seeds and flowers');
   });
 });

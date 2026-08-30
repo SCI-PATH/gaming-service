@@ -244,6 +244,21 @@ export function FrustrationPerformanceChart({
                 Question text was not saved for this round.
               </p>
             )}
+            <p className="dash-quiz-round-answer">
+              <span>Your answer</span>
+              <strong>
+                {row.studentAnswer ||
+                  (row.correct === false
+                    ? 'No answer recorded'
+                    : '—')}
+              </strong>
+            </p>
+            {row.correct === false && row.correctAnswer ? (
+              <p className="dash-quiz-round-answer is-key">
+                <span>Correct answer</span>
+                <strong>{row.correctAnswer}</strong>
+              </p>
+            ) : null}
             <div
               className="dash-quiz-round-meter"
               role="img"
