@@ -1,0 +1,25 @@
+# SCI-PATH farm frontend on Render (Static Site).
+# Dashboard: New → Blueprint → this repo, or New → Static Site with the
+# build/publish values below.
+#
+# /api stays same-origin (HTTPS) and is rewritten to the gaming backend so the
+# browser is not blocked by mixed content (HTTPS page → HTTP EC2).
+services:
+  - type: web
+    name: gaming-service-frontend
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: http://3.6.20.31:8002/api/*
+      - type: rewrite
+        source: /assessment-api/*
+        destination: http://43.204.6.115:8004/*
+      - type: rewrite
+        source: /*
+        destination: /index.html

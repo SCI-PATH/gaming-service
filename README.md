@@ -255,7 +255,7 @@ Frontend is http://127.0.0.1:5173 and proxies `/api` to the backend.
 
 ## Integrating with other SCI-PATH services
 
-**→ See [README_FOR_OTHER_COMPONENTS.md](README_FOR_OTHER_COMPONENTS.md)** for a short handoff: local run until Vercel/Render, game flow, and the **GET frustration API**.
+**→ See [README_FOR_OTHER_COMPONENTS.md](README_FOR_OTHER_COMPONENTS.md)** for Render deploy of the farm UI, local run, game flow, and the **GET frustration API**.
 
 **→ See [INTEGRATION.md](INTEGRATION.md)** for the full contract:
 

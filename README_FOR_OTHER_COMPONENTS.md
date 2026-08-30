@@ -34,9 +34,45 @@ Your component GETs frustration by studentId
 
 ---
 
-## 2. Run locally (until frontend is on Vercel / Render)
+## 2. Deploy the frontend on Render
 
-Until the farm frontend is deployed (Vercel, Render, etc.), other components should treat **this repo’s local frontend + backend** as the live gaming host.
+The farm UI is a Vite static build. Sage / leaderboard / mind maps still run on the **gaming backend** (`http://3.6.20.31:8002` today). Render rewrites `/api/*` to that host so the HTTPS site can talk to it.
+
+### Blueprint (this repo)
+
+1. Push `main` to GitHub (`SCI-PATH/gaming-service`).
+2. In [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
+3. Connect the `gaming-service` repo. Render reads [`render.yaml`](render.yaml).
+4. Apply. You get a URL like `https://gaming-service-frontend.onrender.com`.
+
+### Manual Static Site (same settings)
+
+| Field | Value |
+| --- | --- |
+| **Root directory** | repo root (leave blank) |
+| **Build command** | `npm ci && npm run build` |
+| **Publish directory** | `frontend/dist` |
+| **Node** | `22` (`NODE_VERSION` env) |
+
+**Redirects / Rewrites** (order matters — catch-all last):
+
+| Source | Destination | Action |
+| --- | --- | --- |
+| `/api/*` | `http://3.6.20.31:8002/api/*` | Rewrite |
+| `/assessment-api/*` | `http://43.204.6.115:8004/*` | Rewrite |
+| `/*` | `/index.html` | Rewrite |
+
+If Sage chat streams fail through the static rewrite, create a **Web Service** instead: same build command, start command `npm run preview -- --host 0.0.0.0 --port $PORT`, and set `GAMING_API_PROXY_TARGET=http://3.6.20.31:8002`.
+
+Point your platform’s “Launch Game” URL at the Render host:
+
+```
+https://<your-service>.onrender.com/?studentId=<SAME_ID>&sessionId=<optional>&username=<optional>
+```
+
+## 3. Run locally
+
+Until you use the Render URL, other components can treat **this repo’s local frontend + backend** as the live gaming host.
 
 ### What you need running
 
@@ -77,7 +113,7 @@ Expect `ok: true`. Frustration persistence needs `postgres.enabled: true` (`DATA
 
 ---
 
-## 3. Open API — get frustration score
+## 4. Open API — get frustration score
 
 Other components (learning path, assessment, dashboards, etc.) can read the latest score here.
 
@@ -173,7 +209,7 @@ const data = await res.json();
 
 ---
 
-## 4. Checklist for your team
+## 5. Checklist for your team
 
 - [ ] Gaming backend running on `:8002` with `DATABASE_URL`
 - [ ] Farm frontend running on `:5173` (until Vercel/Render deploy)

@@ -66,12 +66,18 @@ export default defineConfig(({ mode }) => {
     envDir: repoRoot,
     publicDir: 'public',
     plugins: [react(), tailwindcss()],
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+    },
     server: {
       port: 5173,
       proxy,
     },
     preview: {
       port: 4173,
+      host: true,
+      allowedHosts: true,
       proxy,
     },
   };
