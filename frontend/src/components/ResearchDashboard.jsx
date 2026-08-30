@@ -90,9 +90,9 @@ export default function ResearchDashboard({
   useEffect(() => {
     seedHistoryFromLessons(lessonProgress, liveScore);
     setHistoryTick((n) => n + 1);
-    // lessonProgress identity changes every snapshot; fingerprint is stable
+    // Reload after every answered question, not only when the score changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lessonFingerprint, liveScore]);
+  }, [lessonFingerprint, liveScore, answered]);
 
   const launchTopicId = student?.topicId || student?.topic_id || null;
   const launchChapterId =
@@ -157,7 +157,7 @@ export default function ResearchDashboard({
   );
   const perfPoints = useMemo(() => {
     const pts = frustrationPerformancePoints(chartFilters);
-    if (pts.some((p) => p.accuracyPct != null)) return pts;
+    if (pts.length) return pts;
     if (
       accuracyPct != null &&
       !topicFilter &&
@@ -507,14 +507,21 @@ export default function ResearchDashboard({
         <header className="research-panel-head">
           <h3>Recent questions</h3>
           <p>
-            Each line is one farm question. The badge is the type: MCQ, True /
-            False, Fill in the blanks, or Typed answer.
+            Each line is one farm question you faced — nothing is hidden after
+            question 8. The badge is the type: MCQ, True / False, Fill in the
+            blanks, or Typed answer.
           </p>
         </header>
-        {perfPoints.some((p) => p.score != null) ? (
+        {perfPoints.length ||
+        (telemetrySession?.answerHistory || []).length ? (
           <FrustrationPerformanceChart
             points={perfPoints}
             misconceptions={misconceptions}
+            liveHistory={
+              telemetrySession?.answerHistory ||
+              telemetrySession?.metrics?.answer_history ||
+              []
+            }
           />
         ) : (
           <p className="research-empty">

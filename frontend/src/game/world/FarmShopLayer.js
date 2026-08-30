@@ -14,6 +14,7 @@ import {
   orderLineProgress,
   patienceMood,
 } from '../../data/farmCustomerShop.js';
+import { customerMoodState } from '../../data/customerMood.js';
 import { getBubbleItemVisual } from '../../data/farmShopCatalog.js';
 import {
   pickCustomerSprite,
@@ -219,8 +220,22 @@ export default class FarmShopLayer {
     const patienceFill = scene.add
       .rectangle(-8, 3, 16, 2, 0x6ecf6e, 1)
       .setOrigin(0, 0);
+    const moodFace = scene.add
+      .text(10, -8, '😊', { fontSize: '10px' })
+      .setOrigin(0, 1);
+    const talk = scene.add
+      .text(0, -52, '', {
+        fontFamily: 'Segoe UI, Arial, sans-serif',
+        fontSize: '8px',
+        color: '#1a1810',
+        backgroundColor: '#fffef6',
+        padding: { x: 4, y: 2 },
+        wordWrap: { width: 90 },
+      })
+      .setOrigin(0.5, 1)
+      .setAlpha(0);
 
-    body.add([shadow, avatar, patienceBg, patienceFill, bubble]);
+    body.add([shadow, avatar, patienceBg, patienceFill, moodFace, bubble, talk]);
     body.setDepth(depth);
 
     const walkTween = startCustomerQueueWalk(scene, avatar, queueIndex);
@@ -233,8 +248,11 @@ export default class FarmShopLayer {
       bubbleBg,
       orderRow,
       patienceFill,
+      moodFace,
+      talk,
       walkTween,
       orderSignature: '',
+      moodKey: '',
     };
   }
 
@@ -308,7 +326,8 @@ export default class FarmShopLayer {
 
   updateCustomerVisual(entry, customer, slot, { isFront, queueIndex }) {
     const scene = this.scene;
-    const mood = patienceMood(customer);
+    const mood = customerMoodState(customer);
+    const bar = patienceMood(customer);
     const lines = orderLineProgress(customer);
     const signature = lines
       .map((l) => `${l.itemId}:${l.delivered}/${l.qty}`)
@@ -341,9 +360,27 @@ export default class FarmShopLayer {
       entry.avatar.clearTint?.();
     }
 
-    entry.patienceFill.width = 16 * mood.ratio;
+    entry.patienceFill.width = 16 * bar.ratio;
     entry.patienceFill.fillColor =
-      mood.ratio > 0.65 ? 0x6ecf6e : mood.ratio > 0.35 ? 0xe8c040 : 0xe06050;
+      mood.rank >= 3 ? 0xe06050 : mood.rank >= 2 ? 0xe8a040 : 0x6ecf6e;
+    if (entry.moodFace) {
+      entry.moodFace.setText(mood.face);
+      entry.moodFace.setY(headY + 6);
+    }
+    if (mood.key !== entry.moodKey) {
+      entry.moodKey = mood.key;
+      const line = String(customer.speech || '').replace(/^[^\w😊😐😟😡😞🙂😠]+/, '') || mood.reason;
+      if (entry.talk && line && (mood.rank >= 2 || mood.key === 'happy' || mood.key === 'left')) {
+        entry.talk.setText(line.slice(0, 42));
+        entry.talk.setAlpha(1);
+        scene.tweens.add({
+          targets: entry.talk,
+          alpha: 0,
+          delay: 2200,
+          duration: 400,
+        });
+      }
+    }
 
     entry.body.setDepth(CUSTOMER_DEPTH + queueIndex * 0.01);
 

@@ -10,6 +10,7 @@ import {
   PLACEHOLDER_NODE,
   PLANT_PARTS,
   chargeLesson,
+  floweringContrastLesson,
   diversityLesson,
   focusPlantPart,
   isPlantQuestion,
@@ -504,9 +505,19 @@ function genericGraph(miss, diagnosis) {
   const process =
     (has(q, /why|because|cause/) && 'Cause') ||
     (has(q, /how|process|happen/) && 'Process') ||
-    (has(q, /function|job|role/) && (focusPlantPart(miss)?.process || 'Job')) ||
-    'Idea';
-  const rootLabel = focusPlantPart(miss)?.label || phraseLabel(q.replace(/^(what|which|why|how)\s+/i, ''), 24) || 'Science';
+    (has(q, /function|job|role/) && (focusPlantPart(miss)?.process || 'Role')) ||
+    focusPlantPart(miss)?.process ||
+    keywordFromCorrect(miss) ||
+    'Link';
+  const strippedQ = q.replace(
+    /^(what|which|why|how|is|are)\s+(is|are|the)?\s*(difference between|meaning of)?\s*/i,
+    '',
+  );
+  const rootLabel =
+    focusPlantPart(miss)?.label ||
+    keywordFromCorrect(miss) ||
+    phraseLabel(strippedQ, 24) ||
+    'Science';
   const nodes = [
     node('root', PLACEHOLDER_NODE.test(rootLabel) ? correct : rootLabel, {
       kind: 'root',
@@ -573,6 +584,81 @@ function genericGraph(miss, diagnosis) {
   });
 }
 
+function floweringContrastGraph(miss, diagnosis) {
+  const student = usableStudent(miss) ? compactText(miss.studentAnswer) : '';
+  const mixSize = has(student, /size|taller|bigger|smaller|look/);
+  const mixHabitat = has(student, /water|habitat|where they live|soil/);
+  const mix = mixSize || mixHabitat || Boolean(student);
+  const mixLabel = mixHabitat
+    ? 'Habitat'
+    : mixSize
+      ? 'Size'
+      : student
+        ? shortLabel(student, 22)
+        : '';
+  return graph({
+    concept: 'Flowering vs non-flowering',
+    misconception: diagnosis,
+    nodes: [
+      node('plants', 'Plants', {
+        kind: 'root',
+        importance: 'key',
+        explanation: 'Plants can be grouped by how they reproduce.',
+      }),
+      node('flowering', 'Flowering', {
+        kind: 'correct',
+        importance: 'key',
+        explanation: 'Flowering plants make flowers. Many then form fruits with seeds.',
+      }),
+      node('flowers', 'Flowers', {
+        kind: 'correct',
+        importance: 'key',
+        explanation: 'Flowers are the reproductive parts that define this group.',
+      }),
+      node('fruits', 'Fruits', {
+        explanation: 'Many flowering plants form fruits that hold seeds.',
+      }),
+      node('seeds', 'Seeds', {
+        explanation: 'Seeds can grow into new flowering plants.',
+      }),
+      node('nonflowering', 'Non-flowering', {
+        kind: mix ? 'related' : 'related',
+        explanation: 'These plants do not make flowers. Many use spores or cones instead.',
+      }),
+      node('spores', 'Spores', {
+        explanation: 'Mosses and ferns reproduce with spores, not flowers.',
+      }),
+      ...(mixLabel
+        ? [
+            node('mixup', mixLabel, {
+              kind: 'mixup',
+              explanation: 'Looks or habitat can differ, but that is not how this question groups plants.',
+            }),
+          ]
+        : []),
+    ],
+    relationships: [
+      { from: 'plants', to: 'flowering', label: 'include' },
+      { from: 'flowering', to: 'flowers', label: 'make' },
+      { from: 'flowers', to: 'fruits', label: 'can form' },
+      { from: 'fruits', to: 'seeds', label: 'hold' },
+      { from: 'plants', to: 'nonflowering', label: 'include' },
+      { from: 'nonflowering', to: 'spores', label: 'make' },
+      ...(mixLabel ? [{ from: 'plants', to: 'mixup', label: 'not grouped by' }] : []),
+    ],
+    learningPath: [
+      'Group plants by how they reproduce',
+      'Flowering plants make flowers, then often fruits and seeds',
+      'Non-flowering plants use spores or cones, not flowers',
+    ],
+    example: 'A rose makes flowers and fruit. A fern makes spores and never flowers.',
+    practice: {
+      question: 'If a plant never makes flowers, is it flowering or non-flowering?',
+      expectedConcept: 'Non-flowering',
+    },
+  });
+}
+
 function pickTemplate(miss, diagnosis) {
   if (
     (photosynthesisInputsLesson(miss) && has(miss.correctAnswer, /carbon dioxide|co2/)) ||
@@ -580,6 +666,7 @@ function pickTemplate(miss, diagnosis) {
   ) {
     return photosynthesisGasGraph(miss, diagnosis);
   }
+  if (floweringContrastLesson(miss)) return floweringContrastGraph(miss, diagnosis);
   if (pollinationLesson(miss)) return pollinationGraph(miss, diagnosis);
   if (waterCycleLesson(miss)) return waterCycleGraph(miss, diagnosis);
   if (diversityLesson(miss)) return diversityGraph(miss, diagnosis);
@@ -632,6 +719,8 @@ export function graphIncludesCorrectIdea(graph, missOrAnswer) {
     }
     if (/root/.test(want) && /root/.test(lab)) return true;
     if (/seed|new plant|grow into/.test(want) && /seed|new plant|dispersal/.test(lab)) return true;
+    if (/flower/.test(want) && /flower/.test(lab)) return true;
+    if (/non[- ]?flower|spore|cone/.test(want) && /non[- ]?flower|spore|cone/.test(lab)) return true;
     if (/photosynth/.test(want) && /photosynth|food|leaf/.test(lab)) return true;
     if (/carbon dioxide|co2|co₂/.test(want) && /co2|co₂|carbon/.test(lab)) return true;
     return false;

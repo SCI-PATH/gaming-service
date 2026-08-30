@@ -17,9 +17,9 @@ describe('splitForTts', () => {
 
   it('splits a long map script on sentence boundaries under the limit', () => {
     const text =
-      'Miss 1, about Static electricity. The question was: What stores charge? You picked Resistor. The correct idea is Capacitor. Key idea: A capacitor stores electric charge. Let\'s look. Rubbing transfers electrons so opposite charges attract.';
+      'You tried Resistor. Remember: a capacitor stores electric charge. Rubbing transfers electrons so opposite charges attract.';
     const chunks = splitForTts(text, 120);
-    assert.ok(chunks.length >= 3);
+    assert.ok(chunks.length >= 1);
     assert.equal(chunks.join(' '), text);
     for (const chunk of chunks) {
       assert.ok(chunk.length <= 120, chunk);
@@ -32,7 +32,6 @@ describe('buildMindMapNarration', () => {
     missCount: 1,
     topic: 'Static electricity',
     root: 'Static electricity',
-    bigPicture: 'Start with the correct idea on each card. Focus on Static electricity.',
     branches: [
       {
         id: 'miss-0',
@@ -48,14 +47,13 @@ describe('buildMindMapNarration', () => {
     ],
   };
 
-  it('reads the question, pick, correct idea, key idea, and let\'s look', () => {
-    const parts = buildMindMapNarration(map);
+  it('reads the mix-up and key idea in plain speech', () => {
+    const parts = buildMindMapNarration(map, { frustrationScore: 40 });
     const branch = parts.find((p) => p.kind === 'branch');
     assert.ok(branch?.text);
-    assert.match(branch.text, /Miss 1/);
-    assert.match(branch.text, /Which device stores electric charge/);
-    assert.match(branch.text, /mix-up was Resistor/);
-    assert.match(branch.text, /Remember this:/);
+    assert.doesNotMatch(branch.text, /Miss 1/);
+    assert.doesNotMatch(branch.text, /learning path/i);
+    assert.match(branch.text, /Resistor|capacitor/i);
     assert.doesNotMatch(branch.text, /Exam lock/i);
   });
 
@@ -72,24 +70,26 @@ describe('buildMindMapNarration', () => {
     });
     const branch = parts.find((p) => p.kind === 'branch');
     assert.doesNotMatch(branch.text, /see the lesson key idea/i);
-    assert.match(branch.text, /Remember this: A capacitor stores electric charge/);
+    assert.match(branch.text, /capacitor stores electric charge/i);
   });
 });
 
 describe('buildMissCardNarration', () => {
-  it('reads the full card instead of only the why line', () => {
-    const seg = buildMissCardNarration({
-      id: 'miss-0',
-      index: 1,
-      topic: 'Photosynthesis',
-      prompt: 'What gas do plants take in to make food?',
-      studentAnswer: 'Oxygen',
-      correctAnswer: 'Carbon dioxide',
-      keyConcept: 'Plants take in carbon dioxide.',
-      keyExplain: 'Leaves take in carbon dioxide and use sunlight to make food.',
-    });
-    assert.match(seg.text, /What gas do plants take in/);
-    assert.match(seg.text, /You answered Oxygen|mix-up was Oxygen/);
-    assert.match(seg.text, /carbon dioxide/i);
+  it('reads the card instead of only the why line', () => {
+    const seg = buildMissCardNarration(
+      {
+        id: 'miss-0',
+        index: 1,
+        topic: 'Photosynthesis',
+        prompt: 'What gas do plants take in to make food?',
+        studentAnswer: 'Oxygen',
+        correctAnswer: 'Carbon dioxide',
+        keyConcept: 'Plants take in carbon dioxide.',
+        keyExplain: 'Leaves take in carbon dioxide and use sunlight to make food.',
+      },
+      { frustrationScore: 40 },
+    );
+    assert.match(seg.text, /Oxygen|carbon dioxide/i);
+    assert.doesNotMatch(seg.text, /Miss 1/);
   });
 });

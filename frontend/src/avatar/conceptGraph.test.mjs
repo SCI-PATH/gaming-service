@@ -112,6 +112,31 @@ describe('plant maps are curriculum keywords, not placeholders', () => {
     assert.equal(validateConceptGraph(g, { correctAnswer: 'They grow into new plants' }).ok, true);
   });
 
+  it('maps flowering vs non-flowering as a real contrast, not placeholders', () => {
+    const g = buildConceptGraph({
+      question: 'What is the difference between flowering plants and non-flowering plants?',
+      studentAnswer: 'Flowering plants are bigger',
+      correctAnswer:
+        'Flowering plants produce flowers and often fruits with seeds. Non-flowering plants do not make flowers; many reproduce with spores or cones.',
+      questionType: 'TypedAnswer',
+      topic: 'Plant Biology',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.ok(labels.some((l) => l.includes('flowering')));
+    assert.ok(labels.some((l) => l.includes('non-flowering') || l.includes('spore')));
+    assert.ok(labels.some((l) => l.includes('flower')));
+    assert.equal(
+      labels.some((l) => /^(key idea|idea|is the difference|difference)$/.test(l)),
+      false,
+    );
+    assert.equal(
+      validateConceptGraph(g, {
+        correctAnswer: 'Flowering plants produce flowers and fruits with seeds',
+      }).ok,
+      true,
+    );
+  });
+
   it('contrasts leaf photosynthesis with stem transport', () => {
     const g = buildConceptGraph({
       question: 'What is the primary function of a plant leaf?',

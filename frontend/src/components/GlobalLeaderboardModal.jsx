@@ -37,7 +37,7 @@ export default function GlobalLeaderboardModal({
       setYou(null);
       setError(
         result.skipped
-          ? 'Leaderboard server is offline. Start the gaming backend with DATABASE_URL configured.'
+          ? 'No shared rankings yet. Play a round and your score will appear here.'
           : result.error || 'Could not load leaderboard.',
       );
       return;

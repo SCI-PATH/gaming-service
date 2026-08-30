@@ -388,7 +388,7 @@ export function useBehavioralTelemetry({
     next.frustration_signals = next.frustration.signals;
     next.answer_history = behaviorEventsRef.current
       .filter((e) => e && e.type === 'answer')
-      .slice(-8)
+      .slice(-80)
       .map((e) => ({
         question: e.prompt || null,
         student_answer: e.selectedText || null,
@@ -659,7 +659,7 @@ export function useBehavioralTelemetry({
 
   const pushBehaviorEvent = useCallback((event) => {
     behaviorEventsRef.current = [
-      ...behaviorEventsRef.current.slice(-24),
+      ...behaviorEventsRef.current.slice(-200),
       { at: Date.now(), ...event },
     ];
   }, []);
@@ -810,8 +810,8 @@ export function useBehavioralTelemetry({
       correctAnswers: correctRef.current,
       incorrectAnswers: incorrectRef.current,
       timesSec: [...timesSecRef.current],
-      answerHistory: Array.isArray(session.answerHistory)
-        ? session.answerHistory.slice(-40)
+        answerHistory: Array.isArray(session.answerHistory)
+          ? session.answerHistory.slice(-80)
         : [],
     };
   }, [session]);

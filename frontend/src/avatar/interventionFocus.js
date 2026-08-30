@@ -7,6 +7,7 @@ import {
   sanitizeKidSpeech,
 } from './kidFriendlySpeech.js';
 import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
+import { resolveSageVoice } from './sageSpokenVoice.js';
 import {
   buildBehaviorDiagnostic,
   getBehaviorProbe,
@@ -429,6 +430,10 @@ export function buildFocusedSpokenOpener(focus = {}, opts = {}) {
   const why = concreteWhyOpened(diagCode, evidence);
   const probe =
     focus.diagnostic_prompt || getBehaviorProbe(diagCode, evidence).prompt;
+  const voice = resolveSageVoice({
+    frustrationScore: evidence.frustration_score ?? opts.frustrationScore,
+    frustrationLevel: evidence.frustration_level || opts.frustrationLevel,
+  });
 
   if (code === INTERVENTION_FOCUS_CODES.ENRICHMENT) {
     return sanitizeKidSpeech(
@@ -441,7 +446,17 @@ export function buildFocusedSpokenOpener(focus = {}, opts = {}) {
     );
   }
 
-  // One clear problem statement + probe (no repeated "farm got tougher" loop)
+  if (voice.level === 'very_high' || voice.level === 'high') {
+    return sanitizeKidSpeech(
+      `${hi}I came over to help. ${why} We can go one small step. Tap a choice if you want, or just listen.`,
+    );
+  }
+  if (voice.level === 'low') {
+    return sanitizeKidSpeech(
+      `${hi}I came over because ${why}. ${probe}`,
+    );
+  }
+
   return sanitizeKidSpeech(
     `${hi}I came over because ${why}. ${probe} Say A, B, C, or D — or type it.`,
   );

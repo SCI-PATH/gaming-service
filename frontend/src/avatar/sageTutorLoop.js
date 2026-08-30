@@ -979,30 +979,26 @@ export function tutorLoopSystemAddon(context = {}) {
         .join(' | ')
     : '';
   const toneGuide = {
-    low: 'Normal Grade 6–9 explanation. Warm and curious. Same science facts.',
-    moderate: 'Simpler wording and smaller steps. Same science facts.',
-    high: 'Short sentences. Simple vocabulary. One concept at a time. Reassuring. Very clear comparison. Short memory connection. Same science facts.',
-    very_high: 'Tiny sentences. Simplest words. One idea at a time. Highly reassuring. Very clear comparison. Ultra-short memory connection. Same science facts.',
+    low: 'Speak like a lively farm buddy. Plain Grade 6 words. Playful, still kind. Same science facts. Never mention scores.',
+    moderate: 'Speak like a calm coach. Short clear sentences. One tip, then a check. Same science facts. Never mention scores.',
+    high: 'Speak extra gently. Two short sentences max. Simple words. One idea. Reassure. No test-like quizzes. Same science facts. Never mention scores.',
+    very_high: 'Speak very softly. Tiny sentences. One fact only. Reassure that trying is brave. Same science facts. Never mention scores.',
   };
+  const maxSent =
+    delivery.level === 'very_high' || delivery.level === 'high' ? 2 : 3;
   const teachingSteps = compare
     ? [
-        'TEACHING MODE = COMPARE.',
-        'When the farm answer is incorrect, teach ALL of this reasoning (wording may be natural, not robotic):',
-        '1) YOUR ANSWER — scientifically explain what the student’s answer actually means / does. The student must understand the concept behind their pick. Wrong-for-this-question is not the same as scientifically false.',
-        '2) CORRECT ANSWER — scientifically explain the assessment-engine answer at Grade 6–9 level.',
-        '3) SCIENTIFIC COMPARISON — directly compare the two concepts (student’s answer vs correct answer): purpose, process, function, outcome.',
-        '4) WHY YOUR ANSWER IS WRONG — connect the student’s answer to THIS question. Why does it NOT satisfy what the question is asking?',
-        '5) WHY THE CORRECT ANSWER IS CORRECT — connect the assessment-engine answer to THIS question. Why does it satisfy the requirement?',
-        '6) KEY CONNECTION — a short memorable aid (example shape: Capacitor = stores, Resistor = resists). Then QUICK CHECK — one short question. Do not answer it.',
+        'TEACHING MODE = COMPARE (same science, spoken out loud).',
+        `Pack the teaching into AT MOST ${maxSent} spoken sentences. Do NOT write headings like YOUR ANSWER or KEY CONNECTION.`,
+        'Cover in that budget: (a) what their pick actually does in science, (b) the assessment-engine idea, (c) why theirs does not answer THIS farm question.',
+        delivery.level === 'low' || delivery.level === 'moderate'
+          ? 'Last sentence may be one short check question. Do not answer it.'
+          : 'No quiz-style check. Reassure, then one science fact.',
       ]
     : [
         'TEACHING MODE = CORRECT-ONLY.',
-        'The student typed nothing usable — blank, timeout, or placeholder symbols/numbers such as N, X, 5, or ???. That is NOT a scientific idea.',
-        'Do NOT explain “their answer”. Do NOT invent a meaning for N, X, 5, or empty text. Do NOT compare a symbol or number with the correct idea.',
-        'When the farm answer is incorrect, teach ONLY:',
-        '1) CORRECT ANSWER — scientifically explain the assessment-engine answer at Grade 6–9: what it is, what it does, and why it fits THIS question.',
-        '2) KEY CONNECTION — a short memorable aid.',
-        '3) QUICK CHECK — one short question. Do not answer it.',
+        'The farm miss is blank, timeout, or symbols/numbers — not a science idea. Do not invent meaning for it.',
+        `Pack into AT MOST ${maxSent} spoken sentences: the assessment-engine idea (what it is, what it does, why it fits THIS question). No headings.`,
       ];
   return [
     compare

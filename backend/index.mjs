@@ -97,22 +97,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/engagement/leaderboard') {
     try {
       const eng = await import('./lib/engagementDb.mjs');
-      if (!eng.engagementAvailable()) {
-        sendJson(res, 200, {
-          ok: false,
-          skipped: true,
-          error: 'DATABASE_URL_not_configured',
-          entries: [],
-        });
-        return;
-      }
       const period = url.searchParams.get('period') === 'today' ? 'today' : 'all';
       const limit = Number(url.searchParams.get('limit') || 10);
       const studentId = url.searchParams.get('studentId') || '';
       const result = await eng.getLeaderboard({ period, limit, studentId });
       sendJson(res, 200, { ok: true, ...result });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const raw = err instanceof Error ? err.message : String(err);
+      const message = /incorrect scheme|DATABASE_URL/i.test(raw)
+        ? 'Leaderboard is using local rankings until a Postgres DATABASE_URL is set.'
+        : raw;
       sendJson(res, 400, { ok: false, error: message, entries: [] });
     }
     return;
@@ -205,7 +199,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJson(req);
       const eng = await import('./lib/engagementDb.mjs');
-      if (!eng.engagementAvailable()) {
+      const route = url.pathname.replace('/api/engagement/', '');
+      if (!eng.engagementAvailable() && route !== 'leaderboard/score') {
         sendJson(res, 200, {
           ok: false,
           skipped: true,
@@ -215,8 +210,6 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-
-      const route = url.pathname.replace('/api/engagement/', '');
       let result = null;
       switch (route) {
         case 'student':

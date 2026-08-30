@@ -1,67 +1,76 @@
 import { useEffect, useState } from 'react';
 
+const SAGE_SRC = '/assets/avatar/sage.png';
+
 /**
- * Always-visible next-step coach while the student is on the farm.
+ * In-world Sage guide: portrait + speech bubble, not a dashboard card.
  */
-export default function PlayWizard({ step, hidden = false }) {
+export default function PlayWizard({
+  step,
+  hidden = false,
+  frustrationLevel = 'moderate',
+  groveNote = '',
+}) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!step?.id) return;
     setCollapsed(false);
+    if (step.quiet) return undefined;
+    const t = window.setTimeout(() => setCollapsed(true), 9000);
+    return () => window.clearTimeout(t);
   }, [step?.id]);
 
   if (hidden || !step) return null;
+
+  const line = groveNote || step.say || step.title;
+  const pin = step.pin?.label;
 
   if (collapsed) {
     return (
       <button
         type="button"
-        className="play-wizard is-collapsed"
+        className="sage-guide is-collapsed"
         onClick={() => setCollapsed(false)}
         aria-expanded="false"
-        aria-label={`Farm guide: ${step.title}. Show next step.`}
+        aria-label={`Sage: ${line}. Show again.`}
       >
-        <span className="play-wizard-hat" aria-hidden>
-          ✦
-        </span>
-        <span className="play-wizard-collapsed-text">
-          Next: {step.title}
-        </span>
+        <img className="sage-guide-photo" src={SAGE_SRC} alt="" />
+        <span className="sage-guide-chip">{step.title}</span>
       </button>
     );
   }
 
   return (
     <aside
-      className={`play-wizard${step.quiet ? ' is-quiet' : ''}`}
-      aria-label="Farm guide — what to do next"
+      className={`sage-guide${step.quiet ? ' is-quiet' : ''} is-${String(frustrationLevel || 'moderate').replace('_', '-')}`}
+      aria-label="Sage — what to do next"
     >
-      <header className="play-wizard-head">
-        <p className="play-wizard-kicker">Farm guide</p>
+      <img className="sage-guide-photo is-lg" src={SAGE_SRC} alt="Sage" />
+      <div className="sage-guide-bubble">
+        <p className="sage-guide-name">Sage</p>
+        <p className="sage-guide-say" aria-live="polite">
+          {line}
+        </p>
+        {pin ? (
+          <p className="sage-guide-pin">
+            <span aria-hidden>➤</span> {pin}
+          </p>
+        ) : null}
+        {step.key ? (
+          <p className="sage-guide-keys">
+            <kbd>{step.key}</kbd>
+            <span>WASD to move</span>
+          </p>
+        ) : null}
         <button
           type="button"
-          className="play-wizard-hide"
+          className="sage-guide-gotit"
           onClick={() => setCollapsed(true)}
-          aria-label="Hide farm guide"
         >
-          Hide
+          Got it
         </button>
-      </header>
-      <p className="play-wizard-title" aria-live="polite">
-        {step.title}
-      </p>
-      <p className="play-wizard-how">{step.how}</p>
-      {step.key ? (
-        <p className="play-wizard-keys">
-          <kbd>{step.key}</kbd>
-          <span>WASD to move</span>
-        </p>
-      ) : (
-        <p className="play-wizard-keys">
-          <span>WASD to move · E to interact</span>
-        </p>
-      )}
+      </div>
     </aside>
   );
 }

@@ -4,7 +4,7 @@
  */
 import { compactText } from './assessmentMiss.js';
 
-export const PLACEHOLDER_NODE = /^(function|job|claim|correct idea|science idea|example|topic|plant biology|science|name)$/i;
+export const PLACEHOLDER_NODE = /^(function|job|claim|correct idea|science idea|key idea|this idea|idea|example|topic|plant biology|science|name|is the difference|the difference|difference|different job)$/i;
 export const WEAK_EDGE = /^(asks|does not|tests|means)$/i;
 
 function lower(text) {
@@ -166,6 +166,19 @@ export function pollinationLesson(miss) {
 
 export function waterCycleLesson(miss) {
   return has(questionBlob(miss), /evaporat|condens|precipit|water cycle/);
+}
+
+export function floweringContrastLesson(miss) {
+  const q = `${miss.question || ''} ${miss.prompt || ''}`;
+  const blob = questionBlob(miss);
+  if (has(q, /flowering/) && has(q, /non[- ]?flowering|without flowers|no flowers/)) {
+    return true;
+  }
+  if (has(q, /difference/) && has(q, /flowering/)) return true;
+  if (has(blob, /angiosperm/) && has(blob, /gymnosperm|cone|spore|moss|fern/)) {
+    return true;
+  }
+  return false;
 }
 
 export function diversityLesson(miss) {

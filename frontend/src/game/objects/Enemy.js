@@ -23,6 +23,23 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  applyAdaptiveLook(level) {
+    const band = String(level || 'moderate').toLowerCase();
+    this.frustrationBand = band;
+    this.setAlpha(1);
+    if (band === 'high' || band === 'very_high') {
+      this.setTint(0xb8d4ee);
+      this.setScale(0.88);
+      this.setAlpha(0.9);
+    } else if (band === 'low') {
+      this.setTint(0xffd0a0);
+      this.setScale(1.12);
+    } else {
+      this.clearTint();
+      this.setScale(1);
+    }
+  }
+
   /**
    * Dynamically change patrol speed (frustration / DDA pressure).
    * Preserves direction of current motion when possible.

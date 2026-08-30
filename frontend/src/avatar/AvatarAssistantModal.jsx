@@ -35,6 +35,7 @@ import {
   buildInterventionFocus,
   describeFocusCode,
 } from './interventionFocus.js';
+import { resolveSageVoice } from './sageSpokenVoice.js';
 import {
   asQuestionText,
   friendlyStudentName,
@@ -249,6 +250,20 @@ export default function AvatarAssistantModal({
     scenario || telemetry.scenario || null;
 
   const m = metrics || telemetry.metrics || {};
+  const sageVoice = useMemo(
+    () =>
+      resolveSageVoice({
+        frustrationScore: telemetry.frustrationScore ?? m.frustration_score ?? null,
+        frustrationLevel:
+          telemetry.frustrationLevel || m.frustration_level || null,
+      }),
+    [
+      telemetry.frustrationScore,
+      telemetry.frustrationLevel,
+      m.frustration_score,
+      m.frustration_level,
+    ],
+  );
   const evaluatedTier = useMemo(
     () =>
       m.evaluated_tier ||
@@ -653,9 +668,9 @@ export default function AvatarAssistantModal({
         setLiveCaption('');
       }
       setSpokenCaption(t);
-      return ttsRef.current.speak(t);
+      return ttsRef.current.speak(t, { rate: sageVoice.rate, pitch: 1 });
     },
-    [voiceMuted],
+    [voiceMuted, sageVoice.rate],
   );
 
   /** Speak advice (or wait so silent mode can finish), then return to the farm. */
@@ -717,7 +732,11 @@ export default function AvatarAssistantModal({
       if (narratedMapKeyRef.current === key) return;
       narratedMapKeyRef.current = key;
 
-      const segments = buildMindMapNarration(map);
+      const segments = buildMindMapNarration(map, {
+        frustrationScore: telemetry.frustrationScore ?? m.frustration_score,
+        frustrationLevel: telemetry.frustrationLevel || m.frustration_level,
+        studentName: student?.displayName || student?.username,
+      });
       if (!segments.length) return;
 
       const session = narrationSessionRef.current + 1;
@@ -750,7 +769,17 @@ export default function AvatarAssistantModal({
         }
       }
     },
-    [applySpeechFocus, speakText, voiceMuted],
+    [
+      applySpeechFocus,
+      speakText,
+      voiceMuted,
+      telemetry.frustrationScore,
+      telemetry.frustrationLevel,
+      m.frustration_score,
+      m.frustration_level,
+      student?.displayName,
+      student?.username,
+    ],
   );
 
   const handleMapChange = useCallback(
@@ -776,7 +805,10 @@ export default function AvatarAssistantModal({
       if (!branch) return;
       setActiveMissId(branch.id || null);
       if (voiceMuted || mutedRef.current) return;
-      const segment = buildMissCardNarration(branch);
+      const segment = buildMissCardNarration(branch, {
+        frustrationScore: telemetry.frustrationScore ?? m.frustration_score,
+        frustrationLevel: telemetry.frustrationLevel || m.frustration_level,
+      });
       if (!segment?.text) return;
 
       const session = narrationSessionRef.current + 1;
@@ -794,7 +826,15 @@ export default function AvatarAssistantModal({
         }
       }
     },
-    [applySpeechFocus, speakText, voiceMuted],
+    [
+      applySpeechFocus,
+      speakText,
+      voiceMuted,
+      telemetry.frustrationScore,
+      telemetry.frustrationLevel,
+      m.frustration_score,
+      m.frustration_level,
+    ],
   );
   useEffect(() => {
     if (!open) {
