@@ -339,6 +339,99 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/mindmap/generate') {
+    try {
+      const body = await readJson(req);
+      const { generateScienceMindMap } = await import(
+        './lib/scienceMindMapGenerator.mjs'
+      );
+      const result = await generateScienceMindMap(body);
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, err?.statusCode || 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Bad request',
+        retryable: Boolean(err?.retryable),
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/textbooks') {
+    try {
+      const chroma = await import('./lib/chromaService.mjs');
+      const grade = url.searchParams.get('grade');
+      const result = await chroma.listTextbooks(grade);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      sendJson(res, 503, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Textbook registry unavailable',
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/textbooks/ingest') {
+    try {
+      const body = await readJson(req);
+      const chroma = await import('./lib/chromaService.mjs');
+      const result = await chroma.ingestTextbook(body);
+      sendJson(res, 200, { ok: true, textbook: result });
+    } catch (err) {
+      sendJson(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Ingest failed',
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/textbooks/ingest-defaults') {
+    try {
+      const body = await readJson(req);
+      const chroma = await import('./lib/chromaService.mjs');
+      const result = await chroma.ingestDefaultTextbooks(Boolean(body?.force));
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      sendJson(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Default ingest failed',
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/textbooks/reprocess') {
+    try {
+      const body = await readJson(req);
+      const chroma = await import('./lib/chromaService.mjs');
+      const result = await chroma.ingestTextbook({ ...body, force: true });
+      sendJson(res, 200, { ok: true, textbook: result });
+    } catch (err) {
+      sendJson(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Reprocess failed',
+      });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/rag/retrieve') {
+    try {
+      const body = await readJson(req);
+      const chroma = await import('./lib/chromaService.mjs');
+      const result = await chroma.queryChunks(body);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (err) {
+      sendJson(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Retrieval failed',
+      });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/avatar-chat') {
     try {
       const body = await readJson(req);

@@ -55,7 +55,7 @@ SOURCES = [
         "grade": 7,
         "pdf_id": "part2",
         "local": ["science G-7 P-II E.pdf", "grade_7_science_part2.pdf"],
-        "url": "",
+        "url": "http://www.edupub.gov.lk/Administrator/English/7/science%20G-7%20P-II%20E/science%20G-7%20P-II%20E.pdf",
     },
     {
         "grade": 8,

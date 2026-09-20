@@ -18,6 +18,11 @@ dist-ssr
 # Backend JSON database
 backend/data/*.json
 
+# Persistent ChromaDB + downloaded Science textbooks
+data/chroma/
+data/textbooks/
+data/textbook_registry/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

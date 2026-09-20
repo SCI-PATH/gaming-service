@@ -8,8 +8,13 @@
  * - Companion-signal caps so one mistake cannot spike the score
  * - Recent recovery dampening when the student starts succeeding again
  * - Adaptation profile for Sage tone + mind-map personalization
+ *
+ * Never show this score or the word "frustrated" to the student.
+ * Downstream systems (Sage, mind maps, enemies, shop, dashboard) read
+ * `calculateFrustrationScore()` and `buildFrustrationAdaptation()`.
  */
 
+/** Four public bands. Sage / farm code compares against these string values. */
 export const FRUSTRATION_LEVELS = Object.freeze({
   LOW: 'low',
   MODERATE: 'moderate',
@@ -17,6 +22,7 @@ export const FRUSTRATION_LEVELS = Object.freeze({
   VERY_HIGH: 'very_high',
 });
 
+/** Inclusive score ranges that map onto FRUSTRATION_LEVELS (dashboard + charts). */
 export const FRUSTRATION_LEVEL_RANGES = Object.freeze({
   low: [0, 30],
   moderate: [31, 60],
@@ -29,16 +35,16 @@ export const FRUSTRATION_LEVEL_RANGES = Object.freeze({
  * Tuned so consecutive fails + decline + error rate dominate motor noise.
  */
 export const FRUSTRATION_WEIGHTS = Object.freeze({
-  incorrectAnswerWeight: 18,
-  consecutiveWrongWeight: 20,
-  responseTimeWeight: 12,
+  incorrectAnswerWeight: 18, // error rate × this
+  consecutiveWrongWeight: 20, // strongest cognitive signal
+  responseTimeWeight: 12, // slower than this student's own baseline
   retryWeight: 11,
-  mouseBehaviorWeight: 6,
+  mouseBehaviorWeight: 6, // rage clicks / erratic pointer
   inactivityWeight: 6,
-  hintUsageWeight: 6,
-  performanceDeclineWeight: 13,
-  gameplayFailureWeight: 5,
-  conceptStruggleWeight: 3,
+  hintUsageWeight: 6, // hints + answer switching
+  performanceDeclineWeight: 13, // session getting worse
+  gameplayFailureWeight: 5, // enemies, restarts, skips, shop leavers
+  conceptStruggleWeight: 3, // same idea missed repeatedly
 });
 
 export const FRUSTRATION_CONFIG = Object.freeze({
@@ -49,16 +55,18 @@ export const FRUSTRATION_CONFIG = Object.freeze({
   minSignalsForHigh: 3,
   /** A single incorrect answer contributes at most this many points */
   singleMistakeCap: 10,
+  /** Sage may auto-open at this score if enough signals agree */
   agentOpenScore: 61,
   /** Same bar as Sage: high frustration at end of farm → redo the lesson */
   lessonRetryScore: 61,
+  // Soft/hard pairs for scale(): below soft is quiet; at hard the weight is full.
   consecutiveWrongSoft: 2,
   consecutiveWrongHard: 3,
   retrySoft: 2,
   retryHard: 4,
   hintSoft: 2,
   hintHard: 4,
-  timeIncreaseSoft: 1.25,
+  timeIncreaseSoft: 1.25, // 25% slower than baseline starts counting
   timeIncreaseHard: 1.7,
   inactivitySecSoft: 18,
   inactivitySecHard: 40,
@@ -70,15 +78,17 @@ export const FRUSTRATION_CONFIG = Object.freeze({
   conceptMissHard: 4,
   /** Recent correct streak that dampens raw score */
   recoveryCorrectSoft: 2,
-  recoveryDampMax: 0.22,
+  recoveryDampMax: 0.22, // never quiet more than 22%
 });
 
+/** Keep any number inside [min, max]. */
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
 /**
  * Piecewise scale: below soft → gentle ramp; soft→hard → linear; ≥ hard → 1.
+ * Returns 0..1 so callers can multiply by a weight.
  */
 export function scale(value, soft, hard) {
   const v = Number(value) || 0;
@@ -88,6 +98,7 @@ export function scale(value, soft, hard) {
   return 0.35 + 0.65 * ((v - soft) / Math.max(0.001, hard - soft));
 }
 
+/** Map a 0–100 score onto low / moderate / high / very_high. */
 export function frustrationLevelFromScore(score) {
   const s = clamp(Math.round(Number(score) || 0), 0, 100);
   if (s <= 30) return FRUSTRATION_LEVELS.LOW;
@@ -96,6 +107,7 @@ export function frustrationLevelFromScore(score) {
   return FRUSTRATION_LEVELS.VERY_HIGH;
 }
 
+/** Human-readable band name for dashboards (not spoken to the child). */
 export function frustrationLevelLabel(level) {
   switch (String(level || '').toLowerCase()) {
     case FRUSTRATION_LEVELS.MODERATE:
@@ -112,6 +124,9 @@ export function frustrationLevelLabel(level) {
 /**
  * How Sage should speak + how the mind map should personalize.
  * Never expose "frustrated" language to the student — these are coach instructions.
+ *
+ * Also returns shop / combat / gameplay multipliers used by the farm loop.
+ * Pass a number (score) or a level string.
  */
 export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
   const score =
@@ -123,6 +138,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
       ? frustrationLevelFromScore(score)
       : String(scoreOrLevel || 'low').toLowerCase();
 
+  // Defaults = moderate-ish support. Each band below overwrites the slices it cares about.
   const base = {
     level,
     score: score ?? null,
@@ -155,9 +171,9 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
     combat: {
       speedMult: 1,
       countMult: 1,
-      distanceBoost: 0,
+      distanceBoost: 0, // extra tiles of spacing from the player
       hurtInvulnMult: 1,
-      damageChance: 1,
+      damageChance: 1, // 1 = every contact hurts; lower = some hits glance off
       label: 'Standard farm pressure',
     },
     /** Live farm / quiz personalization (timers, hints, retries, cash, farm mood) */
@@ -172,6 +188,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
     },
   };
 
+  // Low: student is coping — richer maps, livelier farm, slightly harder combat.
   if (level === FRUSTRATION_LEVELS.LOW) {
     return {
       ...base,
@@ -217,6 +234,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
     };
   }
 
+  // Moderate: acknowledge the hang-up; small shop discount; slightly easier farm.
   if (level === FRUSTRATION_LEVELS.MODERATE) {
     return {
       ...base,
@@ -261,6 +279,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
     };
   }
 
+  // High: Sage slower/warmer; fewer mind-map branches; calmer enemies; more time/hints.
   if (level === FRUSTRATION_LEVELS.HIGH) {
     return {
       ...base,
@@ -309,7 +328,7 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
     };
   }
 
-  // very_high
+  // very_high: smallest maps, softest combat, longest timers, strongest shop support.
   return {
     ...base,
     sage: {
@@ -358,14 +377,17 @@ export function buildFrustrationAdaptation(scoreOrLevel, signals = []) {
 }
 
 /**
- * @param {object} metrics
- * @param {object} [opts]
+ * Fuse live session metrics into a 0–100 score + named signals + adaptation.
+ *
+ * @param {object} metrics  telemetry snapshot (wrong answers, times, hits, shop leavers, …)
+ * @param {object} [opts]   optional weight/config overrides (tests)
  * @returns {{ score: number, level: string, signals: string[], parts: object, adaptation: object, recoveryFactor: number }}
  */
 export function calculateFrustrationScore(metrics = {}, opts = {}) {
   const w = { ...FRUSTRATION_WEIGHTS, ...(opts.weights || {}) };
   const cfg = { ...FRUSTRATION_CONFIG, ...(opts.config || {}) };
 
+  // --- Read metrics (several aliases so farm + assessment payloads both work) ---
   const incorrect = Number(metrics.incorrect_answers) || 0;
   const correct = Number(metrics.correct_answers) || 0;
   const total = correct + incorrect;
@@ -380,6 +402,7 @@ export function calculateFrustrationScore(metrics = {}, opts = {}) {
     Number(metrics.previous_avg_answer_time_sec) ||
     Number(metrics.baseline_avg_answer_time_sec) ||
     0;
+  // >1 means slower than this student's own typical pace (not "slow vs class").
   const timeRatio = baseline > 0 && avgTime > 0 ? avgTime / baseline : 1;
   const deltaPts = Number(metrics.performance_delta_points) || 0;
   const inactivity =
@@ -404,6 +427,7 @@ export function calculateFrustrationScore(metrics = {}, opts = {}) {
         metrics.first_attempt_correct_streak,
     ) || 0;
 
+  // --- Weighted parts (each 0 .. its weight). Sum ≈ raw score before caps. ---
   const parts = {
     errors: errorRate * w.incorrectAnswerWeight,
     consecutive:
@@ -440,6 +464,7 @@ export function calculateFrustrationScore(metrics = {}, opts = {}) {
       (w.conceptStruggleWeight || 0),
   };
 
+  // Named evidence bits used for companion-signal caps and dashboard labels.
   const signals = [];
   if (errorRate >= 0.35 && total >= 2) signals.push('incorrect_rate');
   if (consecutive >= 2) signals.push('consecutive_wrong');
@@ -476,9 +501,11 @@ export function calculateFrustrationScore(metrics = {}, opts = {}) {
   if (total <= 1 && consecutive <= 1 && signals.length <= 1) {
     raw = Math.min(raw, cfg.singleMistakeCap);
   }
+  // Need 2+ agreeing signals to leave the low/quiet zone.
   if (signals.length < cfg.minSignalsForModerate) {
     raw = Math.min(raw, 40);
   }
+  // Need 3+ signals before Sage-open / high band is allowed.
   if (signals.length < cfg.minSignalsForHigh && raw > 60) {
     raw = 60;
   }
@@ -538,6 +565,7 @@ export function frustrationCombatFactor(score, level = null) {
   };
 }
 
+/** True when Sage may auto-open: score high enough AND at least 3 signals agree. */
 export function shouldOpenFrustrationAgent(result) {
   if (!result) return false;
   const threshold =

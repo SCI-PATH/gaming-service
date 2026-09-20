@@ -19,7 +19,8 @@
     "build": "npm run build -w frontend",
     "preview": "npm run preview -w frontend",
     "lint": "oxlint frontend backend",
-    "ingest:textbooks": "python scripts/ingest_textbooks.py"
+    "ingest:textbooks": "python scripts/ingest_textbooks.py",
+    "test:mindmap": "node --test backend/lib/scienceMindMapPrompt.test.mjs backend/lib/scienceMindMapValidator.test.mjs backend/lib/scienceMindMapGenerator.test.mjs"
   },
   "devDependencies": {
     "oxlint": "^1.71.0"

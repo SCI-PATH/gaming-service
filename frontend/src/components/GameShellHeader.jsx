@@ -10,7 +10,7 @@ function playerInitials(name = '') {
 
 /**
  * Compact SCI-PATH shell header above the game canvas.
- * mode: lobby | playing | dashboard
+ * mode: lobby | playing | dashboard | mindmap | textbooks
  */
 export default function GameShellHeader({
   mode = 'lobby',
@@ -21,22 +21,35 @@ export default function GameShellHeader({
   chapterLevel = null,
   onOpenLearningPath,
   onOpenDashboard,
+  onOpenMindMap,
+  onOpenTextbooks,
   onBackToFarm,
   onLogout,
   loggingOut = false,
 }) {
   const isDashboard = mode === 'dashboard';
+  const isMindMap = mode === 'mindmap';
+  const isTextbooks = mode === 'textbooks';
   const isPlaying = mode === 'playing';
+  const isOverlay = isDashboard || isMindMap || isTextbooks;
 
   return (
     <header
-      className={`game-shell-header${mode === 'lobby' ? ' is-lobby' : ''}${isPlaying ? ' is-playing' : ''}${isDashboard ? ' is-dashboard' : ''}`}
+      className={`game-shell-header${mode === 'lobby' ? ' is-lobby' : ''}${isPlaying ? ' is-playing' : ''}${isOverlay ? ' is-dashboard' : ''}`}
     >
       <div className="game-shell-header-brand">
-        {!isDashboard ? (
+        {!isOverlay ? (
           <span className="game-shell-header-kicker">{GAME_PLATFORM}</span>
         ) : null}
-        <h1>{isDashboard ? 'Your learning dashboard' : GAME_NAME}</h1>
+        <h1>
+          {isDashboard
+            ? 'Your learning dashboard'
+            : isMindMap
+              ? 'Science mind map'
+              : isTextbooks
+                ? 'Textbook ingest'
+                : GAME_NAME}
+        </h1>
         {isPlaying ? (
           <p className="game-shell-header-sub">
             {gameReady ? (
@@ -56,6 +69,10 @@ export default function GameShellHeader({
               ? `Chapter farm · ${chapterTitle}`
               : 'Farm & unlock adventure'}
           </p>
+        ) : isMindMap ? (
+          <p className="game-shell-header-sub">Ask a Science question. The map uses your textbook and frustration score.</p>
+        ) : isTextbooks ? (
+          <p className="game-shell-header-sub">Download PDFs, chunk them, and store embeddings in ChromaDB</p>
         ) : (
           <p className="game-shell-header-sub">Frustration, topics, and Sage&apos;s next step</p>
         )}
@@ -95,7 +112,7 @@ export default function GameShellHeader({
           </button>
         ) : null}
 
-        {isDashboard ? (
+        {isOverlay ? (
           <button type="button" className="game-shell-btn" onClick={onBackToFarm}>
             Back to farm
           </button>
@@ -110,6 +127,18 @@ export default function GameShellHeader({
             <span>Dashboard</span>
           </button>
         )}
+
+        {onOpenMindMap && !isPlaying && !isMindMap ? (
+          <button type="button" className="game-shell-btn" onClick={onOpenMindMap}>
+            Science map
+          </button>
+        ) : null}
+
+        {onOpenTextbooks && !isPlaying && !isTextbooks ? (
+          <button type="button" className="game-shell-btn" onClick={onOpenTextbooks}>
+            Textbooks
+          </button>
+        ) : null}
 
         <button
           type="button"
