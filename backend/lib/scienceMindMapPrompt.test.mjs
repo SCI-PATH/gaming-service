@@ -28,18 +28,22 @@ describe('prompts', () => {
     assert.match(system, /ground/i);
     assert.match(system, /presentation/i);
     assert.match(system, /curriculum IDs/i);
+    assert.match(system, /radial keyword map/i);
     const user = userPrompt({
       grade: 7,
       question: 'Why do plants need sunlight?',
       frustrationScore: 88,
       frustrationLevel: 'VERY_HIGH',
       retrievalQuery: 'plants sunlight photosynthesis',
+      keywords: ['Plants', 'Sunlight', 'Photosynthesis', 'Chlorophyll'],
       context: '[Source 1]\ntext: Plants make food using sunlight.',
     });
     assert.match(user, /Grade:\n7/);
     assert.match(user, /VERY_HIGH/);
     assert.match(user, /Plants make food using sunlight/);
-    assert.match(user, /do NOT remove scientifically important facts/i);
+    assert.match(user, /Allowed mind-map keywords/i);
+    assert.match(user, /Photosynthesis/);
+    assert.match(user, /do NOT remove scientifically important keywords/i);
   });
 
   it('formats RAG chunks with citations the model may reuse', () => {

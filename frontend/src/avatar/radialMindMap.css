@@ -1,0 +1,48 @@
+.rmm {
+  width: 100%;
+  overflow: hidden;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e6ebf2;
+}
+
+.rmm svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.rmm-line {
+  stroke: #c5cdd6;
+  stroke-width: 2.2;
+}
+
+.rmm-leaf-line {
+  stroke: #c5cdd6;
+  stroke-width: 1.7;
+}
+
+.rmm-node {
+  cursor: pointer;
+}
+
+.rmm-node text {
+  pointer-events: none;
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  font-weight: 700;
+}
+
+.rmm-node.is-on circle {
+  stroke: #1a2a40;
+  stroke-width: 3;
+}
+
+.rmm-node.is-speech circle {
+  stroke: #4d7cfe;
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 6px rgba(77, 124, 254, 0.45));
+}
+
+.mm.is-compact .rmm {
+  border-radius: 12px;
+}

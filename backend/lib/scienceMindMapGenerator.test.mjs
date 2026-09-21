@@ -96,6 +96,7 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.frustration.frustrationScore, 88);
     assert.equal(result.frustration.frustrationLevel, 'VERY_HIGH');
     assert.match(seenUser, /photosynthesis using sunlight/);
+    assert.match(seenUser, /Allowed mind-map keywords/i);
     assert.match(seenUser, /88/);
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
   });
@@ -154,7 +155,7 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.status, 'success');
     assert.equal(result.provider, 'chroma-extractive');
     assert.match(result.mind_map.central_concept, /photosynthesis/i);
-    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/);
+    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/i);
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
   });
 

@@ -2,7 +2,7 @@
  * Concept mind map: assessment-engine knowledge, no student wrong answers.
  * Highlights only the word currently being spoken by Sage (reading-flow sync).
  */
-import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useState } from 'react';
 import { fetchAiMindMap } from './fetchAiMindMap.js';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
 import { softProviderNote, safeScienceLine } from './kidFriendlySpeech.js';
@@ -13,7 +13,7 @@ import {
   tokenizeMapText,
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
-import ConceptGraphTree from './ConceptGraphTree.jsx';
+import RadialMindMap from './RadialMindMap.jsx';
 import { getCurrentStudent } from '../data/mockStudents.js';
 
 const COLORS = [
@@ -120,6 +120,7 @@ function toDisplayBranches(map) {
           ? b.blank_indexes
           : [],
       conceptGraph: b.conceptGraph || b.concept_graph || null,
+      keywords: Array.isArray(b.keywords) ? b.keywords : [],
     }));
     return uniqueQuestionBranches(mapped);
   }
@@ -222,13 +223,13 @@ function ConceptMindMap({
   const [activeId, setActiveId] = useState(null);
   const [explored, setExplored] = useState(() => new Set());
   const [downloadState, setDownloadState] = useState('idle');
-  const cardRefs = useRef({});
-  const focusPaneRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     const fallback =
-      seedMap?.layout === 'concept-map' || seedMap?.layout === 'all-misses-ai'
+      seedMap?.layout === 'concept-map' ||
+      seedMap?.layout === 'all-misses-ai' ||
+      seedMap?.layout === 'radial'
         ? seedMap
         : localMapFromAttempts(seedAttempts, misconceptions, {
             score: resolvedFrustrationScore,
@@ -317,16 +318,6 @@ function ConceptMindMap({
       return next;
     });
     if (compact) return;
-    const el = cardRefs.current[id];
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    window.setTimeout(() => {
-      focusPaneRef.current?.scrollIntoView?.({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    }, 200);
   }, [speechFocus?.branchId, compact]);
 
   const map = liveMap || seedMap;
@@ -410,23 +401,7 @@ function ConceptMindMap({
     onNodeSelect?.(b);
   };
 
-  const goNext = () => {
-    const idx = branches.findIndex((b) => b.id === active?.id);
-    const next = branches[(idx + 1) % branches.length];
-    if (next) select(next);
-  };
-
   const n = branches.length;
-  const gridColumns =
-    n <= 1
-      ? '1fr'
-      : n === 2
-        ? '1fr 1fr'
-        : compact && n >= 5
-          ? '1fr 1fr 1fr'
-          : n === 3 && !compact
-            ? '1fr 1fr 1fr'
-            : '1fr 1fr';
   const speechBranchId = speechFocus?.branchId || null;
   const overviewOn =
     speechFocus?.kind === 'overview' || speechFocus?.kind === 'intro';
@@ -461,12 +436,8 @@ function ConceptMindMap({
     >
       <header className="mm-top">
         <p className="mm-kicker">
-          Concept map · {n} idea{n === 1 ? '' : 's'}
-          {map.conceptCount > 1 ? ` · ${map.conceptCount} topics` : ''}
+          Mind map · keywords from your textbook
           {status === 'loading' ? ' · generating with AI…' : ''}
-          {map.generatedBy === 'ai' || (status === 'ready' && note.includes('AI'))
-            ? ' · AI map'
-            : ''}
           {speechFocus ? ' · following Sage’s voice' : ''}
         </p>
         <h3>
@@ -483,7 +454,7 @@ function ConceptMindMap({
               text={
                 map.summary ||
                 map.personalizedNote ||
-                `One card per concept. All ${n} are shown together.`
+                'One radial keyword map for this Science idea.'
               }
               on={overviewOn}
             />
@@ -536,154 +507,41 @@ function ConceptMindMap({
         </button>
       </header>
 
-      <div className="mm-hub-row" role="tablist" aria-label="Concepts">
-        <div
-          className={`mm-hub-core${overviewOn ? ' is-speech' : ''}`}
-          aria-hidden
-        >
-          <span>🔬</span>
-          <strong>{n === 1 ? 'Idea' : `${n} ideas`}</strong>
+      <RadialMindMap
+        map={map}
+        branches={branches}
+        activeId={active?.id}
+        speechWord={currentWord || spokenSoFar}
+        compact={compact}
+        onHubSelect={select}
+      />
+
+      {!compact && n > 1 ? (
+        <div className="mm-hub-row" role="tablist" aria-label="Concepts">
+          {branches.map((b) => {
+            const c = COLORS[b.colorIndex % COLORS.length];
+            const selected = b.id === active?.id;
+            const seen = explored.has(b.id);
+            const speechOn = speechBranchId === b.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={`mm-hub-chip${selected ? ' is-on' : ''}${seen ? ' is-seen' : ''}${speechOn ? ' is-speech' : ''}`}
+                style={{ '--mm-c': c.bar, '--mm-f': c.fill }}
+                onClick={() => select(b)}
+              >
+                <span aria-hidden>{b.icon}</span>
+                <span className="mm-hub-chip-text">
+                  <em>Concept {b.index}</em>
+                  <strong>{b.topic}</strong>
+                </span>
+              </button>
+            );
+          })}
         </div>
-        {branches.map((b) => {
-          const c = COLORS[b.colorIndex % COLORS.length];
-          const selected = b.id === active?.id;
-          const seen = explored.has(b.id);
-          const speechOn = speechBranchId === b.id;
-          return (
-            <button
-              key={b.id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              className={`mm-hub-chip${selected ? ' is-on' : ''}${seen ? ' is-seen' : ''}${speechOn ? ' is-speech' : ''}`}
-              style={{ '--mm-c': c.bar, '--mm-f': c.fill }}
-              onClick={() => select(b)}
-            >
-              <span aria-hidden>{b.icon}</span>
-              <span className="mm-hub-chip-text">
-                <em>Concept {b.index}</em>
-                <strong>{b.topic}</strong>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        className="mm-grid"
-        style={{
-          gridTemplateColumns: compact
-            ? n <= 1
-              ? '1fr'
-              : '1fr 1fr'
-            : gridColumns,
-        }}
-      >
-        {branches.map((b) => {
-          const c = COLORS[b.colorIndex % COLORS.length];
-          const selected = b.id === active?.id;
-          const speechOn = speechBranchId === b.id;
-          return (
-            <article
-              key={`card-${b.id}`}
-              ref={(el) => {
-                if (el) cardRefs.current[b.id] = el;
-              }}
-              data-mm-id={b.id}
-              className={`mm-card${selected ? ' is-on' : ''}${speechOn ? ' is-speech' : ''}`}
-              style={{ '--mm-c': c.bar, '--mm-f': c.fill }}
-              onClick={() => select(b)}
-            >
-              <header>
-                <span className="mm-card-num">
-                  {b.icon} {b.topic}
-                  {b.questionType ? (
-                    <span className="mm-card-type">{String(b.questionType).replace(/_/g, ' ')}</span>
-                  ) : null}
-                  {speechOn ? (
-                    <span className="mm-card-live">Speaking</span>
-                  ) : null}
-                </span>
-                <span className="mm-card-topic">
-                  {speechOn ? (
-                    <Sync fieldKey="topic" text={b.topic} on />
-                  ) : (
-                    b.topic
-                  )}
-                </span>
-              </header>
-              <p className="mm-card-q">
-                {speechOn ? (
-                  <Sync fieldKey="question" text={b.question || '—'} on />
-                ) : (
-                  b.question || '—'
-                )}
-              </p>
-              {b.conceptGraph?.nodes?.length ? (
-                <ConceptGraphTree graph={b.conceptGraph} compact={compact} />
-              ) : b.pedagogy?.length ? (
-                <ul className="mm-pedagogy">
-                  {b.pedagogy.map((cat) => (
-                    <li key={cat.title}>
-                      <strong>{cat.title}</strong>
-                      {(cat.children || []).join(' · ')}
-                    </li>
-                  ))}
-                </ul>
-              ) : b.keyConcept ? (
-                <p className="mm-card-key">
-                  <span className="mm-card-kicker">Key idea</span>{' '}
-                  {b.keyConcept}
-                </p>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
-
-      {active && !compact ? (
-        <article
-          ref={focusPaneRef}
-          className={`mm-focus${speechBranchId === active.id ? ' is-speech' : ''}`}
-          aria-live="polite"
-        >
-          <p className="mm-focus-kicker">
-            Focus · {active.index} of {n} · {active.topic}
-          </p>
-          <h4>
-            {active.icon} {active.conceptGraph?.concept || active.topic}
-          </h4>
-          {active.conceptGraph?.nodes?.length ? (
-            <ConceptGraphTree graph={active.conceptGraph} />
-          ) : active.pedagogy?.length ? (
-            <ul className="mm-pedagogy">
-              {active.pedagogy.map((cat) => (
-                <li key={cat.title}>
-                  <strong>{cat.title}</strong>
-                  <span>{(cat.children || []).join(' · ')}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {active.farmLink ? (
-            <p className="mm-focus-p is-farm">
-              <strong>Farm link:</strong>{' '}
-              {speechBranchId === active.id ? (
-                <Sync fieldKey="farm" text={active.farmLink} on />
-              ) : (
-                active.farmLink
-              )}
-            </p>
-          ) : null}
-          <div className="mm-focus-actions">
-            <button type="button" className="mm-btn" onClick={goNext}>
-              Next idea →
-            </button>
-            <span>
-              Explored {explored.size}/{n}
-            </span>
-          </div>
-        </article>
       ) : null}
 
       {!compact && Array.isArray(map.studyPath) && map.studyPath.length ? (

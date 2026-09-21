@@ -880,6 +880,11 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
       ? compactText(map.central_concept || map.title) || topicFromAttempt(a)
       : topicFromAttempt(a);
     const firstSource = (rag?.sources || [])[0];
+    const ragKeywords = Array.isArray(rag?.keywords)
+      ? rag.keywords
+      : Array.isArray(rag?.retrieval?.keywords)
+        ? rag.retrieval.keywords
+        : [];
     branches.push({
       miss_index: branches.length + 1,
       questionId: a.questionId || null,
@@ -909,6 +914,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
             children: (b.points || []).map((p) => p.text).filter(Boolean),
           }))
         : [],
+      keywords: ragKeywords,
       lesson: null,
       concept_graph: conceptGraph,
       farm_link: firstSource
@@ -923,6 +929,9 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
     [...new Set(branches.map((b) => b.topic).filter(Boolean))].slice(0, 3).join(' · ') ||
     'Science';
   const grounded = branches.filter((b) => b.textbook_grounded).length;
+  const keywords = [
+    ...new Set(branches.flatMap((b) => (Array.isArray(b.keywords) ? b.keywords : []))),
+  ];
 
   return {
     ok: true,
@@ -930,13 +939,14 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
       title,
       central_idea: title,
       summary: grounded
-        ? `Textbook-grounded map of ${grounded} idea${grounded === 1 ? '' : 's'} from Chroma RAG.`
+        ? `Textbook keyword map of ${grounded} idea${grounded === 1 ? '' : 's'} from Chroma RAG.`
         : 'Not enough matching textbook content for this question.',
       big_picture: grounded
         ? 'Facts come from retrieved Grade 6–9 Science textbook chunks.'
         : 'Ingest the Science textbooks, then try this question again.',
       study_path: branches.flatMap((b) => b.concept_graph?.learningPath || []).slice(0, 6),
       branches,
+      keywords,
       missCount: branches.length,
       conceptCount: grounded || branches.length,
       sourceAttempts: capped,
@@ -1043,6 +1053,7 @@ export function toClientShape(map) {
     summary: b.key_concept_explain,
     lesson: null,
     pedagogy: b.pedagogy || [],
+    keywords: Array.isArray(b.keywords) ? b.keywords : [],
     conceptGraph: b.concept_graph || b.conceptGraph || null,
     textbookGrounded: Boolean(b.textbook_grounded),
   }));
@@ -1057,11 +1068,12 @@ export function toClientShape(map) {
     bigPicture: map.big_picture,
     studyPath: map.study_path || [],
     branches,
+    keywords: Array.isArray(map.keywords) ? map.keywords : [],
     missCount: map.missCount ?? branches.length,
     conceptCount: map.conceptCount ?? 1,
     sourceAttempts: map.sourceAttempts || [],
-    personalizedNote: map.summary || `Concept map with ${branches.length} idea${branches.length === 1 ? '' : 's'}.`,
-    layout: 'concept-map',
+    personalizedNote: map.summary || `Keyword mind map with ${branches.length} idea${branches.length === 1 ? '' : 's'}.`,
+    layout: 'radial',
     generatedBy: map.generatedBy || 'local',
   };
 }

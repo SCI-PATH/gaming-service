@@ -8,10 +8,12 @@ import {
   displayConceptName,
   exampleFromQuestion,
   isIncompleteLabel,
+  labelFitsMiss,
   polishConceptGraph,
   studentConceptLabel,
   studentPracticeQuestion,
   teachingStep,
+  topicFitsQuestion,
 } from './conceptMapQuality.js';
 import digestJson from './textbookChapterDigest.json' with { type: 'json' };
 
@@ -106,11 +108,14 @@ function slug(text, fallback = 'n') {
 }
 
 function queryBlob(miss = {}) {
+  const topic = compactText(miss.topic);
+  const chapter = compactText(miss.chapter_name || miss.chapter);
+  const question = miss.question || miss.prompt;
   return [
-    miss.question || miss.prompt,
+    question,
     miss.correctAnswer,
-    miss.topic,
-    miss.chapter_name || miss.chapter,
+    topicFitsQuestion(topic, question) ? topic : '',
+    topicFitsQuestion(chapter, question) ? chapter : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -156,6 +161,7 @@ function isJunkLabel(label) {
   }
   if (/tabulate|collect many|compare the/i.test(s)) return true;
   if (/^(duce|vide|tion)\b/i.test(s)) return true;
+  if (/^hold\b/i.test(s)) return true;
   return false;
 }
 
@@ -284,12 +290,11 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
   });
 
   let extra = 0;
-  const extraCap = Math.max(supportLimit(miss), nodes.length < 3 ? 4 : 2);
-  const extraPool = [...ranked, ...usable.filter((s) => !ranked.includes(s))];
-  for (const sentence of extraPool) {
+  const extraCap = Math.max(supportLimit(miss), nodes.length < 3 ? 3 : 2);
+  for (const sentence of ranked) {
     if (extra >= extraCap && nodes.length >= 3) break;
     const label = labelFromSentence(sentence, concepts);
-    if (!label || isJunkLabel(label)) continue;
+    if (!label || isJunkLabel(label) || !labelFitsMiss(label, miss)) continue;
     const id = slug(label);
     const key = normalizeTitle(label);
     if (seen.has(id) || seen.has(key)) continue;
@@ -307,7 +312,12 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
   }
 
   const example = exampleFromQuestion(miss.question || miss.prompt);
-  if (example && !seen.has(normalizeTitle(example)) && nodes.length < 8) {
+  if (
+    example &&
+    labelFitsMiss(example, miss) &&
+    !seen.has(normalizeTitle(example)) &&
+    nodes.length < 8
+  ) {
     const id = slug(example, 'ex');
     if (!seen.has(id)) {
       seen.add(id);

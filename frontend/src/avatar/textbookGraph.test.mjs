@@ -9,7 +9,7 @@ import {
   buildTextbookGraph,
   graphFromTextbookSentences,
 } from './textbookGraph.js';
-import { validateConceptGraph } from './conceptGraph.js';
+import { buildConceptGraph, validateConceptGraph } from './conceptGraph.js';
 
 after(() => setTextbookDigest(null));
 
@@ -128,5 +128,59 @@ describe('textbook chapter graphs', () => {
     assert.equal((graph.learningPath || []).some((s) => /^thus,/i.test(s)), false);
     assert.equal(/G7_C11|textbook idea/i.test(graph.practice?.question || ''), false);
     assert.equal(validateConceptGraph(graph, miss).ok, true);
+  });
+});
+
+describe('question-relevant rock maps', () => {
+  it('maps metamorphism without lichens or limestone leftovers', () => {
+    const g = buildConceptGraph({
+      question: 'What process causes sedimentary rocks to transform into metamorphic rocks?',
+      correctAnswer: 'Extreme pressure and temperature',
+      studentAnswer: 'Erosion',
+      topic: 'Features and kinds of rocks and minerals',
+      questionType: 'MCQ',
+    });
+    const blob = `${(g.nodes || []).map((n) => n.label).join(' ')} ${(g.learningPath || []).join(' ')}`;
+    assert.match(g.concept, /metamorphic/i);
+    assert.ok(blob.match(/pressure|temperature|metamorphic/i));
+    assert.equal(/lichen/i.test(blob), false);
+    assert.equal(/limestone got|conclusion is/i.test(blob), false);
+    assert.equal(/plant biology/i.test(blob), false);
+    assert.equal(validateConceptGraph(g, { correctAnswer: 'Extreme pressure and temperature' }).ok, true);
+  });
+
+  it('splits a limestone fill-in into rock-type ideas, not Plant Biology', () => {
+    const g = buildConceptGraph({
+      question:
+        'Limestone is classified as a [____], which is formed from the remains of dead animals and plants. It is one of the types of [____], which can also include rocks made from molten magma. Additionally, when [____], sedimentary rocks can change into metamorphic rocks under extreme pressure and temperature.',
+      correctAnswer: 'sedimentary rock · igneous rocks · extreme pressure and temperature',
+      topic: 'Plant Biology',
+      questionType: 'FillInTheBlank',
+      missedBlanks: [
+        { blankIndex: 1, correctAnswer: 'sedimentary rock' },
+        { blankIndex: 2, correctAnswer: 'igneous rocks' },
+        { blankIndex: 3, correctAnswer: 'extreme pressure and temperature' },
+      ],
+    });
+    const labels = (g.nodes || []).map((n) => n.label.toLowerCase());
+    assert.equal(labels.some((l) => /plant biology/.test(l)), false);
+    assert.equal(labels.some((l) => /^hold /.test(l)), false);
+    assert.ok(labels.some((l) => /sedimentary/.test(l)));
+    assert.ok(labels.some((l) => /igneous/.test(l)));
+    assert.equal(/plant biology/i.test(g.practice?.question || ''), false);
+  });
+
+  it('teaches heating and cooling as weathering, not True', () => {
+    const g = buildConceptGraph({
+      question: 'Rocks can break into pieces due to heating and cooling processes.',
+      correctAnswer: 'True',
+      studentAnswer: 'False',
+      topic: 'Rock weathering and rock cycle',
+      questionType: 'TrueFalse',
+    });
+    const labels = (g.nodes || []).map((n) => n.label);
+    assert.equal(labels.some((l) => /^(true|false)$/i.test(l)), false);
+    assert.ok(labels.some((l) => /weather|heat|cool|break/i.test(l)));
+    assert.equal(labels.some((l) => /lichen/i.test(l)), false);
   });
 });

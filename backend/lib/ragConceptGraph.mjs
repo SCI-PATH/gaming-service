@@ -40,7 +40,7 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
   });
 
   for (const [i, branch] of (mindMap.branches || []).entries()) {
-    if (nodes.length >= 10) break;
+    if (nodes.length >= 14) break;
     const bid = String(branch.id || `branch-${i + 1}`);
     if (
       !addNode(nodes, bid, branch.title, {
@@ -52,8 +52,8 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
       continue;
     }
     relationships.push({ from: 'root', to: bid, label: 'includes' });
-    for (const [j, point] of (branch.points || []).slice(0, 2).entries()) {
-      if (nodes.length >= 12) break;
+    for (const [j, point] of (branch.points || []).slice(0, 5).entries()) {
+      if (nodes.length >= 16) break;
       const pid = String(point.id || `${bid}-p${j + 1}`);
       if (
         addNode(nodes, pid, point.text, {
@@ -68,8 +68,8 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
   }
 
   for (const term of mindMap.key_terms || []) {
-    if (nodes.length >= 12) break;
-    if (nodes.length >= 3 && (mindMap.branches || []).length) break;
+    if (nodes.length >= 16) break;
+    if (nodes.length >= 6 && (mindMap.branches || []).length) break;
     const id = `term-${nodes.length}`;
     if (
       addNode(nodes, id, term.term, {

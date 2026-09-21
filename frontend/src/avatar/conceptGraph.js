@@ -506,34 +506,71 @@ function chargeGraph(miss, diagnosis) {
 function trueFalseGraph(miss, diagnosis) {
   const claim = compactText(miss.question || miss.prompt);
   const focus = focusPlantPart(miss);
-  const rightTrue = /^(true|t|yes)$/i.test(miss.correctAnswer);
-  const idea = focus?.label || shortLabel(claim.replace(/true or false[:.]?/i, ''), 28) || 'Science idea';
+  const idea =
+    displayConceptName(miss) ||
+    focus?.label ||
+    shortLabel(claim.replace(/true or false[:.]?/i, ''), 28) ||
+    'Science idea';
+  const heat = /heating|cooling|weather/i.test(claim);
+  const nodes = [
+    node('idea', idea, { kind: 'root', importance: 'key', explanation: claim }),
+  ];
+  const relationships = [];
+  if (heat) {
+    nodes.push(
+      node('heat', 'Heating and cooling', {
+        kind: 'correct',
+        importance: 'key',
+        explanation: 'Rocks expand and contract when they heat and cool, so they can crack.',
+      }),
+    );
+    nodes.push(
+      node('break', 'Break into pieces', {
+        kind: 'related',
+        explanation: 'That cracking is weathering: rocks break into smaller pieces.',
+      }),
+    );
+    relationships.push({ from: 'idea', to: 'heat', label: 'caused by' });
+    relationships.push({ from: 'heat', to: 'break', label: 'leads to' });
+  } else {
+    nodes.push(
+      node('fact', focus?.process || 'Science claim', {
+        kind: 'correct',
+        importance: 'key',
+        explanation: /^(true|t|yes)$/i.test(miss.correctAnswer)
+          ? 'The science in the sentence holds.'
+          : 'A key claim in the sentence does not hold.',
+      }),
+    );
+    relationships.push({ from: 'idea', to: 'fact', label: 'checked by' });
+    if (focus) {
+      nodes.push(node('job', focus.process, { explanation: focus.processExplain }));
+      relationships.push({ from: 'idea', to: 'job', label: 'uses' });
+    } else {
+      const extra = shortLabel(claim, 28);
+      if (extra && extra.toLowerCase() !== String(idea).toLowerCase()) {
+        nodes.push(node('claim', extra, { explanation: claim }));
+        relationships.push({ from: 'idea', to: 'claim', label: 'says' });
+      } else {
+        nodes.push(
+          node('check', 'Check the claim', {
+            explanation: 'Decide whether the science in the sentence holds.',
+          }),
+        );
+        relationships.push({ from: 'idea', to: 'check', label: 'needs' });
+      }
+    }
+  }
   return graph({
     concept: idea,
     misconception: diagnosis,
-    nodes: [
-      node('idea', idea, { kind: 'root', importance: 'key', explanation: claim }),
-      node('fact', focus?.process || (rightTrue ? 'Holds' : 'Breaks'), {
-        kind: 'correct',
-        importance: 'key',
-        explanation: rightTrue ? 'The science in the sentence holds.' : 'A key claim in the sentence does not hold.',
-      }),
-      node('verdict', rightTrue ? 'True' : 'False', {
-        kind: 'correct',
-        explanation: `The scored judgement is ${compactText(miss.correctAnswer)}.`,
-      }),
-      ...(focus
-        ? [
-            node('job', focus.process, { explanation: focus.processExplain }),
-          ]
-        : []),
+    nodes,
+    relationships,
+    learningPath: [
+      `The statement is about ${idea.toLowerCase()}`,
+      heat ? 'Heating and cooling make rocks crack' : 'Check the process the sentence names',
+      `The statement is ${compactText(miss.correctAnswer)}`,
     ],
-    relationships: [
-      { from: 'idea', to: 'fact', label: 'checked by' },
-      { from: 'fact', to: 'verdict', label: 'scores' },
-      ...(focus ? [{ from: 'idea', to: 'job', label: 'uses' }] : []),
-    ],
-    learningPath: ['Read the science claim', 'Check the process it names', `The statement is ${compactText(miss.correctAnswer)}`],
     example: claim,
     practice: {
       question: 'In your own words, what science fact decides whether this sentence is true?',
@@ -551,8 +588,10 @@ function testedConceptLabel(miss, fallback = '') {
 }
 
 function keywordFromCorrect(miss) {
-  const c = compactText(miss.correctAnswer);
-  if (!c || /see the lesson|key idea|placeholder/i.test(c)) return '';
+  const parts = scoredConceptList(miss).filter((c) => !isPolarityToken(c));
+  if (parts.length > 1) return '';
+  const c = compactText(parts[0] || miss.correctAnswer);
+  if (!c || /see the lesson|key idea|placeholder/i.test(c) || isPolarityToken(c)) return '';
   const labeled = studentConceptLabel(c, 48);
   if (labeled) return labeled;
   const part = focusPlantPart(miss);
@@ -561,41 +600,53 @@ function keywordFromCorrect(miss) {
   return '';
 }
 
+function isPolarityToken(text) {
+  return /^(true|false|t|f|yes|no)$/i.test(compactText(text));
+}
+
 function genericGraph(miss, diagnosis) {
-  const correct = keywordFromCorrect(miss) || focusPlantPart(miss)?.label || displayConceptName(miss) || 'Science idea';
+  const parts = scoredConceptList(miss)
+    .map((c) => studentConceptLabel(c, 36))
+    .filter((c) => c && !PLACEHOLDER_NODE.test(c));
+  const correct =
+    parts[0] ||
+    keywordFromCorrect(miss) ||
+    focusPlantPart(miss)?.label ||
+    displayConceptName(miss) ||
+    'Science idea';
   const student = usableStudent(miss) ? studentConceptLabel(miss.studentAnswer, 24) : '';
   const mix = Boolean(student && !answersEquivalent(student, correct));
   const q = compactText(miss.question || miss.prompt);
-  const rootLabel =
-    displayConceptName(miss) ||
-    focusPlantPart(miss)?.label ||
-    keywordFromCorrect(miss) ||
-    'Science idea';
-  const support =
-    focusPlantPart(miss)?.process ||
-    studentConceptLabel(q.replace(/^(what|which|why|how|is|are)\s+(is|are|the)?\s*/i, ''), 28);
+  const rootLabel = displayConceptName(miss) || parts[0] || correct;
   const nodes = [
     node('root', PLACEHOLDER_NODE.test(rootLabel) ? correct : rootLabel, {
       kind: 'root',
       importance: 'key',
       explanation: q,
     }),
-    node('correct', correct, {
-      kind: 'correct',
-      importance: 'key',
-      explanation: `${correct} is the idea this question is scoring.`,
-    }),
   ];
-  const relationships = [{ from: 'root', to: 'correct', label: 'centers on' }];
-  if (support && !answersEquivalent(support, correct) && !PLACEHOLDER_NODE.test(support)) {
+  const relationships = [];
+  const seen = new Set([compactText(nodes[0].label).toLowerCase()]);
+  const addCorrect = (id, label, extra = {}) => {
+    const key = compactText(label).toLowerCase();
+    if (!label || seen.has(key)) return;
+    seen.add(key);
     nodes.push(
-      node('support', support, {
-        kind: 'related',
+      node(id, label, {
+        kind: 'correct',
         importance: 'key',
-        explanation: `This helps explain ${correct}.`,
+        explanation: extra.explanation || `${label} is part of this idea.`,
       }),
     );
-    relationships.push({ from: 'root', to: 'support', label: 'includes' });
+    relationships.push({ from: 'root', to: id, label: extra.edge || 'includes' });
+  };
+  if (parts.length > 1) {
+    parts.forEach((label, i) => addCorrect(`ae-${i}`, label));
+  } else {
+    addCorrect('correct', correct, {
+      explanation: `${correct} is the idea this question is scoring.`,
+      edge: 'centers on',
+    });
   }
   if (mix && student) {
     nodes.push(
@@ -607,23 +658,23 @@ function genericGraph(miss, diagnosis) {
     relationships.push({ from: 'root', to: 'mixup', label: 'confused with' });
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.PARTIAL && miss.missingKeywords?.[0]) {
-    nodes.push(
-      node('missing', studentConceptLabel(miss.missingKeywords[0], 24), {
-        kind: 'related',
-        importance: 'key',
-        explanation: 'This piece was missing from an otherwise related answer.',
-      }),
-    );
-    relationships.push({ from: 'correct', to: 'missing', label: 'also needs' });
+    const missing = studentConceptLabel(miss.missingKeywords[0], 24);
+    if (missing && !seen.has(missing.toLowerCase())) {
+      nodes.push(
+        node('missing', missing, {
+          kind: 'related',
+          importance: 'key',
+          explanation: 'This piece was missing from an otherwise related answer.',
+        }),
+      );
+      relationships.push({ from: 'correct', to: 'missing', label: 'also needs' });
+    }
   }
   if (nodes.length < 3) {
-    nodes.push(
-      node('hold', `Hold ${correct}`, {
-        kind: 'related',
-        explanation: `Keep ${correct} as the idea this question checks.`,
-      }),
-    );
-    relationships.push({ from: 'root', to: 'hold', label: 'remember' });
+    const extra = studentConceptLabel(q.replace(/^(what|which|why|how|is|are)\s+(is|are|the)?\s*/i, ''), 28);
+    if (extra && !seen.has(extra.toLowerCase()) && !PLACEHOLDER_NODE.test(extra)) {
+      addCorrect('support', extra, { explanation: `This helps explain ${correct}.`, edge: 'includes' });
+    }
   }
   return graph({
     concept: displayConceptName(miss) || diagnosis.testedConcept || correct,
@@ -631,8 +682,10 @@ function genericGraph(miss, diagnosis) {
     nodes,
     relationships,
     learningPath: [
-      `${rootLabel} is the idea this question checks`,
-      `The scored idea is ${correct}`,
+      parts.length > 1
+        ? `${rootLabel} groups these scored ideas`
+        : `${rootLabel} is the idea this question checks`,
+      parts.length > 1 ? parts.join(', ') : `The scored idea is ${correct}`,
       mix ? `${student} is a different idea` : `Use ${correct} when you meet this kind of question`,
     ].filter(Boolean),
     example: q,
@@ -743,7 +796,7 @@ function pickTemplate(miss, diagnosis) {
   if (
     textbook &&
     validateConceptGraph(textbook, miss).ok &&
-    !looksLikePoorStudentGraph(textbook)
+    !looksLikePoorStudentGraph(textbook, miss)
   ) {
     return textbook;
   }
@@ -774,7 +827,7 @@ function ensureAssessmentNodes(graph, miss) {
   const rootId = nodes.find((n) => n.kind === 'root')?.id || nodes[0]?.id;
   concepts.forEach((concept, i) => {
     const label = studentConceptLabel(concept, 36) || compactText(concept);
-    if (!label || PLACEHOLDER_NODE.test(label)) return;
+    if (!label || PLACEHOLDER_NODE.test(label) || /^(true|false|t|f|yes|no)$/i.test(label)) return;
     if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, label) || lower(n.label).includes(lower(label))))) {
       return;
     }

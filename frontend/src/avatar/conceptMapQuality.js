@@ -17,7 +17,50 @@ const DISCOURSE =
   /^(thus|therefore|hence|so|moreover|additionally|from this|in this way|it is clear that|it is clear),?\s+/i;
 
 const DUMMY_NODE =
-  /^(link|process|cause|role|function|job|claim|correct idea|science idea|key idea|this idea|idea|example|topic|science|name|cover|covers)$/i;
+  /^(link|process|cause|role|function|job|claim|correct idea|science idea|key idea|this idea|idea|example|topic|science|name|cover|covers|plant biology)$/i;
+
+const POLARITY = /^(true|false|t|f|yes|no)$/i;
+
+const WEAK_TOKEN = new Set([
+  'rock',
+  'rocks',
+  'earth',
+  'made',
+  'type',
+  'types',
+  'also',
+  'they',
+  'this',
+  'that',
+  'from',
+  'with',
+  'have',
+  'been',
+  'into',
+  'process',
+  'processes',
+  'pieces',
+  'white',
+  'green',
+  'big',
+  'see',
+  'kind',
+  'kinds',
+  'features',
+  'called',
+  'which',
+  'dead',
+  'animals',
+  'plants',
+  'plant',
+  'idea',
+  'question',
+  'main',
+]);
+
+export function isPolarityLabel(text) {
+  return POLARITY.test(compactText(text));
+}
 
 export function isIncompleteLabel(text) {
   const s = compactText(text);
@@ -29,6 +72,12 @@ export function isIncompleteLabel(text) {
   if (words.length === 1 && HANGING.test(words[0])) return true;
   if (/^(duce|vide|tion|ing|ment)\b/i.test(s)) return true;
   if (/\b(is|are|was|were)\s+\w+(ed|ing)$/i.test(s)) return true;
+  if (isPolarityLabel(s)) return true;
+  if (/^hold\b/i.test(s)) return true;
+  if (/^conclusion is\b/i.test(s)) return true;
+  if (/\bgot$/i.test(s)) return true;
+  if (/^(these get|on big rocks)\b/i.test(s)) return true;
+  if ((s.match(/\s[·|-]\s/g) || []).length >= 2) return true;
   return false;
 }
 
@@ -50,12 +99,31 @@ function finishLabel(raw, max = 40) {
 }
 
 /**
+ * 1–4 word node label for the radial keyword map.
+ */
+export function keywordLabel(text, maxWords = 4) {
+  const s = studentConceptLabel(text, 36);
+  if (!s) return '';
+  const words = s.split(/\s+/).filter(Boolean);
+  while (words.length && /^(they|this|that|these|those|it)$/i.test(words[0])) {
+    words.shift();
+  }
+  while (words.length > maxWords) words.pop();
+  while (words.length && HANGING.test(words[words.length - 1])) words.pop();
+  const out = words.join(' ');
+  if (!out || isIncompleteLabel(out)) return '';
+  return out;
+}
+
+/**
  * Short complete concept label. Returns '' rather than a broken fragment.
  */
 export function studentConceptLabel(text, max = 40) {
   const s = compactText(text).replace(/^(?:option\s*)?\(?[A-Da-d]\)?\s*[.):—–-]+\s+/i, '');
   if (!s) return '';
   if (isCurriculumTopicId(s)) return skillDisplayName(s, '') || '';
+  if (/\s·\s|\s\|\s/.test(s) || (s.match(/\s-\s/g) || []).length >= 2) return '';
+  if (isPolarityLabel(s) || /^hold\b/i.test(s)) return '';
 
   const called = s.match(/\b(?:is|are)\s+called\s+([^.,;]{3,48})/i);
   if (called?.[1]) {
@@ -79,7 +147,82 @@ export function studentConceptLabel(text, max = 40) {
   return '';
 }
 
+function contentTokens(text) {
+  return compactText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 3 && !WEAK_TOKEN.has(w));
+}
+
+function questionDomain(question) {
+  const s = compactText(question).toLowerCase();
+  if (!s) return '';
+  if (/limestone|igneous|sedimentary|metamorphic|weathering|mineral|rock cycle/.test(s)) {
+    return 'rocks';
+  }
+  if (/sound|vibrat|guitar|flute|vocal/.test(s)) return 'sound';
+  if (/photosynth|cotyledon|monocot|dicot|flowering|pollen|chlorophyll/.test(s)) return 'plants';
+  if (/capacitor|resistor|circuit|current|charge/.test(s)) return 'electricity';
+  return '';
+}
+
+function topicDomain(topic) {
+  const s = compactText(topic).toLowerCase();
+  if (/rock|mineral|weathering/.test(s)) return 'rocks';
+  if (/sound/.test(s)) return 'sound';
+  if (/plant|photo|flower|leaf|biology/.test(s)) return 'plants';
+  if (/electric|charge|circuit/.test(s)) return 'electricity';
+  return '';
+}
+
+export function topicFitsQuestion(topic, question) {
+  const topicText = compactText(topic);
+  if (!topicText || isCurriculumTopicId(topicText) || DUMMY_NODE.test(topicText) || /^science$/i.test(topicText)) {
+    return false;
+  }
+  const td = topicDomain(topicText);
+  const qd = questionDomain(question);
+  if (qd && td && td !== qd) return false;
+  return true;
+}
+
+function titleCasePhrase(text) {
+  const s = compactText(text);
+  if (!s) return '';
+  return s.replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function conceptFromQuestionStem(question) {
+  const q = compactText(question);
+  if (!q) return '';
+  if (/heating and cooling|break into pieces/i.test(q) && /rock/i.test(q)) {
+    return 'Rock weathering';
+  }
+  if (/limestone/i.test(q) && /igneous|sedimentary|magma/i.test(q)) {
+    return 'Types of rocks';
+  }
+  if (/metamorphic/i.test(q) && /sedimentary|pressure|temperature/i.test(q)) {
+    return 'Metamorphic rocks';
+  }
+  const into = q.match(/\binto\s+((?:[A-Za-z]+\s+){0,2}[A-Za-z]+?)(?:\s*\?|$)/);
+  if (into?.[1] && !/^(the|a|an|pieces)\b/i.test(into[1])) {
+    const lab = finishLabel(into[1], 40);
+    if (lab) return titleCasePhrase(lab);
+  }
+  const classified = q.match(/^([A-Za-z][A-Za-z\s]{2,28}?)\s+is classified/i);
+  if (classified?.[1]) {
+    const lab = finishLabel(classified[1], 36);
+    if (lab) return titleCasePhrase(lab);
+  }
+  return '';
+}
+
 export function displayConceptName(miss = {}) {
+  const question = miss.question || miss.prompt || '';
+  const fromStem = conceptFromQuestionStem(question);
+  if (fromStem) return fromStem;
+
   const topicId = pickCanonicalTopicId(
     miss.topic_id,
     miss.topicId,
@@ -90,24 +233,41 @@ export function displayConceptName(miss = {}) {
     miss.chapterId,
   );
   const skill = skillDisplayName(topicId, '');
-  if (skill) return skill;
+  if (skill && topicFitsQuestion(skill, question)) return skill;
 
   const topic = compactText(miss.topic);
-  if (topic && !isCurriculumTopicId(topic) && !/^science$/i.test(topic)) return topic;
+  if (topicFitsQuestion(topic, question)) return topic;
 
   const chapter = compactText(miss.chapter_name || miss.chapterName || miss.chapter);
-  if (chapter && !isCurriculumTopicId(chapter) && !/^science$/i.test(chapter)) return chapter;
+  if (topicFitsQuestion(chapter, question)) return chapter;
 
   const fromAnswer = studentConceptLabel(miss.correctAnswer, 36);
   if (
     fromAnswer &&
     fromAnswer.split(/\s+/).length <= 3 &&
     !/,| and /i.test(fromAnswer) &&
-    !/^(true|false|t|f|yes|no)$/i.test(fromAnswer)
+    !isPolarityLabel(fromAnswer)
   ) {
     return fromAnswer;
   }
-  return '';
+  return skill || '';
+}
+
+export function labelFitsMiss(label, miss = {}) {
+  const lab = compactText(label);
+  if (!lab || isIncompleteLabel(lab) || isPolarityLabel(lab)) return false;
+  const concepts = scoredConceptList(miss).map((c) => compactText(c).toLowerCase());
+  if (concepts.some((c) => c && (c === lab.toLowerCase() || c.includes(lab.toLowerCase()) || lab.toLowerCase().includes(c)))) {
+    return true;
+  }
+  const focus = contentTokens(`${miss.question || miss.prompt || ''} ${miss.correctAnswer || ''} ${concepts.join(' ')}`);
+  const labTokens = contentTokens(lab);
+  if (!labTokens.length) return false;
+  if (!focus.length) return true;
+  const hits = labTokens.filter(
+    (w) => focus.includes(w) || focus.some((f) => f.includes(w) || w.includes(f)),
+  );
+  return hits.length >= Math.min(2, labTokens.length);
 }
 
 export function exampleFromQuestion(question) {
@@ -138,6 +298,8 @@ export function teachingStep(sentence, maxWords = 14) {
   while (cut.length && HANGING.test(cut[cut.length - 1])) cut.pop();
   s = cut.join(' ').replace(/[.]+$/, '');
   if (!s || s.length < 12 || isIncompleteLabel(s)) return '';
+  if (/^(these get|conclusion is|on big rocks)\b/i.test(s)) return '';
+  if (/\bgot$/i.test(s)) return '';
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
@@ -148,10 +310,10 @@ export function studentPracticeQuestion(miss = {}, concept = '') {
   }
   const key = studentConceptLabel(miss.correctAnswer, 36);
   const example = exampleFromQuestion(miss.question || miss.prompt);
-  if (example && key && key.split(/\s+/).length <= 6 && !/^(true|false)$/i.test(key)) {
+  if (example && key && key.split(/\s+/).length <= 6 && !isPolarityLabel(key)) {
     return `How does ${example.toLowerCase()} show ${name.toLowerCase()}?`;
   }
-  if (key && key.split(/\s+/).length <= 5 && !/^(true|false)$/i.test(key)) {
+  if (key && key.split(/\s+/).length <= 5 && !isPolarityLabel(key)) {
     return `In your own words, what does ${key.toLowerCase()} have to do with ${name.toLowerCase()}?`;
   }
   return `What is the main idea of ${name.toLowerCase()}?`;
@@ -175,15 +337,19 @@ export function conceptKeywords(miss = {}, extra = []) {
   return out;
 }
 
-export function looksLikePoorStudentGraph(graph) {
+export function looksLikePoorStudentGraph(graph, miss = {}) {
   const labels = (graph?.nodes || []).map((n) => compactText(n.label));
   if (!labels.length) return true;
-  if (labels.some((l) => isCurriculumTopicId(l) || isIncompleteLabel(l))) return true;
-  if (labels.some((l) => DUMMY_NODE.test(l))) return true;
+  if (labels.some((l) => isCurriculumTopicId(l) || isIncompleteLabel(l) || isPolarityLabel(l))) return true;
+  if (labels.some((l) => DUMMY_NODE.test(l) || /^hold\b/i.test(l))) return true;
+  if (labels.some((l) => /lichen/i.test(l) && !/lichen/i.test(`${miss.question || ''} ${miss.correctAnswer || ''}`))) {
+    return true;
+  }
   const practice = compactText(graph?.practice?.question);
   if (practice && (isCurriculumTopicId(practice) || /G[6-9]_C\d+/i.test(practice))) return true;
   const path = graph?.learningPath || [];
   if (path.some((step) => DISCOURSE.test(compactText(step)))) return true;
+  if (path.some((step) => /plant biology is the idea/i.test(step))) return true;
   return false;
 }
 
@@ -221,6 +387,9 @@ export function polishConceptGraph(graph, miss = {}) {
         : studentConceptLabel(n.label, 40);
     if (!salvaged) continue;
     if (n.kind !== 'root' && n.kind !== 'mixup' && DUMMY_NODE.test(salvaged)) continue;
+    if (n.kind !== 'root' && n.kind !== 'mixup' && (isPolarityLabel(salvaged) || /^hold\b/i.test(salvaged))) {
+      continue;
+    }
     const key = salvaged.toLowerCase();
     if (seenLabel.has(key)) continue;
     seenLabel.add(key);

@@ -28,9 +28,11 @@ describe('download mind map matches on-screen concept trees', () => {
       ],
     );
     assert.match(svg, /SEEDS|NEW PLANTS|FLOWERING/i);
+    assert.match(svg, /<circle /i);
     assert.doesNotMatch(svg, /Your pick/i);
     assert.doesNotMatch(svg, /CORRECT ANSWER/i);
     assert.doesNotMatch(svg, />Correct</i);
+    assert.doesNotMatch(svg, /MISS /i);
   });
 
   it('draws leaf vs stem contrast for an MCQ miss', () => {
@@ -56,14 +58,12 @@ describe('download mind map matches on-screen concept trees', () => {
       ],
     );
     assert.match(svg, /LEAVES|PHOTOSYNTHESIS/i);
-    assert.match(svg, /STEM|TRANSPORT/i);
+    assert.match(svg, /<circle /i);
     assert.doesNotMatch(svg, /Your pick/i);
     assert.doesNotMatch(svg, /  · your pick/i);
   });
 
-  it('keeps whole words in tree boxes and learning path', () => {
-    const long =
-      'Plants which produce flowers are called flowering plants and plants which do not produce flowers are called non-flowering plants';
+  it('keeps whole keyword labels on radial nodes', () => {
     const { svg } = buildMindMapSvg(
       { title: 'Science gaps' },
       [
@@ -71,6 +71,10 @@ describe('download mind map matches on-screen concept trees', () => {
           index: 1,
           topic: 'Plant Diversity',
           question: 'What is a characteristic feature of flowering plants?',
+          pedagogy: [
+            { title: 'Flowering Plants', children: ['Formation of Flowers', 'Fruits', 'Seeds'] },
+            { title: 'Non Flowering', children: ['No Flowers'] },
+          ],
           conceptGraph: {
             concept: 'Plant Diversity',
             nodes: [
@@ -82,17 +86,17 @@ describe('download mind map matches on-screen concept trees', () => {
               { from: 'root', to: 'a', label: 'includes' },
               { from: 'root', to: 'b', label: 'teaches' },
             ],
-            learningPath: [long],
+            learningPath: [
+              'Plants which produce flowers are called flowering plants and plants which do not produce flowers are called non-flowering plants',
+            ],
           },
         },
       ],
     );
-    assert.match(svg, /FORMATION OF FLOWERS/);
-    assert.match(svg, /AND FRUITS/);
-    assert.match(svg, /FLOWERING PLANTS/);
-    assert.match(svg, /PRODUCE FLOWERS/);
+    assert.match(svg, /Flowering/);
+    assert.match(svg, /Formation of/);
+    assert.match(svg, /<circle /i);
     assert.doesNotMatch(svg, /FORMATION OF FL[.]/);
-    assert.match(svg, /do not produce flowers/);
-    assert.doesNotMatch(svg, /do not prod</);
+    assert.doesNotMatch(svg, /MISS /i);
   });
 });
