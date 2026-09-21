@@ -7,17 +7,11 @@ import { grokJson } from './grokMindMap.mjs';
 import {
   formatContext,
   presentationBand,
+  repairPrompt,
   systemPrompt,
   userPrompt,
 } from './scienceMindMapPrompt.mjs';
 import { validateMindMap } from './scienceMindMapValidator.mjs';
-import { extractRagKeywords } from './ragKeywords.mjs';
-import {
-  applyFrustrationPresentation,
-  debugMindMap,
-  mindMapFromContext,
-  sanitizeMindMap,
-} from './semanticMindMap.mjs';
 
 const GRADES = new Set([6, 7, 8, 9]);
 
@@ -90,12 +84,12 @@ function insufficientPayload({ question, grade, frustration, retrieval, message 
 }
 
 function applyPresentationCap(mindMap, band) {
-  return applyFrustrationPresentation(mindMap, band);
-}
-
-/** Build a hierarchy from Chroma hits when Grok cannot finish. */
-export function mindMapFromChunks({ question, chunks = [] } = {}) {
-  return mindMapFromContext({ question, chunks });
+  if (!mindMap || mindMap.status !== 'success') return mindMap;
+  if (band !== 'VERY_HIGH') return mindMap;
+  return {
+    ...mindMap,
+    branches: mindMap.branches.slice(0, 5),
+  };
 }
 
 export async function generateScienceMindMap(body = {}, deps = {}) {
@@ -105,7 +99,6 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
 
   const grade = Number(body.grade);
   const question = clipQuestion(body.question);
-  const studentAnswer = clipQuestion(body.studentAnswer || body.student_answer || '');
   const studentId = String(body.studentId || '').trim();
 
   if (!GRADES.has(grade)) {
@@ -120,18 +113,13 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
   }
 
   const frustration = await readFrustration(studentId);
-  const hint = clipQuestion(body.hint || body.correctAnswer || '');
-  const retrievalQuestion =
-    hint && !question.toLowerCase().includes(hint.toLowerCase().slice(0, 24))
-      ? `${question} ${hint}`
-      : question;
 
   let retrieval;
   try {
     retrieval = await query({
       grade,
-      question: retrievalQuestion,
-      top_k: Math.max(4, Math.min(14, Number(body.top_k) || 10)),
+      question,
+      top_k: Math.max(4, Math.min(12, Number(body.top_k) || 8)),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -150,66 +138,6 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     return insufficientPayload({ question, grade, frustration, retrieval });
   }
 
-  const ragKeywords = extractRagKeywords({
-    keywords: retrieval.keywords,
-    retrievalQuery: retrieval.retrieval_query,
-    chunks: retrieval.chunks,
-    question,
-  });
-
-  debugMindMap('retrieval', {
-    question,
-    frustrationScore: frustration.frustrationScore,
-    frustrationLevel: frustration.frustrationLevel,
-    retrievalQuery: retrieval.retrieval_query,
-    chunkIds: (retrieval.chunks || []).map((c) => c.chunk_id),
-    chapters: [...new Set((retrieval.chunks || []).map((c) => c.chapter).filter(Boolean))],
-  });
-
-  const successFrom = (mindMap, raw) => ({
-    ok: true,
-    status: 'success',
-    message: null,
-    mind_map: applyPresentationCap(mindMap, frustration.frustrationLevel),
-    keywords: ragKeywords,
-    sources: sourcesFromChunks(retrieval.chunks),
-    grade,
-    question,
-    frustration,
-    retrieval: {
-      original_question: retrieval.original_question || question,
-      retrieval_query: retrieval.retrieval_query,
-      keywords: ragKeywords,
-      enough: true,
-      confidence: retrieval.confidence,
-      used_cross_grade: Boolean(retrieval.used_cross_grade),
-      collection_count: retrieval.collection_count,
-    },
-    provider: raw?.provider || 'chroma-extractive',
-    model: raw?.model || 'chunks',
-  });
-
-  const fromChunks = () => {
-    const extracted = mindMapFromChunks({
-      question,
-      chunks: retrieval.chunks,
-    });
-    if (!extracted) return null;
-    const cleaned = sanitizeMindMap(extracted, {
-      chunks: retrieval.chunks,
-      question,
-      studentAnswer,
-    });
-    debugMindMap('fallback-from-chunks', {
-      central: cleaned.mindMap?.central_concept,
-      hubs: (cleaned.mindMap?.branches || []).map((b) => b.title),
-      removed: cleaned.removed,
-    });
-    return cleaned.mindMap
-      ? successFrom(cleaned.mindMap, { provider: 'chroma-extractive', model: 'chunks' })
-      : null;
-  };
-
   let parsed;
   let raw;
   try {
@@ -218,46 +146,32 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     const user = userPrompt({
       grade,
       question,
-      studentAnswer,
       frustrationScore: frustration.frustrationScore,
       frustrationLevel: frustration.frustrationLevel,
       context,
       retrievalQuery: retrieval.retrieval_query,
     });
-    raw = await complete({ system, user, temperature: 0.2, maxTokens: 1200 });
-    const parsedRaw = validateMindMap(raw.content);
-    const cleaned = sanitizeMindMap(parsedRaw, {
-      chunks: retrieval.chunks,
-      question,
-      studentAnswer,
-    });
-    debugMindMap('grok-validated', {
-      central: cleaned.mindMap?.central_concept,
-      hubs: (cleaned.mindMap?.branches || []).map((b) => ({
-        title: b.title,
-        children: (b.points || []).map((p) => p.text),
-      })),
-      removed: cleaned.removed,
-    });
-    parsed = cleaned.mindMap;
-    if (!parsed) throw new Error('mind map failed semantic validation');
+    raw = await complete({ system, user, temperature: 0.2, maxTokens: 1800 });
+    try {
+      parsed = validateMindMap(raw.content);
+    } catch {
+      raw = await complete({
+        system,
+        user: repairPrompt(raw.content),
+        temperature: 0,
+        maxTokens: 1800,
+      });
+      parsed = validateMindMap(raw.content);
+    }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[mind-map] Grok failed after Chroma retrieval; using textbook chunks (${message})`);
-    const fallback = fromChunks();
-    if (fallback) return fallback;
-    const out = new Error(message || 'Mind map generation failed');
-    out.statusCode = err?.retryable ? 503 : 502;
-    out.retryable = Boolean(err?.retryable);
+    const retryable = Boolean(err?.retryable);
+    const out = new Error(err instanceof Error ? err.message : 'Mind map generation failed');
+    out.statusCode = retryable ? 503 : 502;
+    out.retryable = retryable;
     throw out;
   }
 
   if (parsed.status === 'insufficient_context') {
-    const fallback = fromChunks();
-    if (fallback) {
-      console.warn('[mind-map] model claimed insufficient_context despite Chroma hits; using textbook chunks');
-      return fallback;
-    }
     return {
       ...insufficientPayload({
         question,
@@ -271,5 +185,25 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     };
   }
 
-  return successFrom(parsed, raw);
+  const mindMap = applyPresentationCap(parsed, frustration.frustrationLevel);
+  return {
+    ok: true,
+    status: 'success',
+    message: null,
+    mind_map: mindMap,
+    sources: sourcesFromChunks(retrieval.chunks),
+    grade,
+    question,
+    frustration,
+    retrieval: {
+      original_question: retrieval.original_question,
+      retrieval_query: retrieval.retrieval_query,
+      enough: true,
+      confidence: retrieval.confidence,
+      used_cross_grade: Boolean(retrieval.used_cross_grade),
+      collection_count: retrieval.collection_count,
+    },
+    provider: raw.provider,
+    model: raw.model,
+  };
 }

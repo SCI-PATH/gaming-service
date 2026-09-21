@@ -9,12 +9,10 @@ export async function fetchAiMindMap({
   frustrationScore = null,
   frustrationLevel = null,
   frustrationAdaptation = null,
-  studentId = '',
-  grade = null,
   signal,
 } = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000);
+  const timer = setTimeout(() => controller.abort(), 50000);
   if (signal) {
     if (signal.aborted) controller.abort();
     else signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -31,8 +29,6 @@ export async function fetchAiMindMap({
         frustrationScore,
         frustrationLevel,
         frustrationAdaptation,
-        studentId,
-        grade,
       }),
     });
 

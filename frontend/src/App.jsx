@@ -29,6 +29,8 @@ import {
 } from './data/leaderboardApi.js';
 import FarmMapPanel from './components/FarmMapPanel.jsx';
 import ResearchDashboard from './components/ResearchDashboard.jsx';
+import ScienceMindMapView from './components/ScienceMindMapView.jsx';
+import TextbookIngestView from './components/TextbookIngestView.jsx';
 import {
   AvatarAssistantModal,
   useBehavioralTelemetry,
@@ -213,7 +215,7 @@ export default function App() {
   const [questScrollOpen, setQuestScrollOpen] = useState(false);
   const [pauseOpen, setPauseOpen] = useState(false);
   const [savedRun, setSavedRun] = useState(() => farmRunSummary());
-  /** 'farm' | 'dashboard' */
+  /** 'farm' | 'dashboard' | 'mindmap' | 'textbooks' */
   const [appView, setAppView] = useState('farm');
   const correctStreakRef = useRef(0);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -947,6 +949,26 @@ export default function App() {
     setAppView('dashboard');
   }, [inFarm]);
 
+  const handleOpenScienceMindMap = useCallback(() => {
+    if (inFarm) {
+      emitSaveFarmRun();
+      pendingResumeRef.current = true;
+      setSavedRun(farmRunSummary());
+    }
+    setPauseOpen(false);
+    setAppView('mindmap');
+  }, [inFarm]);
+
+  const handleOpenTextbookIngest = useCallback(() => {
+    if (inFarm) {
+      emitSaveFarmRun();
+      pendingResumeRef.current = true;
+      setSavedRun(farmRunSummary());
+    }
+    setPauseOpen(false);
+    setAppView('textbooks');
+  }, [inFarm]);
+
   const handleChallengesState = useCallback((payload = {}) => {
     const list = Array.isArray(payload.challenges) ? payload.challenges : [];
     storylineChallengesRef.current = list.filter(isStorylineChallenge);
@@ -1601,9 +1623,13 @@ export default function App() {
         mode={
           appView === 'dashboard'
             ? 'dashboard'
-            : inFarm
-              ? 'playing'
-              : 'lobby'
+            : appView === 'mindmap'
+              ? 'mindmap'
+              : appView === 'textbooks'
+                ? 'textbooks'
+                : inFarm
+                  ? 'playing'
+                  : 'lobby'
         }
         student={student}
         farm={farm}
@@ -1612,6 +1638,8 @@ export default function App() {
         chapterLevel={pathLinked ? farm.levelId : null}
         onOpenLearningPath={pathLinked ? openLearningPathHome : null}
         onOpenDashboard={handleOpenResearchDashboard}
+        onOpenMindMap={handleOpenScienceMindMap}
+        onOpenTextbooks={handleOpenTextbookIngest}
         onBackToFarm={handleBackToFarm}
         onLogout={handleLogout}
         loggingOut={loggingOut}
@@ -1629,6 +1657,10 @@ export default function App() {
           ddaMisses={ddaMisses}
           onBackToFarm={handleBackToFarm}
         />
+      ) : appView === 'mindmap' ? (
+        <ScienceMindMapView student={student} telemetrySession={telemetrySession} />
+      ) : appView === 'textbooks' ? (
+        <TextbookIngestView />
       ) : (
       <div className="forest-play-layout">
         <div className="forest-stage-wrap">

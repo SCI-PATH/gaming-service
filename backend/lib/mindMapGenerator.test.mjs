@@ -124,13 +124,14 @@ describe('student wrong answer stays off the mind map', () => {
   });
 });
 
-describe('missing question does not guess', () => {
-  it('returns Mind Map unavailable when there is no question to retrieve', async () => {
+describe('missing engine key does not guess', () => {
+  it('returns Mind Map unavailable instead of inventing an answer', async () => {
     const result = await generateMindMapFromMistakes({
       attempts: [
         {
           questionId: 'q-missing-9',
           questionType: 'MCQ',
+          question: 'How do flowering plants reproduce?',
           studentAnswer: 'Stems',
           isCorrect: false,
         },
@@ -138,136 +139,10 @@ describe('missing question does not guess', () => {
     });
     assert.equal(result.unavailable, true);
     assert.equal(result.error, 'MIND_MAP_UNAVAILABLE');
+    assert.deepEqual(result.questionIds, ['q-missing-9']);
     assert.equal(result.mindMap.unavailable, true);
     assert.equal(result.mindMap.branches.length, 0);
-  });
-});
-
-describe('farm Sage maps use Chroma RAG', () => {
-  it('builds a textbook graph from Grok RAG JSON, not Key idea placeholders', async () => {
-    const result = await generateMindMapFromMistakes(
-      {
-        grade: 6,
-        studentId: 'maya',
-        attempts: [
-          {
-            questionId: 'q-seed-groups',
-            question:
-              'What are the two main groups of flowering plants based on their seed structure?',
-            prompt:
-              'What are the two main groups of flowering plants based on their seed structure?',
-            studentAnswer: 'Habitat',
-            isCorrect: false,
-            grade: 6,
-          },
-        ],
-      },
-      {
-        generateScienceMindMap: async () => ({
-          status: 'success',
-          mind_map: {
-            status: 'success',
-            title: 'Monocots and dicots',
-            central_concept: 'Monocots and dicots',
-            summary: 'Flowering plants are grouped by seed leaves.',
-            branches: [
-              {
-                id: 'b1',
-                title: 'Monocot',
-                points: [{ id: 'p1', text: 'One cotyledon (seed leaf)' }],
-              },
-              {
-                id: 'b2',
-                title: 'Dicot',
-                points: [{ id: 'p2', text: 'Two cotyledons (seed leaves)' }],
-              },
-            ],
-            key_terms: [{ term: 'cotyledon', meaning: 'seed leaf' }],
-            examples: ['Maize is a monocot; bean is a dicot.'],
-            remember_this: ['Count the seed leaves'],
-            one_sentence_summary:
-              'The two groups are monocots and dicots, based on seed leaves.',
-          },
-          sources: [
-            {
-              textbook: 'Grade 6 Science',
-              chapter: 'Diversity of plants',
-              page: 12,
-              chunk_id: 'c1',
-            },
-          ],
-        }),
-      },
-    );
-    assert.equal(result.ok, true);
-    assert.equal(result.provider, 'chroma-rag');
-    const graph = result.mindMap.branches[0].conceptGraph;
-    const labels = (graph.nodes || []).map((n) => n.label.toLowerCase());
-    assert.ok(labels.some((l) => l.includes('monocot')));
-    assert.ok(labels.some((l) => l.includes('dicot')));
-    assert.equal(labels.some((l) => /^(this idea|key idea|link)$/.test(l)), false);
-    assert.equal(result.mindMap.generatedBy, 'chroma-rag');
-  });
-
-  it('runs Chroma RAG for questions from any chapter, not template matchers', async () => {
-    const questions = [
-      'Why do plants need sunlight?',
-      'What happens during evaporation in the water cycle?',
-      'What does a capacitor store?',
-      'Name the two main groups of flowering plants based on seed structure.',
-    ];
-    const seen = [];
-    const result = await generateMindMapFromMistakes(
-      {
-        grade: 7,
-        studentId: 'maya',
-        attempts: questions.map((question, i) => ({
-          questionId: `q-ch-${i}`,
-          question,
-          prompt: question,
-          isCorrect: false,
-          grade: 7,
-        })),
-        frustrationLevel: 'low',
-      },
-      {
-        generateScienceMindMap: async ({ question, grade }) => {
-          seen.push({ question, grade });
-          const title = question.slice(0, 28);
-          return {
-            status: 'success',
-            mind_map: {
-              status: 'success',
-              title,
-              central_concept: title,
-              summary: 'Grounded in retrieved textbook chunks.',
-              branches: [
-                { title: 'Textbook idea', points: [{ text: 'Textbook fact one' }] },
-                { title: 'Related fact', points: [{ text: 'Textbook fact two' }] },
-              ],
-              remember_this: ['Use the textbook idea'],
-              one_sentence_summary: 'This comes from retrieved chunks.',
-            },
-            sources: [{ textbook: 'Grade 7 Science', chapter: 'Any', chunk_id: 'x' }],
-          };
-        },
-      },
-    );
-    assert.equal(seen.length, questions.length);
-    assert.deepEqual(
-      seen.map((row) => row.question),
-      questions,
-    );
-    assert.ok(seen.every((row) => row.grade === 7));
-    assert.equal(result.provider, 'chroma-rag');
-    assert.equal(result.mindMap.generatedBy, 'chroma-rag');
-    assert.equal(result.mindMap.branches.length, questions.length);
-    for (const branch of result.mindMap.branches) {
-      assert.equal(branch.conceptGraph.generatedBy, 'chroma-rag');
-      assert.equal(branch.textbookGrounded, true);
-      const labels = (branch.conceptGraph.nodes || []).map((n) => n.label.toLowerCase());
-      assert.equal(labels.some((l) => /^(this idea|key idea)$/.test(l)), false);
-    }
+    assert.equal(/unavailable/i.test(result.mindMap.title || result.mindMap.root), true);
   });
 });
 
@@ -463,20 +338,6 @@ describe('central concept identification', () => {
         topic: 'Science',
       }),
       'Heart',
-    );
-  });
-
-  it('never titles a map with a curriculum skill id', () => {
-    assert.equal(
-      identifyCentralConcept({
-        question: 'How is sound produced in a flute?',
-        prompt: 'How is sound produced in a flute?',
-        correctAnswer: 'Vibration of air',
-        questionType: 'MCQ',
-        topic: 'G7_C11_SOU_PRODUCE',
-        topic_id: 'G7_C11_SOU_PRODUCE',
-      }),
-      'Production of sound',
     );
   });
 });

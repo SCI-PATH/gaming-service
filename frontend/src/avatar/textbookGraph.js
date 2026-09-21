@@ -3,18 +3,7 @@
  * same chapter_id / topic_id the assessment engine uses.
  */
 import { compactText, scoredConceptList, blankRolesFromQuestion } from './assessmentMiss.js';
-import { PLACEHOLDER_NODE } from './conceptLessons.js';
-import {
-  displayConceptName,
-  exampleFromQuestion,
-  isIncompleteLabel,
-  labelFitsMiss,
-  polishConceptGraph,
-  studentConceptLabel,
-  studentPracticeQuestion,
-  teachingStep,
-  topicFitsQuestion,
-} from './conceptMapQuality.js';
+import { PLACEHOLDER_NODE, phraseLabel } from './conceptLessons.js';
 import digestJson from './textbookChapterDigest.json' with { type: 'json' };
 
 function normalizeTitle(value) {
@@ -108,14 +97,11 @@ function slug(text, fallback = 'n') {
 }
 
 function queryBlob(miss = {}) {
-  const topic = compactText(miss.topic);
-  const chapter = compactText(miss.chapter_name || miss.chapter);
-  const question = miss.question || miss.prompt;
   return [
-    question,
+    miss.question || miss.prompt,
     miss.correctAnswer,
-    topicFitsQuestion(topic, question) ? topic : '',
-    topicFitsQuestion(chapter, question) ? chapter : '',
+    miss.topic,
+    miss.chapter_name || miss.chapter,
   ]
     .filter(Boolean)
     .join(' ');
@@ -155,13 +141,11 @@ function isJunkLabel(label) {
   if (!s || s.length < 3) return true;
   if (/^\d+$/.test(s)) return true;
   if (PLACEHOLDER_NODE.test(s)) return true;
-  if (isIncompleteLabel(s)) return true;
   if (/^(tabulate|collect|compare|observe|draw|list|write|complete|copy|identify|whereas|and that|and plants)$/i.test(s)) {
     return true;
   }
   if (/tabulate|collect many|compare the/i.test(s)) return true;
   if (/^(duce|vide|tion)\b/i.test(s)) return true;
-  if (/^hold\b/i.test(s)) return true;
   return false;
 }
 
@@ -181,19 +165,13 @@ function sentenceForConcept(ranked, concept) {
 
 function labelFromSentence(sentence, concepts = []) {
   const text = compactText(sentence);
-  const extracted = studentConceptLabel(text, 36);
-  if (extracted && !isJunkLabel(extracted)) {
-    const isOnlyScoredConcept = concepts.some(
-      (c) => normalizeTitle(c) === normalizeTitle(extracted),
-    );
-    if (!isOnlyScoredConcept) return extracted;
-  }
   const hit = concepts.find((c) => text.toLowerCase().includes(String(c).toLowerCase()));
-  if (hit) {
-    const lab = studentConceptLabel(hit, 36);
-    if (lab && !isJunkLabel(lab)) return lab;
-  }
-  return extracted && !isJunkLabel(extracted) ? extracted : '';
+  if (hit) return phraseLabel(hit, 32);
+  const called = text.match(/\b(?:is|are)\s+called\s+([^.]{3,48})/i);
+  if (called && !isJunkLabel(called[1])) return phraseLabel(called[1], 40);
+  const known = text.match(/\bknown as\s+([^.]{3,48})/i);
+  if (known && !isJunkLabel(known[1])) return phraseLabel(known[1], 40);
+  return '';
 }
 
 function resolveDigestRow(miss = {}) {
@@ -235,22 +213,18 @@ function matchDigestChapter(miss = {}) {
  */
 export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMeta = {}) {
   const usable = [...sentences].filter(isTeachableSentence);
-  const rawConcepts = scoredConceptList(miss);
-  const concepts = rawConcepts
-    .map((c) => studentConceptLabel(c, 36))
-    .filter((c) => c && !isJunkLabel(c));
+  const concepts = scoredConceptList(miss);
   const ranked = rankSentences(usable.length ? usable : sentences.filter(isTeachableSentence), miss, 8);
   if (!ranked.length && !concepts.length) return null;
   const chapterName =
-    displayConceptName({
-      ...miss,
-      chapter_name: chapterMeta.chapter_name || miss.chapter_name || miss.chapter,
-    }) ||
-    studentConceptLabel(chapterMeta.chapter_name, 40) ||
+    miss.topic ||
+    chapterMeta.chapter_name ||
+    miss.chapter_name ||
+    miss.chapter ||
     'Science';
   const chapterId = chapterMeta.chapter_id || miss.chapter_id || '';
   const roles = blankRolesFromQuestion(miss.question || miss.prompt);
-  const rootLabel = studentConceptLabel(chapterName, 40) || 'Science';
+  const rootLabel = phraseLabel(chapterName, 32) || 'Science';
   const nodes = [
     {
       id: 'tb-root',
@@ -258,21 +232,22 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
       kind: 'root',
       importance: 'key',
       explanation: chapterId
-        ? `Official textbook chapter ${chapterId}: ${rootLabel}.`
-        : `From the official science textbook: ${rootLabel}.`,
+        ? `Official textbook chapter ${chapterId}: ${chapterName}.`
+        : `From the official science textbook: ${chapterName}.`,
     },
   ];
   const relationships = [];
   const seen = new Set(['tb-root', normalizeTitle(rootLabel)]);
 
-  concepts.forEach((label, i) => {
+  concepts.forEach((concept, i) => {
+    const label = phraseLabel(concept, 32);
+    if (!label || isJunkLabel(label)) return;
     const id = slug(label, `ae-${i}`);
     const key = normalizeTitle(label);
     if (seen.has(id) || seen.has(key)) return;
     const expl =
-      sentenceForConcept(ranked, rawConcepts[i] || label) ||
-      ranked.find((s) => s.toLowerCase().includes(label.toLowerCase())) ||
-      `${label} is part of ${rootLabel}.`;
+      sentenceForConcept(ranked, concept) ||
+      `The assessment engine scores this blank as ${concept}.`;
     seen.add(id);
     seen.add(key);
     nodes.push({
@@ -280,21 +255,21 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
       label,
       kind: 'correct',
       importance: 'key',
-      explanation: String(expl).slice(0, 220),
+      explanation: expl.slice(0, 220),
     });
     relationships.push({
       from: 'tb-root',
       to: id,
-      label: roles[i] && roles[i] !== 'teaches' ? roles[i] : 'includes',
+      label: roles[i] || 'teaches',
     });
   });
 
   let extra = 0;
-  const extraCap = Math.max(supportLimit(miss), nodes.length < 3 ? 3 : 2);
+  const extraCap = supportLimit(miss);
   for (const sentence of ranked) {
-    if (extra >= extraCap && nodes.length >= 3) break;
+    if (extra >= extraCap) break;
     const label = labelFromSentence(sentence, concepts);
-    if (!label || isJunkLabel(label) || !labelFitsMiss(label, miss)) continue;
+    if (!label || isJunkLabel(label)) continue;
     const id = slug(label);
     const key = normalizeTitle(label);
     if (seen.has(id) || seen.has(key)) continue;
@@ -311,35 +286,20 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
     extra += 1;
   }
 
-  const example = exampleFromQuestion(miss.question || miss.prompt);
-  if (
-    example &&
-    labelFitsMiss(example, miss) &&
-    !seen.has(normalizeTitle(example)) &&
-    nodes.length < 8
-  ) {
-    const id = slug(example, 'ex');
-    if (!seen.has(id)) {
-      seen.add(id);
-      seen.add(normalizeTitle(example));
-      nodes.push({
-        id,
-        label: example,
-        kind: 'related',
-        explanation: compactText(miss.question || miss.prompt).slice(0, 180),
-      });
-      relationships.push({ from: 'tb-root', to: id, label: 'example' });
-    }
+  if (nodes.length < 3) {
+    nodes.push({
+      id: 'tb-cover',
+      label: phraseLabel(miss.topic || 'This question', 24) || 'This question',
+      kind: 'related',
+      explanation: compactText(miss.question || miss.prompt).slice(0, 180),
+    });
+    relationships.push({ from: 'tb-root', to: 'tb-cover', label: 'covers' });
   }
 
   if (nodes.length < 3) return null;
   const firstConcept = concepts[0] || rootLabel;
-  const path = [
-    ...ranked.map((s) => teachingStep(s)),
-    ...concepts.map((c) => `${c} belongs with ${rootLabel}`),
-  ].filter(Boolean);
-  const graph = {
-    concept: rootLabel,
+  return {
+    concept: chapterName,
     misconception: {
       type: 'textbook_grounded',
       summary: `Grounded in the assessment key${chapterId ? ` and chapter ${chapterId}` : ''}.`
@@ -348,19 +308,19 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
     },
     nodes,
     relationships,
-    learningPath: path.slice(0, 4),
+    learningPath: concepts.length
+      ? concepts.map((c) => sentenceForConcept(ranked, c) || `Hold the scored idea: ${c}.`).slice(0, 4)
+      : ranked.slice(0, 3),
     example: (ranked[0] || compactText(miss.question)).slice(0, 180),
     practice: {
-      question:
-        concepts.length > 1
-          ? 'Name the ideas this question is scoring.'
-          : studentPracticeQuestion(miss, rootLabel),
+      question: concepts.length > 1
+        ? `Name the ideas this question is scoring.`
+        : `Using the textbook idea, what does ${rootLabel} say about this?`,
       expectedConcept: firstConcept,
     },
     chapter_id: chapterId,
     topic_id: chapterMeta.topic_id || miss.topic_id || '',
   };
-  return polishConceptGraph(graph, miss);
 }
 
 export function buildTextbookGraph(miss = {}) {

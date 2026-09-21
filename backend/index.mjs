@@ -499,18 +499,4 @@ server.listen(PORT, HOST, () => {
   console.log(
     `[backend] DATABASE_URL=${process.env.DATABASE_URL ? 'set (Neon engagement sync ON)' : 'missing (engagement sync skipped)'}`,
   );
-  if (process.env.CHROMA_INGEST_ON_START === '1') {
-    import('./lib/chromaService.mjs')
-      .then((chroma) => chroma.ingestDefaultTextbooks(false))
-      .then((result) => {
-        console.log(
-          `[backend] chroma ingest-on-start count=${result?.chroma?.count ?? 'n/a'}`,
-        );
-      })
-      .catch((err) => {
-        console.warn(
-          `[backend] chroma ingest-on-start: ${err instanceof Error ? err.message : err}`,
-        );
-      });
-  }
 });

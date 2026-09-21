@@ -8,32 +8,21 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BACKEND_ROOT = resolve(HERE, '..');
-const REPO_ROOT = process.env.GAMING_ROOT || resolve(BACKEND_ROOT, '..');
-const SCRIPT = resolve(BACKEND_ROOT, 'python/chroma_ops.py');
-
-function venvPython() {
-  const candidate =
-    process.platform === 'win32'
-      ? resolve(REPO_ROOT, '.venv/Scripts/python.exe')
-      : resolve(REPO_ROOT, '.venv/bin/python');
-  return existsSync(candidate) ? candidate : null;
-}
+const REPO_ROOT = resolve(HERE, '../..');
+const SCRIPT = resolve(HERE, '../python/chroma_ops.py');
 
 function pythonBin() {
   return (
     process.env.CHROMA_PYTHON ||
     process.env.PYTHON ||
-    venvPython() ||
     (process.platform === 'win32' ? 'py' : 'python')
   );
 }
 
 function pythonArgs(extra) {
   const bin = pythonBin();
-  if (process.platform === 'win32' && (bin === 'py' || /[\\/]py\.exe$/i.test(bin))) {
-    // Default `py -3` is 3.14 here; chromadb is installed on 3.12.
-    return ['-3.12', SCRIPT, ...extra];
+  if (process.platform === 'win32' && (bin === 'py' || bin.endsWith('\\py.exe'))) {
+    return ['-3', SCRIPT, ...extra];
   }
   return [SCRIPT, ...extra];
 }

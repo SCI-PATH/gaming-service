@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
     '/api': {
       target: gamingTarget,
       changeOrigin: true,
-      timeout: 120000,
+      timeout: 60000,
       configure(proxyServer) {
         let lastLog = 0;
         proxyServer.on('error', (err, _req, res) => {

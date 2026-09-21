@@ -208,14 +208,7 @@ export function floweringContrastLesson(miss) {
 }
 
 export function diversityLesson(miss) {
-  const blob = questionBlob(miss);
-  if (has(blob, /monocot|dicot|cotyledon|taproot|fibrous/)) return true;
-  const q = `${miss.question || ''} ${miss.prompt || ''}`;
-  if (has(q, /two main groups|main groups of flowering/) && has(q, /seed|flowering/)) {
-    return true;
-  }
-  if (has(q, /groups? of flowering/) && has(q, /seed structure/)) return true;
-  return false;
+  return has(questionBlob(miss), /monocot|dicot|cotyledon|taproot|fibrous/);
 }
 
 export function chargeLesson(miss) {

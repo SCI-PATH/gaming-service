@@ -22,8 +22,6 @@ backend/data/*.json
 data/chroma/
 data/textbooks/
 data/textbook_registry/
-**/__pycache__/
-*.pyc
 
 # Editor directories and files
 .vscode/*

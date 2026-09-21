@@ -28,12 +28,6 @@ import {
   waterCycleLesson,
 } from './conceptLessons.js';
 import { buildTextbookGraph } from './textbookGraph.js';
-import {
-  displayConceptName,
-  looksLikePoorStudentGraph,
-  polishConceptGraph,
-  studentConceptLabel,
-} from './conceptMapQuality.js';
 
 export const MISCONCEPTION_TYPES = Object.freeze({
   COMPLETE_MISS: 'complete_miss',
@@ -92,8 +86,8 @@ export function diagnoseMisconception(miss = {}) {
       summary: focus
         ? `Learn how ${focus.label.toLowerCase()} fit this question.`
         : 'Learn the concept this question is checking.',
-      testedConcept: testedConceptLabel(miss, 'This idea'),
-      missingConcept: shortLabel(correct, 28) || testedConceptLabel(miss, focus?.label),
+      testedConcept: focus?.label || shortLabel(correct, 28) || 'This idea',
+      missingConcept: shortLabel(correct, 28) || focus?.label,
     };
   }
   if (tf) {
@@ -108,7 +102,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.PARTIAL,
       summary: 'Part of the idea is right; a key link is still missing.',
-      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+      testedConcept: focus?.process || shortLabel(correct, 28),
       missingConcept: missing[0] || shortLabel(correct, 28),
     };
   }
@@ -121,7 +115,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.INCOMPLETE,
       summary: 'The answer is on the right track but not complete.',
-      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+      testedConcept: focus?.label || shortLabel(correct, 28),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -150,7 +144,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.RELATED,
       summary: `${mixName} and ${rightName} are related, but they do different jobs.`,
-      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+      testedConcept: focus?.process || shortLabel(correct, 28),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -158,7 +152,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.VOCABULARY,
       summary: `${shortLabel(student, 22)} is not the keyword this question is scoring.`,
-      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+      testedConcept: focus?.label || shortLabel(correct, 28),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -166,14 +160,14 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.REASONING,
       summary: 'The reasoning misses the process that actually answers this question.',
-      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+      testedConcept: focus?.process || shortLabel(correct, 28),
       missingConcept: shortLabel(correct, 28),
     };
   }
   return {
     type: MISCONCEPTION_TYPES.COMPLETE_MISS,
     summary: `${shortLabel(student, 24)} is not the idea this question is checking.`,
-    testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
+    testedConcept: focus?.label || shortLabel(correct, 28),
     missingConcept: shortLabel(correct, 28),
   };
 }
@@ -422,36 +416,16 @@ function waterCycleGraph(miss, diagnosis) {
 }
 
 function diversityGraph(miss, diagnosis) {
-  const blob = `${miss.question || ''} ${miss.prompt || ''} ${miss.correctAnswer || ''}`;
-  const asksBoth =
-    has(blob, /two main groups|main groups of flowering|groups of flowering/) ||
-    (has(blob, /seed structure/) && has(blob, /group/)) ||
-    (has(miss.correctAnswer, /monocot/) && has(miss.correctAnswer, /dicot/));
-  const monoOnly =
-    !asksBoth &&
-    (has(miss.correctAnswer, /monocot|one seed|one cotyledon|fibrous/) ||
-      (has(miss.question, /monocot/) && !has(miss.question, /dicot/)));
+  const mono = has(miss.correctAnswer, /monocot|one|fibrous/) || has(miss.question, /monocot/);
   return graph({
     concept: 'Monocots and dicots',
     misconception: diagnosis,
     nodes: [
-      node('groups', 'Flowering plants', {
-        kind: 'root',
-        importance: 'key',
-        explanation: 'Flowering plants are grouped by how many seed leaves (cotyledons) they have.',
-      }),
-      node('mono', 'Monocot', {
-        kind: monoOnly || asksBoth ? 'correct' : 'related',
-        importance: 'key',
-        explanation: 'Monocots have one seed leaf (cotyledon). Grasses, rice, and maize are common examples.',
-      }),
-      node('dicot', 'Dicot', {
-        kind: !monoOnly ? 'correct' : 'related',
-        importance: 'key',
-        explanation: 'Dicots have two seed leaves (cotyledons). Beans and mango are common examples.',
-      }),
-      node('one', 'One seed leaf', { explanation: 'The prefix “mono-” means one. That seed leaf is a cotyledon.' }),
-      node('two', 'Two seed leaves', { explanation: 'The prefix “di-” means two. Dicots have two cotyledons.' }),
+      node('groups', 'Seed plants', { kind: 'root', importance: 'key', explanation: 'Flowering plants are grouped by seed leaves.' }),
+      node('mono', 'Monocot', { kind: mono ? 'correct' : 'related', explanation: 'One seed leaf; often fibrous roots and parallel veins.' }),
+      node('dicot', 'Dicot', { kind: mono ? 'related' : 'correct', explanation: 'Two seed leaves; often a taproot and net veins.' }),
+      node('one', 'One seed leaf', { explanation: 'The cotyledon count names the group.' }),
+      node('two', 'Two seed leaves', { explanation: 'Dicots have two cotyledons.' }),
     ],
     relationships: [
       { from: 'groups', to: 'mono', label: 'include' },
@@ -459,19 +433,11 @@ function diversityGraph(miss, diagnosis) {
       { from: 'mono', to: 'one', label: 'have' },
       { from: 'dicot', to: 'two', label: 'have' },
     ],
-    learningPath: asksBoth
-      ? [
-          'Flowering plants are grouped by seed leaves',
-          'Monocots have one cotyledon',
-          'Dicots have two cotyledons',
-        ]
-      : ['Count seed leaves', 'Link that count to roots and veins', 'Use the group name'],
-    example: 'Maize is a monocot; a bean seed that splits into two lobes is a dicot.',
+    learningPath: ['Count seed leaves', 'Link that count to roots and veins', 'Use the group name'],
+    example: 'Maize is a monocot; bean is a dicot.',
     practice: {
-      question: asksBoth
-        ? 'Name the two groups of flowering plants based on seed structure.'
-        : 'A seed has two cotyledons. Is that plant a monocot or a dicot?',
-      expectedConcept: asksBoth ? 'Monocots and dicots' : 'Dicot',
+      question: 'A seed has two cotyledons. Is that plant a monocot or a dicot?',
+      expectedConcept: 'Dicot',
     },
   });
 }
@@ -506,71 +472,34 @@ function chargeGraph(miss, diagnosis) {
 function trueFalseGraph(miss, diagnosis) {
   const claim = compactText(miss.question || miss.prompt);
   const focus = focusPlantPart(miss);
-  const idea =
-    displayConceptName(miss) ||
-    focus?.label ||
-    shortLabel(claim.replace(/true or false[:.]?/i, ''), 28) ||
-    'Science idea';
-  const heat = /heating|cooling|weather/i.test(claim);
-  const nodes = [
-    node('idea', idea, { kind: 'root', importance: 'key', explanation: claim }),
-  ];
-  const relationships = [];
-  if (heat) {
-    nodes.push(
-      node('heat', 'Heating and cooling', {
-        kind: 'correct',
-        importance: 'key',
-        explanation: 'Rocks expand and contract when they heat and cool, so they can crack.',
-      }),
-    );
-    nodes.push(
-      node('break', 'Break into pieces', {
-        kind: 'related',
-        explanation: 'That cracking is weathering: rocks break into smaller pieces.',
-      }),
-    );
-    relationships.push({ from: 'idea', to: 'heat', label: 'caused by' });
-    relationships.push({ from: 'heat', to: 'break', label: 'leads to' });
-  } else {
-    nodes.push(
-      node('fact', focus?.process || 'Science claim', {
-        kind: 'correct',
-        importance: 'key',
-        explanation: /^(true|t|yes)$/i.test(miss.correctAnswer)
-          ? 'The science in the sentence holds.'
-          : 'A key claim in the sentence does not hold.',
-      }),
-    );
-    relationships.push({ from: 'idea', to: 'fact', label: 'checked by' });
-    if (focus) {
-      nodes.push(node('job', focus.process, { explanation: focus.processExplain }));
-      relationships.push({ from: 'idea', to: 'job', label: 'uses' });
-    } else {
-      const extra = shortLabel(claim, 28);
-      if (extra && extra.toLowerCase() !== String(idea).toLowerCase()) {
-        nodes.push(node('claim', extra, { explanation: claim }));
-        relationships.push({ from: 'idea', to: 'claim', label: 'says' });
-      } else {
-        nodes.push(
-          node('check', 'Check the claim', {
-            explanation: 'Decide whether the science in the sentence holds.',
-          }),
-        );
-        relationships.push({ from: 'idea', to: 'check', label: 'needs' });
-      }
-    }
-  }
+  const rightTrue = /^(true|t|yes)$/i.test(miss.correctAnswer);
+  const idea = focus?.label || shortLabel(claim.replace(/true or false[:.]?/i, ''), 28) || 'Science idea';
   return graph({
     concept: idea,
     misconception: diagnosis,
-    nodes,
-    relationships,
-    learningPath: [
-      `The statement is about ${idea.toLowerCase()}`,
-      heat ? 'Heating and cooling make rocks crack' : 'Check the process the sentence names',
-      `The statement is ${compactText(miss.correctAnswer)}`,
+    nodes: [
+      node('idea', idea, { kind: 'root', importance: 'key', explanation: claim }),
+      node('fact', focus?.process || (rightTrue ? 'Holds' : 'Breaks'), {
+        kind: 'correct',
+        importance: 'key',
+        explanation: rightTrue ? 'The science in the sentence holds.' : 'A key claim in the sentence does not hold.',
+      }),
+      node('verdict', rightTrue ? 'True' : 'False', {
+        kind: 'correct',
+        explanation: `The scored judgement is ${compactText(miss.correctAnswer)}.`,
+      }),
+      ...(focus
+        ? [
+            node('job', focus.process, { explanation: focus.processExplain }),
+          ]
+        : []),
     ],
+    relationships: [
+      { from: 'idea', to: 'fact', label: 'checked by' },
+      { from: 'fact', to: 'verdict', label: 'scores' },
+      ...(focus ? [{ from: 'idea', to: 'job', label: 'uses' }] : []),
+    ],
+    learningPath: ['Read the science claim', 'Check the process it names', `The statement is ${compactText(miss.correctAnswer)}`],
     example: claim,
     practice: {
       question: 'In your own words, what science fact decides whether this sentence is true?',
@@ -579,120 +508,97 @@ function trueFalseGraph(miss, diagnosis) {
   });
 }
 
-function testedConceptLabel(miss, fallback = '') {
-  if (diversityLesson(miss)) return 'Monocots and dicots';
-  if (floweringContrastLesson(miss)) return 'Flowering vs non-flowering';
-  const focus = focusPlantPart(miss);
-  const correct = compactText(miss.correctAnswer);
-  return focus?.label || shortLabel(correct, 28) || fallback;
-}
-
 function keywordFromCorrect(miss) {
-  const parts = scoredConceptList(miss).filter((c) => !isPolarityToken(c));
-  if (parts.length > 1) return '';
-  const c = compactText(parts[0] || miss.correctAnswer);
-  if (!c || /see the lesson|key idea|placeholder/i.test(c) || isPolarityToken(c)) return '';
-  const labeled = studentConceptLabel(c, 48);
-  if (labeled) return labeled;
+  const c = compactText(miss.correctAnswer);
+  if (!c || /see the lesson|key idea|placeholder/i.test(c)) return '';
+  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 72);
   const part = focusPlantPart(miss);
   if (part) return part.label;
-  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 48);
-  return '';
-}
-
-function isPolarityToken(text) {
-  return /^(true|false|t|f|yes|no)$/i.test(compactText(text));
+  return phraseLabel(c, 72);
 }
 
 function genericGraph(miss, diagnosis) {
-  const parts = scoredConceptList(miss)
-    .map((c) => studentConceptLabel(c, 36))
-    .filter((c) => c && !PLACEHOLDER_NODE.test(c));
-  const correct =
-    parts[0] ||
-    keywordFromCorrect(miss) ||
-    focusPlantPart(miss)?.label ||
-    displayConceptName(miss) ||
-    'Science idea';
-  const student = usableStudent(miss) ? studentConceptLabel(miss.studentAnswer, 24) : '';
+  const correct = keywordFromCorrect(miss) || focusPlantPart(miss)?.label || 'Key idea';
+  const student = usableStudent(miss) ? shortLabel(miss.studentAnswer, 24) : '';
   const mix = Boolean(student && !answersEquivalent(student, correct));
   const q = compactText(miss.question || miss.prompt);
-  const rootLabel = displayConceptName(miss) || parts[0] || correct;
+  const process =
+    (has(q, /why|because|cause/) && 'Cause') ||
+    (has(q, /how|process|happen/) && 'Process') ||
+    (has(q, /function|job|role/) && (focusPlantPart(miss)?.process || 'Role')) ||
+    focusPlantPart(miss)?.process ||
+    keywordFromCorrect(miss) ||
+    'Link';
+  const strippedQ = q.replace(
+    /^(what|which|why|how|is|are)\s+(is|are|the)?\s*(difference between|meaning of)?\s*/i,
+    '',
+  );
+  const rootLabel =
+    focusPlantPart(miss)?.label ||
+    keywordFromCorrect(miss) ||
+    phraseLabel(strippedQ, 24) ||
+    'Science';
   const nodes = [
     node('root', PLACEHOLDER_NODE.test(rootLabel) ? correct : rootLabel, {
       kind: 'root',
       importance: 'key',
-      explanation: q,
+      explanation: compactText(miss.question || miss.prompt),
+    }),
+    node('correct', correct, {
+      kind: 'correct',
+      importance: 'key',
+      explanation: `This is the idea the question is scoring.`,
+    }),
+    node('process', process, {
+      kind: 'process',
+      importance: 'key',
+      explanation: `Connect this process to ${correct}.`,
     }),
   ];
-  const relationships = [];
-  const seen = new Set([compactText(nodes[0].label).toLowerCase()]);
-  const addCorrect = (id, label, extra = {}) => {
-    const key = compactText(label).toLowerCase();
-    if (!label || seen.has(key)) return;
-    seen.add(key);
-    nodes.push(
-      node(id, label, {
-        kind: 'correct',
-        importance: 'key',
-        explanation: extra.explanation || `${label} is part of this idea.`,
-      }),
-    );
-    relationships.push({ from: 'root', to: id, label: extra.edge || 'includes' });
-  };
-  if (parts.length > 1) {
-    parts.forEach((label, i) => addCorrect(`ae-${i}`, label));
-  } else {
-    addCorrect('correct', correct, {
-      explanation: `${correct} is the idea this question is scoring.`,
-      edge: 'centers on',
-    });
-  }
-  if (mix && student) {
+  const relationships = [
+    { from: 'root', to: 'correct', label: 'centers on' },
+    { from: 'correct', to: 'process', label: 'does' },
+  ];
+  if (mix) {
     nodes.push(
       node('mixup', student, {
         kind: 'mixup',
         explanation: `${student} is a real idea in some lessons, but it is not what this question scores.`,
       }),
     );
+    nodes.push(
+      node('mix-job', 'Different job', {
+        explanation: `Use ${student} for its own job, not for this one.`,
+      }),
+    );
     relationships.push({ from: 'root', to: 'mixup', label: 'confused with' });
+    relationships.push({ from: 'mixup', to: 'mix-job', label: 'belongs to' });
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.PARTIAL && miss.missingKeywords?.[0]) {
-    const missing = studentConceptLabel(miss.missingKeywords[0], 24);
-    if (missing && !seen.has(missing.toLowerCase())) {
-      nodes.push(
-        node('missing', missing, {
-          kind: 'related',
-          importance: 'key',
-          explanation: 'This piece was missing from an otherwise related answer.',
-        }),
-      );
-      relationships.push({ from: 'correct', to: 'missing', label: 'also needs' });
-    }
-  }
-  if (nodes.length < 3) {
-    const extra = studentConceptLabel(q.replace(/^(what|which|why|how|is|are)\s+(is|are|the)?\s*/i, ''), 28);
-    if (extra && !seen.has(extra.toLowerCase()) && !PLACEHOLDER_NODE.test(extra)) {
-      addCorrect('support', extra, { explanation: `This helps explain ${correct}.`, edge: 'includes' });
-    }
+    nodes.push(
+      node('missing', shortLabel(miss.missingKeywords[0], 24), {
+        kind: 'related',
+        importance: 'key',
+        explanation: 'This piece was missing from an otherwise related answer.',
+      }),
+    );
+    relationships.push({ from: 'correct', to: 'missing', label: 'also needs' });
   }
   return graph({
-    concept: displayConceptName(miss) || diagnosis.testedConcept || correct,
+    concept: diagnosis.testedConcept || correct,
     misconception: diagnosis,
     nodes,
     relationships,
     learningPath: [
-      parts.length > 1
-        ? `${rootLabel} groups these scored ideas`
-        : `${rootLabel} is the idea this question checks`,
-      parts.length > 1 ? parts.join(', ') : `The scored idea is ${correct}`,
-      mix ? `${student} is a different idea` : `Use ${correct} when you meet this kind of question`,
+      `The question centers on ${correct}`,
+      mix ? `${student} has a different job` : 'Hold the scored idea',
+      `Link ${correct} to ${process.toLowerCase()}`,
     ].filter(Boolean),
-    example: q,
+    example: compactText(miss.question || miss.prompt),
     practice: {
       question: mix
-        ? `Would ${student} or ${correct} answer a question about ${String(rootLabel).toLowerCase()}?`
-        : `What is the main idea of ${String(rootLabel).toLowerCase()}?`,
+        ? `Would ${student} or ${correct} answer a question about this process? Why?`
+        : `What job does ${correct} do here?`,
       expectedConcept: correct,
     },
   });
@@ -793,11 +699,7 @@ function pickTemplate(miss, diagnosis) {
     return plantSystemGraph(miss, diagnosis);
   }
   const textbook = buildTextbookGraph(miss);
-  if (
-    textbook &&
-    validateConceptGraph(textbook, miss).ok &&
-    !looksLikePoorStudentGraph(textbook, miss)
-  ) {
+  if (textbook && validateConceptGraph(textbook, miss).ok) {
     return textbook;
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.TRUE_FALSE) {
@@ -813,8 +715,7 @@ function pickTemplate(miss, diagnosis) {
 export function buildConceptGraph(miss = {}) {
   const diagnosis = diagnoseMisconception(miss);
   const built = pickTemplate(miss, diagnosis);
-  const withKeys = ensureAssessmentNodes(built, miss);
-  return polishConceptGraph(withKeys, miss);
+  return ensureAssessmentNodes(built, miss);
 }
 
 function ensureAssessmentNodes(graph, miss) {
@@ -826,18 +727,16 @@ function ensureAssessmentNodes(graph, miss) {
   );
   const rootId = nodes.find((n) => n.kind === 'root')?.id || nodes[0]?.id;
   concepts.forEach((concept, i) => {
-    const label = studentConceptLabel(concept, 36) || compactText(concept);
-    if (!label || PLACEHOLDER_NODE.test(label) || /^(true|false|t|f|yes|no)$/i.test(label)) return;
-    if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, label) || lower(n.label).includes(lower(label))))) {
+    if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, concept) || lower(n.label).includes(lower(concept))))) {
       return;
     }
-    const id = slug(label, `ae-${i}`);
+    const id = slug(concept, `ae-${i}`);
     if (nodes.some((n) => n.id === id)) return;
     nodes.push(
-      node(id, label, {
+      node(id, concept, {
         kind: 'correct',
         importance: 'key',
-        explanation: `${label} is part of the idea this question scores.`,
+        explanation: `The assessment engine scores this as ${concept}.`,
       }),
     );
     if (rootId && rootId !== id) {
