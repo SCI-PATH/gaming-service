@@ -465,4 +465,18 @@ describe('central concept identification', () => {
       'Heart',
     );
   });
+
+  it('never titles a map with a curriculum skill id', () => {
+    assert.equal(
+      identifyCentralConcept({
+        question: 'How is sound produced in a flute?',
+        prompt: 'How is sound produced in a flute?',
+        correctAnswer: 'Vibration of air',
+        questionType: 'MCQ',
+        topic: 'G7_C11_SOU_PRODUCE',
+        topic_id: 'G7_C11_SOU_PRODUCE',
+      }),
+      'Production of sound',
+    );
+  });
 });

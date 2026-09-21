@@ -99,4 +99,34 @@ describe('textbook chapter graphs', () => {
     assert.equal(labels.some((l) => /tabulate|duce flowers|and plants$/.test(l)), false);
     assert.equal(validateConceptGraph(graph, miss).ok, true);
   });
+
+  it('uses a skill name and complete phrases for any missed question', () => {
+    const miss = {
+      question: 'Which of the following statements correctly describes how sound is produced in various musical instruments?',
+      correctAnswer: 'A guitar produces sound through the vibration of its strings',
+      studentAnswer: 'A guitar produces sound through air only',
+      topic: 'G7_C11_SOU_PRODUCE',
+      topic_id: 'G7_C11_SOU_PRODUCE',
+      questionType: 'MCQ',
+      grade: 7,
+    };
+    const graph = graphFromTextbookSentences(
+      miss,
+      [
+        'Thus, it is clear that sound propagates through the thread.',
+        'Sound is produced by the vibration of air.',
+        'A guitar produces sound through the vibration of its strings.',
+        'This type of trembling is felt because of the vibration of membranes in the throat which are known as vocal cords.',
+      ],
+      { chapter_name: 'Sound', chapter_id: 'G7_C11', grade: 7 },
+    );
+    const labels = (graph.nodes || []).map((n) => n.label);
+    assert.equal(labels.some((l) => /G7_C11/i.test(l)), false);
+    assert.ok(/production of sound/i.test(graph.concept) || /production of sound/i.test(labels.join(' ')));
+    assert.equal(labels.some((l) => /through$/i.test(l) || /\bthe$/i.test(l)), false);
+    assert.ok(labels.some((l) => /vibrat|string|guitar|air/i.test(l)));
+    assert.equal((graph.learningPath || []).some((s) => /^thus,/i.test(s)), false);
+    assert.equal(/G7_C11|textbook idea/i.test(graph.practice?.question || ''), false);
+    assert.equal(validateConceptGraph(graph, miss).ok, true);
+  });
 });

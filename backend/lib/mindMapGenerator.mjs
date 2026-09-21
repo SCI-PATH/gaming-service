@@ -9,6 +9,12 @@ import {
   validateMindMapAgainstAssessments,
   compactText,
 } from '../../frontend/src/avatar/assessmentMiss.js';
+import {
+  displayConceptName,
+  looksLikePoorStudentGraph,
+  studentConceptLabel,
+} from '../../frontend/src/avatar/conceptMapQuality.js';
+import { isCurriculumTopicId } from '../../frontend/src/data/curriculumTopics.js';
 import { toSageAssessmentType, SAGE_ASSESSMENT_TYPES } from '../../frontend/src/avatar/normalizeSageMindMapInput.js';
 import { buildConceptGraph, validateConceptGraph } from '../../frontend/src/avatar/conceptGraph.js';
 import {
@@ -74,10 +80,12 @@ function looksLikeMetaAnswer(raw) {
 }
 
 function topicFromAttempt(a) {
+  const named = displayConceptName(a);
+  if (named) return named;
   const topic = compactText(a.topic);
-  if (topic && !/^science$/i.test(topic)) return topic;
-  const chapter = compactText(a.chapter || a.chapter_name);
-  if (chapter) return chapter;
+  if (topic && !isCurriculumTopicId(topic) && !/^science$/i.test(topic)) return topic;
+  const chapter = compactText(a.chapter_name || a.chapter);
+  if (chapter && !isCurriculumTopicId(chapter)) return chapter;
   return 'Science';
 }
 
@@ -140,6 +148,8 @@ function nounFromQuestion(prompt) {
  * Root is the scientific concept under assessment, not the raw answer sentence.
  */
 export function identifyCentralConcept(attempt = {}) {
+  const named = displayConceptName(attempt);
+  if (named) return named;
   const topic = topicFromAttempt(attempt);
   const correct = cleanCorrectAnswer(attempt.correctAnswer);
   const prompt = compactText(attempt.prompt || attempt.question);
@@ -148,27 +158,28 @@ export function identifyCentralConcept(attempt = {}) {
   if (sage === SAGE_ASSESSMENT_TYPES.TrueFalse || isTrueFalseToken(correct)) {
     const fromQ = nounFromQuestion(prompt);
     if (fromQ) return titleCase(fromQ);
-    if (topic && !/^science$/i.test(topic)) return topic;
+    if (topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) return topic;
     const idea = scienceKeyIdea(teachingView(attempt));
     if (idea && !isTrueFalseToken(idea)) return clip(idea, 40);
     return topic || 'Science';
   }
 
-  if (isMatchingType(attempt.questionType) && topic && !/^science$/i.test(topic)) {
+  if (isMatchingType(attempt.questionType) && topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) {
     return topic;
   }
 
   const fromQ = nounFromQuestion(prompt);
   if (fromQ && !sameRough(fromQ, correct)) return titleCase(fromQ);
 
-  if (correct && !isTrueFalseToken(correct) && correct.split(/\s+/).length <= 4) {
-    return titleCase(correct);
+  const shortCorrect = studentConceptLabel(correct, 40);
+  if (shortCorrect && !isTrueFalseToken(shortCorrect) && shortCorrect.split(/\s+/).length <= 5) {
+    return titleCase(shortCorrect);
   }
 
-  if (topic && !/^science$/i.test(topic)) return topic;
+  if (topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) return topic;
   const idea = scienceKeyIdea(teachingView(attempt));
-  if (idea && !sameRough(idea, prompt)) return clip(idea, 40);
-  return topic || 'Science';
+  if (idea && !sameRough(idea, prompt) && !isCurriculumTopicId(idea)) return clip(idea, 40);
+  return named || topic || 'Science';
 }
 
 function titleCase(text) {
@@ -323,6 +334,7 @@ function minimalPedagogy(attempt, adaptation) {
 }
 
 function looksLikeFragmentGraph(graph) {
+  if (looksLikePoorStudentGraph(graph)) return true;
   const labels = (graph?.nodes || []).map((n) => compactText(n.label));
   if (!labels.length) return true;
   if (
@@ -352,38 +364,43 @@ function slug(text, fallback = 'n') {
 
 export function structuredToConceptGraph(centralConcept, pedagogy) {
   const rootId = 'root';
+  const rootLabel = studentConceptLabel(centralConcept, 40) || clip(centralConcept, 40) || 'Science';
   const nodes = [
     {
       id: rootId,
-      label: clip(centralConcept, 40) || 'Science',
+      label: rootLabel,
       kind: 'root',
       importance: 'key',
       explanation: '',
     },
   ];
   const relationships = [];
-  const seen = new Set([rootId, compactText(centralConcept).toLowerCase()]);
+  const seen = new Set([rootId, compactText(rootLabel).toLowerCase()]);
   (pedagogy || []).forEach((cat, i) => {
-    const catId = slug(cat.title, `cat-${i}`);
+    const catLabel = studentConceptLabel(cat.title, 28) || clip(cat.title, 28);
+    if (!catLabel) return;
+    const catId = slug(catLabel, `cat-${i}`);
     if (seen.has(catId)) return;
     seen.add(catId);
     nodes.push({
       id: catId,
-      label: clip(cat.title, 28),
+      label: catLabel,
       kind: 'correct',
       importance: 'key',
       explanation: '',
     });
     relationships.push({ from: rootId, to: catId, label: 'includes' });
     (cat.children || []).forEach((child, j) => {
-      const id = slug(`${catId}-${child}`, `n-${i}-${j}`);
-      const key = compactText(child).toLowerCase();
+      const childLabel = studentConceptLabel(child, 48) || clip(child, 72);
+      if (!childLabel) return;
+      const id = slug(`${catId}-${childLabel}`, `n-${i}-${j}`);
+      const key = compactText(childLabel).toLowerCase();
       if (seen.has(id) || seen.has(key)) return;
       seen.add(id);
       seen.add(key);
       nodes.push({
         id,
-        label: clip(child, 72),
+        label: childLabel,
         kind: 'related',
         importance: 'supporting',
         explanation: clip(child, 140),
@@ -857,7 +874,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
     const success = rag?.status === 'success' && rag.mind_map;
     const map = success ? rag.mind_map : null;
     const conceptGraph = success
-      ? ragMindMapToConceptGraph(map, rag.sources)
+      ? ragMindMapToConceptGraph(map, a)
       : insufficientConceptGraph(rag?.message, question);
     const topic = success
       ? compactText(map.central_concept || map.title) || topicFromAttempt(a)

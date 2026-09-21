@@ -119,8 +119,18 @@ function branchTitle(sentence, fallback) {
   const cleaned = String(sentence || '')
     .replace(/^[²•\-\u2022]\s*/u, '')
     .replace(/^[A-Z0-9 |]+Science\s*\|?\s*/i, '');
-  const words = cleaned.split(/\s+/).filter(Boolean).slice(0, 6);
-  return clipSentence(words.join(' '), 36) || fallback;
+  const called = cleaned.match(/\b(?:is|are)\s+called\s+([^.,]{3,40})/i);
+  if (called?.[1]) return clipSentence(called[1], 36);
+  const words = cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((w) => !/^(the|a|an|of|to|for|by|in|on|and|or|thus|therefore)$/i.test(w))
+    .slice(0, 5);
+  const title = clipSentence(words.join(' '), 36);
+  if (/\b(the|a|an|of|to|by|through)$/i.test(title)) {
+    return fallback;
+  }
+  return title || fallback;
 }
 
 /** Build a textbook map from Chroma hits when Grok cannot finish. */

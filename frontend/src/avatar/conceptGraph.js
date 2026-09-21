@@ -28,6 +28,12 @@ import {
   waterCycleLesson,
 } from './conceptLessons.js';
 import { buildTextbookGraph } from './textbookGraph.js';
+import {
+  displayConceptName,
+  looksLikePoorStudentGraph,
+  polishConceptGraph,
+  studentConceptLabel,
+} from './conceptMapQuality.js';
 
 export const MISCONCEPTION_TYPES = Object.freeze({
   COMPLETE_MISS: 'complete_miss',
@@ -547,72 +553,62 @@ function testedConceptLabel(miss, fallback = '') {
 function keywordFromCorrect(miss) {
   const c = compactText(miss.correctAnswer);
   if (!c || /see the lesson|key idea|placeholder/i.test(c)) return '';
-  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 72);
+  const labeled = studentConceptLabel(c, 48);
+  if (labeled) return labeled;
   const part = focusPlantPart(miss);
   if (part) return part.label;
-  return phraseLabel(c, 72);
+  if (c.split(/\s+/).length <= 6) return phraseLabel(c, 48);
+  return '';
 }
 
 function genericGraph(miss, diagnosis) {
-  const correct = keywordFromCorrect(miss) || focusPlantPart(miss)?.label || 'Key idea';
-  const student = usableStudent(miss) ? shortLabel(miss.studentAnswer, 24) : '';
+  const correct = keywordFromCorrect(miss) || focusPlantPart(miss)?.label || displayConceptName(miss) || 'Science idea';
+  const student = usableStudent(miss) ? studentConceptLabel(miss.studentAnswer, 24) : '';
   const mix = Boolean(student && !answersEquivalent(student, correct));
   const q = compactText(miss.question || miss.prompt);
-  const process =
-    (has(q, /why|because|cause/) && 'Cause') ||
-    (has(q, /how|process|happen/) && 'Process') ||
-    (has(q, /function|job|role/) && (focusPlantPart(miss)?.process || 'Role')) ||
-    focusPlantPart(miss)?.process ||
-    keywordFromCorrect(miss) ||
-    'Link';
-  const strippedQ = q.replace(
-    /^(what|which|why|how|is|are)\s+(is|are|the)?\s*(difference between|meaning of)?\s*/i,
-    '',
-  );
   const rootLabel =
+    displayConceptName(miss) ||
     focusPlantPart(miss)?.label ||
     keywordFromCorrect(miss) ||
-    phraseLabel(strippedQ, 24) ||
-    'Science';
+    'Science idea';
+  const support =
+    focusPlantPart(miss)?.process ||
+    studentConceptLabel(q.replace(/^(what|which|why|how|is|are)\s+(is|are|the)?\s*/i, ''), 28);
   const nodes = [
     node('root', PLACEHOLDER_NODE.test(rootLabel) ? correct : rootLabel, {
       kind: 'root',
       importance: 'key',
-      explanation: compactText(miss.question || miss.prompt),
+      explanation: q,
     }),
     node('correct', correct, {
       kind: 'correct',
       importance: 'key',
-      explanation: `This is the idea the question is scoring.`,
-    }),
-    node('process', process, {
-      kind: 'process',
-      importance: 'key',
-      explanation: `Connect this process to ${correct}.`,
+      explanation: `${correct} is the idea this question is scoring.`,
     }),
   ];
-  const relationships = [
-    { from: 'root', to: 'correct', label: 'centers on' },
-    { from: 'correct', to: 'process', label: 'does' },
-  ];
-  if (mix) {
+  const relationships = [{ from: 'root', to: 'correct', label: 'centers on' }];
+  if (support && !answersEquivalent(support, correct) && !PLACEHOLDER_NODE.test(support)) {
+    nodes.push(
+      node('support', support, {
+        kind: 'related',
+        importance: 'key',
+        explanation: `This helps explain ${correct}.`,
+      }),
+    );
+    relationships.push({ from: 'root', to: 'support', label: 'includes' });
+  }
+  if (mix && student) {
     nodes.push(
       node('mixup', student, {
         kind: 'mixup',
         explanation: `${student} is a real idea in some lessons, but it is not what this question scores.`,
       }),
     );
-    nodes.push(
-      node('mix-job', 'Different job', {
-        explanation: `Use ${student} for its own job, not for this one.`,
-      }),
-    );
     relationships.push({ from: 'root', to: 'mixup', label: 'confused with' });
-    relationships.push({ from: 'mixup', to: 'mix-job', label: 'belongs to' });
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.PARTIAL && miss.missingKeywords?.[0]) {
     nodes.push(
-      node('missing', shortLabel(miss.missingKeywords[0], 24), {
+      node('missing', studentConceptLabel(miss.missingKeywords[0], 24), {
         kind: 'related',
         importance: 'key',
         explanation: 'This piece was missing from an otherwise related answer.',
@@ -620,21 +616,30 @@ function genericGraph(miss, diagnosis) {
     );
     relationships.push({ from: 'correct', to: 'missing', label: 'also needs' });
   }
+  if (nodes.length < 3) {
+    nodes.push(
+      node('hold', `Hold ${correct}`, {
+        kind: 'related',
+        explanation: `Keep ${correct} as the idea this question checks.`,
+      }),
+    );
+    relationships.push({ from: 'root', to: 'hold', label: 'remember' });
+  }
   return graph({
-    concept: diagnosis.testedConcept || correct,
+    concept: displayConceptName(miss) || diagnosis.testedConcept || correct,
     misconception: diagnosis,
     nodes,
     relationships,
     learningPath: [
-      `The question centers on ${correct}`,
-      mix ? `${student} has a different job` : 'Hold the scored idea',
-      `Link ${correct} to ${process.toLowerCase()}`,
+      `${rootLabel} is the idea this question checks`,
+      `The scored idea is ${correct}`,
+      mix ? `${student} is a different idea` : `Use ${correct} when you meet this kind of question`,
     ].filter(Boolean),
-    example: compactText(miss.question || miss.prompt),
+    example: q,
     practice: {
       question: mix
-        ? `Would ${student} or ${correct} answer a question about this process? Why?`
-        : `What job does ${correct} do here?`,
+        ? `Would ${student} or ${correct} answer a question about ${String(rootLabel).toLowerCase()}?`
+        : `What is the main idea of ${String(rootLabel).toLowerCase()}?`,
       expectedConcept: correct,
     },
   });
@@ -735,7 +740,11 @@ function pickTemplate(miss, diagnosis) {
     return plantSystemGraph(miss, diagnosis);
   }
   const textbook = buildTextbookGraph(miss);
-  if (textbook && validateConceptGraph(textbook, miss).ok) {
+  if (
+    textbook &&
+    validateConceptGraph(textbook, miss).ok &&
+    !looksLikePoorStudentGraph(textbook)
+  ) {
     return textbook;
   }
   if (diagnosis.type === MISCONCEPTION_TYPES.TRUE_FALSE) {
@@ -751,7 +760,8 @@ function pickTemplate(miss, diagnosis) {
 export function buildConceptGraph(miss = {}) {
   const diagnosis = diagnoseMisconception(miss);
   const built = pickTemplate(miss, diagnosis);
-  return ensureAssessmentNodes(built, miss);
+  const withKeys = ensureAssessmentNodes(built, miss);
+  return polishConceptGraph(withKeys, miss);
 }
 
 function ensureAssessmentNodes(graph, miss) {
@@ -763,16 +773,18 @@ function ensureAssessmentNodes(graph, miss) {
   );
   const rootId = nodes.find((n) => n.kind === 'root')?.id || nodes[0]?.id;
   concepts.forEach((concept, i) => {
-    if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, concept) || lower(n.label).includes(lower(concept))))) {
+    const label = studentConceptLabel(concept, 36) || compactText(concept);
+    if (!label || PLACEHOLDER_NODE.test(label)) return;
+    if (nodes.some((n) => n.kind !== 'mixup' && (answersEquivalent(n.label, label) || lower(n.label).includes(lower(label))))) {
       return;
     }
-    const id = slug(concept, `ae-${i}`);
+    const id = slug(label, `ae-${i}`);
     if (nodes.some((n) => n.id === id)) return;
     nodes.push(
-      node(id, concept, {
+      node(id, label, {
         kind: 'correct',
         importance: 'key',
-        explanation: `The assessment engine scores this as ${concept}.`,
+        explanation: `${label} is part of the idea this question scores.`,
       }),
     );
     if (rootId && rootId !== id) {

@@ -8,6 +8,7 @@ import {
   chapterDisplayName,
   chapterIdFromTopicId,
   resolveChapterFromEngine,
+  skillDisplayName,
 } from './curriculumTopics.js';
 import { frustrationByTopic } from './frustrationHistoryStore.js';
 
@@ -46,6 +47,15 @@ describe('resolveChapterFromEngine', () => {
     assert.equal(hit.chapterId, 'G7_C1');
     assert.equal(hit.chapterName, 'Plant Diversity');
     assert.equal(hit.label, 'Ch.1: Plant Diversity');
+  });
+});
+
+describe('skillDisplayName', () => {
+  it('returns a human skill name, never the curriculum id', () => {
+    assert.equal(skillDisplayName('G7_C11_SOU_PRODUCE'), 'Production of sound');
+    assert.equal(skillDisplayName('G7_C11_SOU_PRODUCE', 'G7_C11_SOU_PRODUCE'), 'Production of sound');
+    assert.equal(skillDisplayName('not-a-topic', 'Photosynthesis'), 'Photosynthesis');
+    assert.equal(skillDisplayName('G9_NOPE'), '');
   });
 });
 
