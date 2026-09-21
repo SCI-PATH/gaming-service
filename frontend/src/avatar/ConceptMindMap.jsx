@@ -2,7 +2,7 @@
  * Concept mind map: assessment-engine knowledge, no student wrong answers.
  * Highlights only the word currently being spoken by Sage (reading-flow sync).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAiMindMap } from './fetchAiMindMap.js';
 import { buildPersonalizedMindMap } from './buildMindMap.js';
 import { softProviderNote, safeScienceLine } from './kidFriendlySpeech.js';
@@ -14,6 +14,7 @@ import {
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
 import ConceptGraphTree from './ConceptGraphTree.jsx';
+import { getCurrentStudent } from '../data/mockStudents.js';
 
 const COLORS = [
   { stroke: '#c45c5c', fill: '#fde8e8', bar: '#c45c5c' },
@@ -176,7 +177,7 @@ function LiveSyncText({
   );
 }
 
-export default function ConceptMindMap({
+function ConceptMindMap({
   map: seedMap = null,
   misconceptions = [],
   compact = false,
@@ -240,32 +241,39 @@ export default function ConceptMindMap({
       return undefined;
     }
 
-    if (fallback) {
+    if (fallback && !enableAi) {
       setLiveMap(fallback);
       setStatus('ready');
-      setNote('Concept map of the assessed idea.');
+      setNote('Saved concept map.');
       const first = toDisplayBranches(fallback)[0];
       setActiveId(first?.id || null);
       setExplored(new Set());
       onMapChange?.(fallback);
+      return undefined;
     }
 
-    const fallbackHasTree = toDisplayBranches(fallback).some(
-      (b) => (b.conceptGraph?.nodes?.length || 0) >= 3,
-    );
-
-    if (!enableAi || !seedAttempts.length || fallbackHasTree) {
+    if (!enableAi || !seedAttempts.length) {
       setStatus('ready');
       return undefined;
     }
 
+    setStatus('loading');
+    setNote('Building mind map from textbook chunks…');
+
     (async () => {
       try {
+        const student = getCurrentStudent();
+        const grade =
+          Number(seedAttempts[0]?.grade) ||
+          Number(student?.grade) ||
+          6;
         const result = await fetchAiMindMap({
           attempts: seedAttempts,
           misconceptions,
           frustrationScore: resolvedFrustrationScore,
           frustrationLevel: resolvedFrustrationLevel,
+          studentId: student?.id || '',
+          grade,
         });
         if (cancelled) return;
         if (result.mindMap) {
@@ -273,6 +281,8 @@ export default function ConceptMindMap({
           const first = toDisplayBranches(result.mindMap)[0];
           setActiveId(first?.id || null);
           onMapChange?.(result.mindMap);
+        } else if (!cancelled) {
+          setLiveMap(fallback || seedMap);
         }
         setNote(
           softProviderNote(result.note) ||
@@ -281,9 +291,10 @@ export default function ConceptMindMap({
         setStatus('ready');
       } catch (err) {
         if (cancelled) return;
+        if (fallback || seedMap) setLiveMap(fallback || seedMap);
         setNote(
           softProviderNote(err?.message) ||
-            'Using the local concept map.',
+            'Textbook search could not build this map. Try the question again after Sage is ready.',
         );
         setStatus('ready');
       }
@@ -371,11 +382,21 @@ export default function ConceptMindMap({
 
   if (!map || !branches.length) {
     return (
-      <section className="mm">
-        <p className="mm-empty">
-          No incorrect answers yet. When you miss questions, Sage will open a
-          concept map of the correct idea.
-        </p>
+      <section
+        className={`mm${compact ? ' is-compact' : ''}`}
+        aria-label="Science mind map"
+      >
+        {status === 'loading' ? (
+          <div className="mm-load" role="status">
+            <span className="mm-load-dot" />
+            Building mind map from textbooks…
+          </div>
+        ) : (
+          <p className="mm-lead">
+            {note ||
+              'Sage will open a textbook mind map when this miss is ready.'}
+          </p>
+        )}
       </section>
     );
   }
@@ -483,7 +504,7 @@ export default function ConceptMindMap({
         {status === 'loading' ? (
           <div className="mm-load" role="status">
             <span className="mm-load-dot" />
-            Building concept map…
+            Building mind map from textbooks…
           </div>
         ) : null}
         {!compact && note && status !== 'loading' && softProviderNote(note) ? (
@@ -675,3 +696,29 @@ export default function ConceptMindMap({
     </section>
   );
 }
+
+class ConceptMindMapBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <section className="mm" aria-label="Science mind map">
+          <p className="mm-lead">
+            Sage could not draw this map. Close Sage and miss the question again.
+          </p>
+        </section>
+      );
+    }
+    return <ConceptMindMap {...this.props} />;
+  }
+}
+
+export default ConceptMindMapBoundary;

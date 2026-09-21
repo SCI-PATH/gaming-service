@@ -22,16 +22,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-ROOT = Path(__file__).resolve().parents[2]
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("GAMING_ROOT") or BACKEND_DIR.parent)
 CHROMA_DIR = Path(os.environ.get("CHROMA_PERSIST_DIR") or (ROOT / "data" / "chroma"))
 REGISTRY_PATH = ROOT / "data" / "textbook_registry" / "textbooks.json"
 PDF_DIR = ROOT / "data" / "textbooks"
 COLLECTION = os.environ.get("CHROMA_MINDMAP_COLLECTION") or "science_textbooks"
 RAG_MIN_RELEVANCE = float(os.environ.get("RAG_MIN_RELEVANCE") or "0.32")
-PDF_MAX_BYTES = int(os.environ.get("PDF_MAX_BYTES") or str(80 * 1024 * 1024))
+PDF_MAX_BYTES = int(os.environ.get("PDF_MAX_BYTES") or str(150 * 1024 * 1024))
 PDF_MAX_PAGES = int(os.environ.get("PDF_MAX_PAGES") or "500")
 
-sys.path.insert(0, str(ROOT / "scripts"))
+for scripts_dir in (ROOT / "scripts", BACKEND_DIR / "scripts", Path(__file__).resolve().parent):
+    if scripts_dir.is_dir():
+        sys.path.insert(0, str(scripts_dir))
 
 CHAPTER_RE = re.compile(
     r"^(?:chapter\s+(\d+)[:.\-\s]+(.+)|unit\s+(\d+)[:.\-\s]+(.+))$",
@@ -48,10 +51,15 @@ STOP = {
 }
 HINTS = (
     ("sunlight", ("photosynthesis", "chlorophyll", "food production")),
-    ("photosynthesis", ("sunlight", "carbon dioxide", "water", "glucose")),
-    ("plant", ("photosynthesis", "roots", "stem", "leaves")),
+    ("photosynthesis", ("sunlight", "chlorophyll", "leaves", "food")),
+    ("monocotyledon", ("monocot", "dicotyledon", "cotyledon", "seed")),
+    ("monocot", ("monocotyledon", "dicotyledon", "cotyledon", "seed")),
+    ("dicotyledon", ("dicot", "monocotyledon", "cotyledon", "seed")),
+    ("dicot", ("dicotyledon", "monocotyledon", "cotyledon")),
+    ("leaves", ("leaf", "photosynthesis", "shape", "venation")),
+    ("leaf", ("leaves", "photosynthesis", "shape")),
     ("digest", ("digestive system", "stomach", "intestine", "enzymes")),
-    ("cell", ("cell membrane", "nucleus", "cytoplasm", "organelles")),
+    ("cell", ("cell membrane", "nucleus", "cytoplasm")),
 )
 
 DEFAULT_BOOKS = [
@@ -203,9 +211,12 @@ def _download(url: str) -> tuple[Path, str]:
     PDF_DIR.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(
         safe,
-        headers={"User-Agent": "SCI-PATH-GamingTextbookIngest/1.0"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/pdf,*/*",
+        },
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         data = resp.read(PDF_MAX_BYTES + 1)
     if len(data) > PDF_MAX_BYTES:
         raise ValueError("Textbook PDF is larger than the allowed size")
@@ -233,9 +244,16 @@ def _paragraphs(text: str) -> list[str]:
 
 
 def _chunk_pages(pages: list[dict], *, grade: int, textbook: str, source_url: str, source_name: str, document_hash: str) -> list[dict]:
-    import ingest_textbooks as ingest
+    try:
+        import ingest_textbooks as ingest
 
-    chapters = ingest.load_chapters()
+        chapters = ingest.load_chapters()
+        chapter_lookup = ingest.chapter_for
+    except Exception:
+        chapters = []
+
+        def chapter_lookup(*_args, **_kwargs):
+            return None
     pdf_id = "part2" if re.search(r"p-?ii|part.?2|part ii", source_name, re.I) else "part1"
     chunks: list[dict] = []
     counters: dict[str, int] = {}
@@ -243,7 +261,7 @@ def _chunk_pages(pages: list[dict], *, grade: int, textbook: str, source_url: st
     section = ""
     for page_info in pages:
         page_no = int(page_info["page"])
-        mapped = ingest.chapter_for(chapters, grade, pdf_id, page_no)
+        mapped = chapter_lookup(chapters, grade, pdf_id, page_no)
         if mapped:
             chapter = mapped.get("chapter_name") or chapter
         for paragraph in _paragraphs(page_info.get("text") or ""):
@@ -446,16 +464,18 @@ def ingest_url(payload: dict) -> dict:
 
 def process_question(question: str) -> dict:
     original = (question or "").strip()
-    tokens = [t for t in re.findall(r"[a-z0-9]+", original.lower()) if t not in STOP and len(t) > 1]
+    cleaned = re.sub(r"\[?\s*_+\s*\]?", " ", original)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    tokens = [t for t in re.findall(r"[a-z0-9]+", cleaned.lower()) if t not in STOP and len(t) > 1]
     extras: list[str] = []
-    blob = original.lower()
+    blob = f" {cleaned.lower()} "
     for needle, hints in HINTS:
-        if needle in blob:
+        if re.search(rf"\b{re.escape(needle)}", blob):
             extras.extend(hints)
     keywords = list(dict.fromkeys(tokens + extras))
     return {
         "original_question": original,
-        "retrieval_query": " ".join(keywords) if keywords else original,
+        "retrieval_query": " ".join(keywords) if keywords else cleaned or original,
         "keywords": keywords,
     }
 
@@ -474,6 +494,7 @@ def _keyword_score(query: str, document: str) -> float:
 
 
 def _where(grade: int | None, subject: str = "Science") -> dict | None:
+    # Grade + Science only. Do not filter by chapter — any ingested chapter can match.
     clauses = []
     if grade is not None:
         clauses.append({"grade": int(grade)})
@@ -582,6 +603,13 @@ def query_chunks(payload: dict) -> dict:
 
 def ingest_defaults(payload: dict) -> dict:
     force = bool(payload.get("force"))
+    count = collection_count()
+    if not force and count >= 100:
+        return {
+            "textbooks": _load_registry(),
+            "chroma": {"collection": COLLECTION, "count": count},
+            "skipped": True,
+        }
     results = []
     for book in DEFAULT_BOOKS:
         results.append(ingest_url({ **book, "source_url": book["source_url"], "force": force }))

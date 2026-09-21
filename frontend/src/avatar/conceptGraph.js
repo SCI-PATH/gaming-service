@@ -86,8 +86,8 @@ export function diagnoseMisconception(miss = {}) {
       summary: focus
         ? `Learn how ${focus.label.toLowerCase()} fit this question.`
         : 'Learn the concept this question is checking.',
-      testedConcept: focus?.label || shortLabel(correct, 28) || 'This idea',
-      missingConcept: shortLabel(correct, 28) || focus?.label,
+      testedConcept: testedConceptLabel(miss, 'This idea'),
+      missingConcept: shortLabel(correct, 28) || testedConceptLabel(miss, focus?.label),
     };
   }
   if (tf) {
@@ -102,7 +102,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.PARTIAL,
       summary: 'Part of the idea is right; a key link is still missing.',
-      testedConcept: focus?.process || shortLabel(correct, 28),
+      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
       missingConcept: missing[0] || shortLabel(correct, 28),
     };
   }
@@ -115,7 +115,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.INCOMPLETE,
       summary: 'The answer is on the right track but not complete.',
-      testedConcept: focus?.label || shortLabel(correct, 28),
+      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -144,7 +144,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.RELATED,
       summary: `${mixName} and ${rightName} are related, but they do different jobs.`,
-      testedConcept: focus?.process || shortLabel(correct, 28),
+      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -152,7 +152,7 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.VOCABULARY,
       summary: `${shortLabel(student, 22)} is not the keyword this question is scoring.`,
-      testedConcept: focus?.label || shortLabel(correct, 28),
+      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
       missingConcept: shortLabel(correct, 28),
     };
   }
@@ -160,14 +160,14 @@ export function diagnoseMisconception(miss = {}) {
     return {
       type: MISCONCEPTION_TYPES.REASONING,
       summary: 'The reasoning misses the process that actually answers this question.',
-      testedConcept: focus?.process || shortLabel(correct, 28),
+      testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
       missingConcept: shortLabel(correct, 28),
     };
   }
   return {
     type: MISCONCEPTION_TYPES.COMPLETE_MISS,
     summary: `${shortLabel(student, 24)} is not the idea this question is checking.`,
-    testedConcept: focus?.label || shortLabel(correct, 28),
+    testedConcept: testedConceptLabel(miss, shortLabel(correct, 28)),
     missingConcept: shortLabel(correct, 28),
   };
 }
@@ -416,16 +416,36 @@ function waterCycleGraph(miss, diagnosis) {
 }
 
 function diversityGraph(miss, diagnosis) {
-  const mono = has(miss.correctAnswer, /monocot|one|fibrous/) || has(miss.question, /monocot/);
+  const blob = `${miss.question || ''} ${miss.prompt || ''} ${miss.correctAnswer || ''}`;
+  const asksBoth =
+    has(blob, /two main groups|main groups of flowering|groups of flowering/) ||
+    (has(blob, /seed structure/) && has(blob, /group/)) ||
+    (has(miss.correctAnswer, /monocot/) && has(miss.correctAnswer, /dicot/));
+  const monoOnly =
+    !asksBoth &&
+    (has(miss.correctAnswer, /monocot|one seed|one cotyledon|fibrous/) ||
+      (has(miss.question, /monocot/) && !has(miss.question, /dicot/)));
   return graph({
     concept: 'Monocots and dicots',
     misconception: diagnosis,
     nodes: [
-      node('groups', 'Seed plants', { kind: 'root', importance: 'key', explanation: 'Flowering plants are grouped by seed leaves.' }),
-      node('mono', 'Monocot', { kind: mono ? 'correct' : 'related', explanation: 'One seed leaf; often fibrous roots and parallel veins.' }),
-      node('dicot', 'Dicot', { kind: mono ? 'related' : 'correct', explanation: 'Two seed leaves; often a taproot and net veins.' }),
-      node('one', 'One seed leaf', { explanation: 'The cotyledon count names the group.' }),
-      node('two', 'Two seed leaves', { explanation: 'Dicots have two cotyledons.' }),
+      node('groups', 'Flowering plants', {
+        kind: 'root',
+        importance: 'key',
+        explanation: 'Flowering plants are grouped by how many seed leaves (cotyledons) they have.',
+      }),
+      node('mono', 'Monocot', {
+        kind: monoOnly || asksBoth ? 'correct' : 'related',
+        importance: 'key',
+        explanation: 'Monocots have one seed leaf (cotyledon). Grasses, rice, and maize are common examples.',
+      }),
+      node('dicot', 'Dicot', {
+        kind: !monoOnly ? 'correct' : 'related',
+        importance: 'key',
+        explanation: 'Dicots have two seed leaves (cotyledons). Beans and mango are common examples.',
+      }),
+      node('one', 'One seed leaf', { explanation: 'The prefix “mono-” means one. That seed leaf is a cotyledon.' }),
+      node('two', 'Two seed leaves', { explanation: 'The prefix “di-” means two. Dicots have two cotyledons.' }),
     ],
     relationships: [
       { from: 'groups', to: 'mono', label: 'include' },
@@ -433,11 +453,19 @@ function diversityGraph(miss, diagnosis) {
       { from: 'mono', to: 'one', label: 'have' },
       { from: 'dicot', to: 'two', label: 'have' },
     ],
-    learningPath: ['Count seed leaves', 'Link that count to roots and veins', 'Use the group name'],
-    example: 'Maize is a monocot; bean is a dicot.',
+    learningPath: asksBoth
+      ? [
+          'Flowering plants are grouped by seed leaves',
+          'Monocots have one cotyledon',
+          'Dicots have two cotyledons',
+        ]
+      : ['Count seed leaves', 'Link that count to roots and veins', 'Use the group name'],
+    example: 'Maize is a monocot; a bean seed that splits into two lobes is a dicot.',
     practice: {
-      question: 'A seed has two cotyledons. Is that plant a monocot or a dicot?',
-      expectedConcept: 'Dicot',
+      question: asksBoth
+        ? 'Name the two groups of flowering plants based on seed structure.'
+        : 'A seed has two cotyledons. Is that plant a monocot or a dicot?',
+      expectedConcept: asksBoth ? 'Monocots and dicots' : 'Dicot',
     },
   });
 }
@@ -506,6 +534,14 @@ function trueFalseGraph(miss, diagnosis) {
       expectedConcept: idea,
     },
   });
+}
+
+function testedConceptLabel(miss, fallback = '') {
+  if (diversityLesson(miss)) return 'Monocots and dicots';
+  if (floweringContrastLesson(miss)) return 'Flowering vs non-flowering';
+  const focus = focusPlantPart(miss);
+  const correct = compactText(miss.correctAnswer);
+  return focus?.label || shortLabel(correct, 28) || fallback;
 }
 
 function keywordFromCorrect(miss) {

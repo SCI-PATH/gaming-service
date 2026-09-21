@@ -8,6 +8,10 @@ function env(name, fallback = '') {
   return process.env[name] ?? fallback;
 }
 
+function grokTimeoutMs() {
+  return Math.min(12000, Math.max(8000, Number(env('GROK_TIMEOUT_MS', '12000')) || 12000));
+}
+
 function xaiConfig() {
   const apiKey = (env('XAI_API_KEY') || env('GROK_API_KEY')).trim();
   if (!apiKey) return null;
@@ -16,7 +20,7 @@ function xaiConfig() {
     apiKey,
     base: env('XAI_BASE_URL', 'https://api.x.ai/v1').replace(/\/$/, ''),
     model: env('XAI_MODEL', 'grok-4-1-fast-non-reasoning'),
-    timeoutMs: Math.max(8000, Number(env('GROK_TIMEOUT_MS', '90000')) || 90000),
+    timeoutMs: grokTimeoutMs(),
   };
 }
 
@@ -28,7 +32,7 @@ function groqConfig() {
     apiKey,
     base: env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
     model: env('GROQ_MODEL') || env('LLAMA_MODEL') || 'openai/gpt-oss-120b',
-    timeoutMs: Math.max(8000, Number(env('GROK_TIMEOUT_MS', '90000')) || 90000),
+    timeoutMs: grokTimeoutMs(),
   };
 }
 
@@ -54,13 +58,15 @@ async function completeOnce(cfg, body) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[mind-map] ${cfg.provider} request failed: ${message}`);
     throw Object.assign(
       new Error(/timed out/i.test(message) ? 'Mind map generation timed out' : 'Mind map generation is temporarily unavailable'),
       { retryable: /timed out/i.test(message) },
     );
   }
+  let text = '';
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    text = await res.text().catch(() => '');
     if (/response_format|json_object/i.test(text) && payload.response_format) {
       delete payload.response_format;
       res = await fetchWithTimeout(
@@ -75,9 +81,11 @@ async function completeOnce(cfg, body) {
         },
         cfg.timeoutMs,
       );
+      if (!res.ok) text = await res.text().catch(() => '');
     }
   }
   if (!res.ok) {
+    console.warn(`[mind-map] ${cfg.provider} HTTP ${res.status}: ${text.slice(0, 300)}`);
     throw Object.assign(new Error('Mind map generation is temporarily unavailable'), {
       retryable: res.status >= 500,
     });
@@ -90,8 +98,9 @@ async function completeOnce(cfg, body) {
   return { content: String(content), provider: cfg.provider, model: cfg.model };
 }
 
-export async function grokJson({ system, user, temperature = 0.2, maxTokens = 1800 } = {}) {
-  const configs = [xaiConfig(), groqConfig()].filter(Boolean);
+export async function grokJson({ system, user, temperature = 0.2, maxTokens = 900 } = {}) {
+  // Groq is the farm's working LLM. Try it first; xAI is optional backup.
+  const configs = [groqConfig(), xaiConfig()].filter(Boolean);
   if (!configs.length) {
     throw Object.assign(
       new Error('Mind map generation is not configured. Set XAI_API_KEY (preferred) or GROQ_API_KEY.'),

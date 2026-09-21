@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { generateScienceMindMap } from './scienceMindMapGenerator.mjs';
+import { generateScienceMindMap, mindMapFromChunks } from './scienceMindMapGenerator.mjs';
 
 const CHUNK = {
   chunk_id: 'grade6_plants_010_001',
@@ -105,5 +105,97 @@ describe('generateScienceMindMap', () => {
       () => generateScienceMindMap({ grade: 5, question: 'cells' }),
       /Grade 6, 7, 8, or 9/,
     );
+  });
+
+  it('extracts clean textbook facts from messy PDF chunks', () => {
+    const map = mindMapFromChunks({
+      question: 'Plant leaves come in various shapes. Photosynthesis occurs in the leaves.',
+      chunks: [
+        {
+          chunk_id: 'messy',
+          textbook: 'Grade 7 Science Part I',
+          chapter: 'Plant Diversity',
+          text: 'Science | Plant Diversity 13Science | Plant Diversity12 Activity 1.2 Figure 1.3 Parts of a flowering plant. Photosynthesis mainly occurs in a leaf of a plant. Plant leaves get energy from sunlight to do photosynthesis. Flowering plants can be divided into two groups as monocotyledonous (monocot) plants and dicotyledonous (dicot) plants.',
+        },
+      ],
+    });
+    const blob = JSON.stringify(map);
+    assert.match(blob, /photosynthesis/i);
+    assert.equal(/activity 1\.2/i.test(blob), false);
+    assert.equal(/science \|/i.test(blob), false);
+    assert.ok(map.branches.length >= 1);
+  });
+
+  it('builds a textbook map from Chroma chunks when Grok fails', async () => {
+    const result = await generateScienceMindMap(
+      { grade: 6, question: 'Why do plants need sunlight?', studentId: 'maya' },
+      {
+        queryChunks: async () => ({
+          original_question: 'Why do plants need sunlight?',
+          retrieval_query: 'plants sunlight photosynthesis',
+          chunks: [CHUNK],
+          enough: true,
+          confidence: 0.81,
+          used_cross_grade: false,
+          collection_count: 12,
+        }),
+        readExistingFrustration: async () => ({
+          frustrationScore: 40,
+          frustrationLevel: 'LOW',
+          missing: true,
+        }),
+        grokJson: async () => {
+          throw Object.assign(new Error('Mind map generation is temporarily unavailable'), {
+            retryable: true,
+          });
+        },
+      },
+    );
+    assert.equal(result.status, 'success');
+    assert.equal(result.provider, 'chroma-extractive');
+    assert.match(result.mind_map.central_concept, /photosynthesis/i);
+    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/);
+    assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
+  });
+
+  it('queries Chroma by grade and question only, for any chapter', async () => {
+    const seen = [];
+    const questions = [
+      { grade: 6, question: 'What is a magnet used for?' },
+      { grade: 7, question: 'How are acids different from bases?' },
+      { grade: 8, question: 'What is a closed electric circuit?' },
+      { grade: 9, question: 'What is density?' },
+    ];
+    for (const body of questions) {
+      await generateScienceMindMap(body, {
+        queryChunks: async (payload) => {
+          seen.push(payload);
+          return {
+            original_question: body.question,
+            retrieval_query: body.question,
+            chunks: [],
+            enough: false,
+            confidence: 0,
+            collection_count: 0,
+          };
+        },
+        readExistingFrustration: async () => ({
+          frustrationScore: 40,
+          frustrationLevel: 'LOW',
+          missing: true,
+        }),
+        grokJson: async () => {
+          throw new Error('Grok should not run without textbook chunks');
+        },
+      });
+    }
+    assert.equal(seen.length, questions.length);
+    for (const [i, payload] of seen.entries()) {
+      assert.equal(payload.grade, questions[i].grade);
+      assert.equal(payload.question, questions[i].question);
+      assert.equal('chapter' in payload, false);
+      assert.equal('chapter_id' in payload, false);
+      assert.equal('topic_id' in payload, false);
+    }
   });
 });

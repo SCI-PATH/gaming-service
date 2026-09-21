@@ -47,7 +47,8 @@ export function systemPrompt() {
     'Do not introduce unrelated concepts.',
     'Adapt the complexity according to the student frustration score.',
     'Generate a structured mind map rather than a long essay.',
-    'If the retrieved textbook context is insufficient, return status "insufficient_context" and do not guess.',
+    'If textbook context is present, you MUST return status "success" and use those facts.',
+    'Return status "insufficient_context" only when no textbook context was supplied.',
     'Frustration changes presentation only. It must not change the scientific facts.',
     JSON_SCHEMA_HINT,
   ].join('\n');

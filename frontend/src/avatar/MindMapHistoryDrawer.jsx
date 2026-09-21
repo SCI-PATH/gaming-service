@@ -86,7 +86,7 @@ export default function MindMapHistoryDrawer({ open, onClose }) {
                 </p>
               ) : null}
               {selected?.structuredMap ? (
-                <ConceptMindMap map={selected.structuredMap} />
+                <ConceptMindMap map={selected.structuredMap} enableAi={false} />
               ) : (
                 <p className="mm-history-empty">No diagram for this entry.</p>
               )}
