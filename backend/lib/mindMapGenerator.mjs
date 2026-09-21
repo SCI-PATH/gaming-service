@@ -862,6 +862,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
         studentId,
         hint: compactText(a.correctAnswer),
         correctAnswer: compactText(a.correctAnswer),
+        studentAnswer: compactText(a.studentAnswer),
       });
     } catch (err) {
       rag = {

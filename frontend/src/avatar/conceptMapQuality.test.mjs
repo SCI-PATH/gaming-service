@@ -10,6 +10,7 @@ import {
   studentPracticeQuestion,
   teachingStep,
   keywordLabel,
+  isNoiseLabel,
 } from './conceptMapQuality.js';
 
 describe('studentConceptLabel', () => {
@@ -28,6 +29,7 @@ describe('studentConceptLabel', () => {
   it('shortens node labels to keywords', () => {
     assert.equal(keywordLabel('They grow into new plants'), 'grow into new plants');
     assert.equal(keywordLabel('carbon dioxide'), 'carbon dioxide');
+    assert.equal(isNoiseLabel('do the body shapes'), true);
   });
 });
 

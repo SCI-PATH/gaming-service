@@ -35,6 +35,7 @@ function asPoints(raw) {
       const text = String(item.text || item.label || item.point || '').trim();
       if (!text) return null;
       const point = { id: String(item.id || `point-${index + 1}`), text };
+      if (item.relationship) point.relationship = String(item.relationship);
       if (item.source && typeof item.source === 'object') point.source = item.source;
       return point;
     })
@@ -48,11 +49,13 @@ function asBranches(raw) {
       if (!item || typeof item !== 'object') return null;
       const title = String(item.title || item.label || item.name || '').trim();
       if (!title) return null;
-      return {
+      const branch = {
         id: String(item.id || `branch-${index + 1}`),
         title,
         points: asPoints(item.points || item.children || []),
       };
+      if (item.relationship) branch.relationship = String(item.relationship);
+      return branch;
     })
     .filter(Boolean);
 }

@@ -81,6 +81,26 @@ export function isIncompleteLabel(text) {
   return false;
 }
 
+const INSTRUCTION =
+  /^(do the|do this|do that|please\b|try to\b|look at\b|draw\b|write\b|complete\b|fill in\b|choose\b|select\b|tick\b|circle\b|match the\b|name the\b|tell me\b|activity\b|figure\b|table\b|exercise\b)/i;
+
+/**
+ * Commands, worksheet leftovers, and filler that must never become nodes.
+ */
+export function isNoiseLabel(text) {
+  const s = compactText(text);
+  if (!s) return true;
+  if (INSTRUCTION.test(s)) return true;
+  if (/^(ok|okay|yes|no|hmm|uh|um)\b/i.test(s)) return true;
+  if (/^[a-z]{1,2}$/i.test(s)) return true;
+  return false;
+}
+
+/** Strip trailing list punctuation without inventing a new concept. */
+export function cleanNodeLabel(text) {
+  return compactText(text).replace(/[,:;]+$/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function finishLabel(raw, max = 40) {
   let words = compactText(raw)
     .replace(/^(?:option\s*)?\(?[A-Da-d]\)?\s*[.):—–-]+\s+/i, '')

@@ -3,8 +3,10 @@
  * Centre + coloured hubs + short keyword leaves.
  */
 import {
+  cleanNodeLabel,
   displayConceptName,
   isIncompleteLabel,
+  isNoiseLabel,
   isPolarityLabel,
   keywordLabel,
 } from './conceptMapQuality.js';
@@ -31,11 +33,11 @@ function compact(text) {
 }
 
 export function asKeyword(text) {
-  const raw = compact(text);
-  if (!raw || isPolarityLabel(raw) || isIncompleteLabel(raw)) return '';
-  const words = raw.split(/\s+/);
-  if (words.length <= 4) return raw;
-  return keywordLabel(raw, 4);
+  const raw = cleanNodeLabel(text);
+  if (!raw || isPolarityLabel(raw) || isIncompleteLabel(raw) || isNoiseLabel(raw)) return '';
+  const wordList = raw.split(/\s+/);
+  if (wordList.length <= 6) return raw;
+  return keywordLabel(raw, 6);
 }
 
 function uniqueKeywords(list) {
@@ -53,6 +55,7 @@ function uniqueKeywords(list) {
 }
 
 function sharedCenter(map, branches) {
+  const titled = asKeyword(String(map?.root || map?.title || map?.centralConcept || '').split('·')[0]);
   if (branches.length === 1) {
     const b = branches[0];
     const named = displayConceptName({
@@ -60,21 +63,13 @@ function sharedCenter(map, branches) {
       question: b.question || b.prompt,
       correctAnswer: b.correctAnswer,
     });
-    const short = asKeyword(named || b.topic || map?.root);
+    const short = asKeyword(named || b.topic || titled);
     if (short) return short;
   }
   const topics = uniqueKeywords(branches.map((b) => b.topic));
   if (topics.length === 1) return topics[0];
-  const blob = branches.map((b) => `${b.topic || ''} ${b.question || b.prompt || ''}`).join(' ');
-  if (/rock|mineral|weathering|igneous|sedimentary|metamorphic|limestone/i.test(blob)) {
-    return 'Rocks';
-  }
-  if (/plant|photo|leaf|flower|seed|monocot|dicot|chlorophyll/i.test(blob)) return 'Plants';
-  if (/sound|vibrat/i.test(blob)) return 'Sound';
-  if (/electric|circuit|current|charge|capacitor/i.test(blob)) return 'Electricity';
-  if (/water cycle|evaporat|condens/i.test(blob)) return 'Water Cycle';
-  const root = asKeyword(String(map?.root || map?.title || '').split('·')[0]);
-  return root || 'Science';
+  if (titled) return titled;
+  return asKeyword(branches[0]?.topic) || 'Science';
 }
 
 function hubsFromPedagogy(branch, index) {

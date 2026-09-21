@@ -25,7 +25,7 @@ describe('radial keyword mind map', () => {
     );
     assert.equal(model.center, 'Photosynthesis');
     assert.equal(model.hubs.length, 4);
-    assert.ok(model.hubs.every((h) => h.label.split(/\s+/).length <= 4));
+    assert.ok(model.hubs.every((h) => h.label.split(/\s+/).length <= 6));
     assert.ok(model.hubs.some((h) => h.children.includes('Sunlight')));
     const layout = layoutRadialMap(model);
     assert.ok(layout.hubs[0].x !== layout.cx);
@@ -50,7 +50,7 @@ describe('radial keyword mind map', () => {
         },
       ],
     );
-    assert.equal(model.center, 'Rocks');
+    assert.equal(model.center, 'Metamorphic rocks');
     assert.ok(model.hubs.length >= 2);
   });
 });
