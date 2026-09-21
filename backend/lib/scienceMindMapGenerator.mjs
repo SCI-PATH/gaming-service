@@ -11,13 +11,6 @@ import {
   userPrompt,
 } from './scienceMindMapPrompt.mjs';
 import { validateMindMap } from './scienceMindMapValidator.mjs';
-import { extractRagKeywords } from './ragKeywords.mjs';
-import {
-  applyFrustrationPresentation,
-  debugMindMap,
-  mindMapFromContext,
-  sanitizeMindMap,
-} from './semanticMindMap.mjs';
 
 const GRADES = new Set([6, 7, 8, 9]);
 
@@ -90,12 +83,116 @@ function insufficientPayload({ question, grade, frustration, retrieval, message 
 }
 
 function applyPresentationCap(mindMap, band) {
-  return applyFrustrationPresentation(mindMap, band);
+  if (!mindMap || mindMap.status !== 'success') return mindMap;
+  if (band !== 'VERY_HIGH') return mindMap;
+  return {
+    ...mindMap,
+    branches: mindMap.branches.slice(0, 5),
+  };
 }
 
-/** Build a hierarchy from Chroma hits when Grok cannot finish. */
+function clipSentence(text, n = 160) {
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (s.length <= n) return s;
+  return `${s.slice(0, n - 1).replace(/\s+\S*$/, '')}…`;
+}
+
+function isUsableSentence(sentence) {
+  const s = String(sentence || '').replace(/\s+/g, ' ').trim();
+  if (s.length < 28 || s.length > 220) return false;
+  if (/science\s*\|/i.test(s)) return false;
+  if (/\d+Science\s*\|/i.test(s)) return false;
+  if (/^(activity|assignment|assingnment|figure|table|exercise|tabulate)\b/i.test(s)) return false;
+  if (/^[²•\-\u2022]/u.test(s) && s.length < 50) return false;
+  return true;
+}
+
+function keywords(text) {
+  return String(text || '')
+    .toLowerCase()
+    .match(/[a-z]{4,}/g) || [];
+}
+
+function branchTitle(sentence, fallback) {
+  const cleaned = String(sentence || '')
+    .replace(/^[²•\-\u2022]\s*/u, '')
+    .replace(/^[A-Z0-9 |]+Science\s*\|?\s*/i, '');
+  const words = cleaned.split(/\s+/).filter(Boolean).slice(0, 6);
+  return clipSentence(words.join(' '), 36) || fallback;
+}
+
+/** Build a textbook map from Chroma hits when Grok cannot finish. */
 export function mindMapFromChunks({ question, chunks = [] } = {}) {
-  return mindMapFromContext({ question, chunks });
+  const pool = (chunks || []).filter((chunk) => String(chunk.text || '').trim());
+  if (!pool.length) return null;
+  const qTerms = new Set(keywords(question));
+  const scored = [];
+  for (const chunk of pool.slice(0, 8)) {
+    const sentences = String(chunk.text)
+      .replace(/Science\s*\|\s*[A-Za-z ]+\s*\d+/g, ' ')
+      .split(/(?<=[.!?])\s+/)
+      .map((row) => row.replace(/^[²•\-\u2022]\s*/u, '').replace(/\s+/g, ' ').trim())
+      .filter(isUsableSentence);
+    for (const sentence of sentences) {
+      const terms = keywords(sentence);
+      let overlap = terms.reduce((n, term) => n + (qTerms.has(term) ? 1 : 0), 0);
+      if (/photosynthes|chlorophyll|monocot|dicot|cotyledon|leaf|leaves|root|stem/.test(sentence.toLowerCase())) {
+        overlap += 2;
+      }
+      scored.push({ sentence, chunk, overlap });
+    }
+  }
+  scored.sort((a, b) => b.overlap - a.overlap || a.sentence.length - b.sentence.length);
+  const seen = new Set();
+  const picked = [];
+  for (const row of scored) {
+    const key = row.sentence.toLowerCase().slice(0, 56);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push(row);
+    if (picked.length >= 6) break;
+  }
+  if (!picked.length) {
+    picked.push({
+      sentence: clipSentence(pool[0].text, 160),
+      chunk: pool[0],
+      overlap: 1,
+    });
+  }
+  const title = pool[0]?.chapter || clipSentence(question, 48) || 'Science';
+  const branches = [];
+  for (let i = 0; i < picked.length; i += 2) {
+    const group = picked.slice(i, i + 2);
+    branches.push({
+      id: `branch-${branches.length + 1}`,
+      title: branchTitle(group[0].sentence, `${title} ${branches.length + 1}`),
+      points: group.map((row, j) => ({
+        id: `point-${branches.length + 1}-${j + 1}`,
+        text: clipSentence(row.sentence, 160),
+        source: {
+          textbook: row.chunk.textbook || '',
+          chapter: row.chunk.chapter || '',
+          page: row.chunk.page ?? null,
+          chunk_id: row.chunk.chunk_id,
+        },
+      })),
+    });
+  }
+  return {
+    status: 'success',
+    title,
+    central_concept: title,
+    summary: `Facts from ${pool[0]?.textbook || 'the Science textbook'}${
+      pool[0]?.chapter ? ` · ${pool[0].chapter}` : ''
+    }.`,
+    branches,
+    key_terms: [],
+    examples: [],
+    remember_this: picked.slice(0, 3).map((row) => clipSentence(row.sentence, 120)),
+    one_sentence_summary: clipSentence(picked[0].sentence, 160),
+  };
 }
 
 export async function generateScienceMindMap(body = {}, deps = {}) {
@@ -105,7 +202,6 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
 
   const grade = Number(body.grade);
   const question = clipQuestion(body.question);
-  const studentAnswer = clipQuestion(body.studentAnswer || body.student_answer || '');
   const studentId = String(body.studentId || '').trim();
 
   if (!GRADES.has(grade)) {
@@ -131,7 +227,7 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     retrieval = await query({
       grade,
       question: retrievalQuestion,
-      top_k: Math.max(4, Math.min(14, Number(body.top_k) || 10)),
+      top_k: Math.max(4, Math.min(12, Number(body.top_k) || 8)),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -150,28 +246,11 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     return insufficientPayload({ question, grade, frustration, retrieval });
   }
 
-  const ragKeywords = extractRagKeywords({
-    keywords: retrieval.keywords,
-    retrievalQuery: retrieval.retrieval_query,
-    chunks: retrieval.chunks,
-    question,
-  });
-
-  debugMindMap('retrieval', {
-    question,
-    frustrationScore: frustration.frustrationScore,
-    frustrationLevel: frustration.frustrationLevel,
-    retrievalQuery: retrieval.retrieval_query,
-    chunkIds: (retrieval.chunks || []).map((c) => c.chunk_id),
-    chapters: [...new Set((retrieval.chunks || []).map((c) => c.chapter).filter(Boolean))],
-  });
-
   const successFrom = (mindMap, raw) => ({
     ok: true,
     status: 'success',
     message: null,
     mind_map: applyPresentationCap(mindMap, frustration.frustrationLevel),
-    keywords: ragKeywords,
     sources: sourcesFromChunks(retrieval.chunks),
     grade,
     question,
@@ -179,7 +258,6 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     retrieval: {
       original_question: retrieval.original_question || question,
       retrieval_query: retrieval.retrieval_query,
-      keywords: ragKeywords,
       enough: true,
       confidence: retrieval.confidence,
       used_cross_grade: Boolean(retrieval.used_cross_grade),
@@ -190,24 +268,8 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
   });
 
   const fromChunks = () => {
-    const extracted = mindMapFromChunks({
-      question,
-      chunks: retrieval.chunks,
-    });
-    if (!extracted) return null;
-    const cleaned = sanitizeMindMap(extracted, {
-      chunks: retrieval.chunks,
-      question,
-      studentAnswer,
-    });
-    debugMindMap('fallback-from-chunks', {
-      central: cleaned.mindMap?.central_concept,
-      hubs: (cleaned.mindMap?.branches || []).map((b) => b.title),
-      removed: cleaned.removed,
-    });
-    return cleaned.mindMap
-      ? successFrom(cleaned.mindMap, { provider: 'chroma-extractive', model: 'chunks' })
-      : null;
+    const extracted = mindMapFromChunks({ question, chunks: retrieval.chunks });
+    return extracted ? successFrom(extracted, { provider: 'chroma-extractive', model: 'chunks' }) : null;
   };
 
   let parsed;
@@ -218,29 +280,13 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     const user = userPrompt({
       grade,
       question,
-      studentAnswer,
       frustrationScore: frustration.frustrationScore,
       frustrationLevel: frustration.frustrationLevel,
       context,
       retrievalQuery: retrieval.retrieval_query,
     });
-    raw = await complete({ system, user, temperature: 0.2, maxTokens: 1200 });
-    const parsedRaw = validateMindMap(raw.content);
-    const cleaned = sanitizeMindMap(parsedRaw, {
-      chunks: retrieval.chunks,
-      question,
-      studentAnswer,
-    });
-    debugMindMap('grok-validated', {
-      central: cleaned.mindMap?.central_concept,
-      hubs: (cleaned.mindMap?.branches || []).map((b) => ({
-        title: b.title,
-        children: (b.points || []).map((p) => p.text),
-      })),
-      removed: cleaned.removed,
-    });
-    parsed = cleaned.mindMap;
-    if (!parsed) throw new Error('mind map failed semantic validation');
+    raw = await complete({ system, user, temperature: 0.2, maxTokens: 900 });
+    parsed = validateMindMap(raw.content);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[mind-map] Grok failed after Chroma retrieval; using textbook chunks (${message})`);

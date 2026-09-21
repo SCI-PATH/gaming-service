@@ -96,9 +96,7 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.frustration.frustrationScore, 88);
     assert.equal(result.frustration.frustrationLevel, 'VERY_HIGH');
     assert.match(seenUser, /photosynthesis using sunlight/);
-    assert.match(seenUser, /Student Answer/);
     assert.match(seenUser, /88/);
-    assert.doesNotMatch(seenUser, /Allowed mind-map keywords/i);
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
   });
 
@@ -156,73 +154,8 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.status, 'success');
     assert.equal(result.provider, 'chroma-extractive');
     assert.match(result.mind_map.central_concept, /photosynthesis/i);
-    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/i);
+    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/);
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
-  });
-
-  it('drops instruction nodes and ungrouped examples from Grok JSON', async () => {
-    const result = await generateScienceMindMap(
-      {
-        grade: 6,
-        question: 'Which animals are vertebrates?',
-        studentAnswer: 'wings',
-        studentId: 'maya',
-      },
-      {
-        queryChunks: async () => ({
-          original_question: 'Which animals are vertebrates?',
-          retrieval_query: 'animals vertebrates invertebrates',
-          chunks: [
-            {
-              chunk_id: 'c-animals',
-              text: 'Animals with a backbone are called vertebrates. Bats and crows are vertebrates. Butterflies are invertebrates.',
-              hybrid_score: 0.8,
-              grade: 6,
-              textbook: 'Grade 6 Science',
-              chapter: 'Diversity of animals',
-              page: 20,
-              role: 'primary',
-            },
-          ],
-          enough: true,
-          confidence: 0.8,
-          collection_count: 8,
-        }),
-        readExistingFrustration: async () => ({
-          frustrationScore: 40,
-          frustrationLevel: 'LOW',
-          missing: true,
-        }),
-        grokJson: async () => ({
-          content: JSON.stringify({
-            status: 'success',
-            title: 'Vertebrates, invertebrates,',
-            central_concept: 'Vertebrates, invertebrates,',
-            summary: 'Two animal groups.',
-            branches: [
-              { title: 'bat', points: [] },
-              { title: 'butterfly', points: [] },
-              { title: 'wings', points: [] },
-              { title: 'do the body shapes', points: [] },
-              { title: 'Vertebrates', points: [{ text: 'Bat' }, { text: 'Crow' }] },
-              { title: 'Invertebrates', points: [{ text: 'Butterfly' }] },
-            ],
-            remember_this: ['Group animals by backbone'],
-            one_sentence_summary: 'Vertebrates have a backbone.',
-          }),
-          provider: 'xai',
-          model: 'grok-test',
-        }),
-      },
-    );
-    const blob = JSON.stringify(result.mind_map).toLowerCase();
-    assert.equal(result.status, 'success');
-    assert.equal(/do the body/i.test(blob), false);
-    assert.ok(result.mind_map.branches.some((b) => /vertebrate/i.test(b.title)));
-    assert.ok(result.mind_map.branches.some((b) =>
-      (b.points || []).some((p) => /bat/i.test(p.text)),
-    ));
-    assert.equal(result.mind_map.branches.some((b) => /^wings$/i.test(b.title)), false);
   });
 
   it('queries Chroma by grade and question only, for any chapter', async () => {

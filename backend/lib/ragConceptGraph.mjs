@@ -1,21 +1,28 @@
 /**
  * Turn Grok's RAG mind-map JSON into the farm concept-graph shape.
- * Labels stay short and complete; facts already came from Chroma chunks.
+ * Labels stay short; facts already came from Chroma chunks.
  */
 import { PLACEHOLDER_NODE } from '../../frontend/src/avatar/conceptLessons.js';
-import {
-  isIncompleteLabel,
-  polishConceptGraph,
-  studentConceptLabel,
-  studentPracticeQuestion,
-  teachingStep,
-} from '../../frontend/src/avatar/conceptMapQuality.js';
+
+function clipLabel(text, n = 36) {
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return '';
+  const words = s.split(' ').filter(Boolean);
+  let out = '';
+  for (const word of words) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > n) break;
+    out = next;
+  }
+  return out || words[0].slice(0, n);
+}
 
 function addNode(nodes, id, label, extra = {}) {
-  const lab = studentConceptLabel(label, extra.max || 40);
-  if (!lab || PLACEHOLDER_NODE.test(lab) || isIncompleteLabel(lab)) return false;
+  const lab = clipLabel(label, extra.max || 36);
+  if (!lab || PLACEHOLDER_NODE.test(lab)) return false;
   if (nodes.some((n) => n.id === id)) return true;
-  if (nodes.some((n) => String(n.label).toLowerCase() === lab.toLowerCase())) return true;
   nodes.push({
     id,
     label: lab,
@@ -26,21 +33,19 @@ function addNode(nodes, id, label, extra = {}) {
   return true;
 }
 
-export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
+export function ragMindMapToConceptGraph(mindMap = {}) {
   const nodes = [];
   const relationships = [];
-  const central =
-    studentConceptLabel(mindMap.central_concept || mindMap.title, 48) ||
-    'Science';
+  const central = mindMap.central_concept || mindMap.title || 'Science';
   addNode(nodes, 'root', central, {
     kind: 'root',
     importance: 'key',
     explanation: mindMap.summary || mindMap.one_sentence_summary || '',
-    max: 48,
+    max: 40,
   });
 
   for (const [i, branch] of (mindMap.branches || []).entries()) {
-    if (nodes.length >= 14) break;
+    if (nodes.length >= 10) break;
     const bid = String(branch.id || `branch-${i + 1}`);
     if (
       !addNode(nodes, bid, branch.title, {
@@ -52,14 +57,14 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
       continue;
     }
     relationships.push({ from: 'root', to: bid, label: 'includes' });
-    for (const [j, point] of (branch.points || []).slice(0, 5).entries()) {
-      if (nodes.length >= 16) break;
+    for (const [j, point] of (branch.points || []).slice(0, 2).entries()) {
+      if (nodes.length >= 12) break;
       const pid = String(point.id || `${bid}-p${j + 1}`);
       if (
         addNode(nodes, pid, point.text, {
           kind: 'related',
           explanation: point.text,
-          max: 40,
+          max: 32,
         })
       ) {
         relationships.push({ from: bid, to: pid, label: 'has' });
@@ -68,8 +73,8 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
   }
 
   for (const term of mindMap.key_terms || []) {
-    if (nodes.length >= 16) break;
-    if (nodes.length >= 6 && (mindMap.branches || []).length) break;
+    if (nodes.length >= 12) break;
+    if (nodes.length >= 3 && (mindMap.branches || []).length) break;
     const id = `term-${nodes.length}`;
     if (
       addNode(nodes, id, term.term, {
@@ -82,40 +87,35 @@ export function ragMindMapToConceptGraph(mindMap = {}, miss = {}) {
   }
 
   for (const line of mindMap.remember_this || []) {
-    if (nodes.length >= 4) break;
+    if (nodes.length >= 3) break;
     const id = `remember-${nodes.length}`;
-    if (addNode(nodes, id, line, { kind: 'related', explanation: line, max: 40 })) {
+    if (addNode(nodes, id, line, { kind: 'related', explanation: line, max: 32 })) {
       relationships.push({ from: 'root', to: id, label: 'includes' });
     }
   }
 
   const learningPath = (mindMap.remember_this || [])
-    .map((line) => teachingStep(line) || studentConceptLabel(line, 72))
+    .map((line) => String(line).trim())
     .filter(Boolean)
     .slice(0, 4);
   if (!learningPath.length) {
     (mindMap.branches || []).slice(0, 4).forEach((b) => {
-      const title = studentConceptLabel(b.title, 48);
-      if (title) learningPath.push(title);
+      if (b.title) learningPath.push(String(b.title));
     });
   }
 
-  const practiceFromModel = String(mindMap.one_sentence_summary || '').trim();
-  const graph = {
-    concept: central,
+  return {
+    concept: clipLabel(central, 48) || 'Science',
     nodes,
     relationships,
     learningPath,
     example: (mindMap.examples || [])[0] || '',
     practice: {
-      question: /\?$/.test(practiceFromModel)
-        ? practiceFromModel
-        : studentPracticeQuestion(miss, central),
-      expectedConcept: central,
+      question: mindMap.one_sentence_summary || '',
+      expectedConcept: clipLabel(central, 48),
     },
     generatedBy: 'chroma-rag',
   };
-  return polishConceptGraph(graph, miss);
 }
 
 export function insufficientConceptGraph(message, question) {
@@ -129,7 +129,7 @@ export function insufficientConceptGraph(message, question) {
     importance: 'key',
     explanation: message || 'No matching textbook chunks were found.',
   });
-  addNode(nodes, 'ask', studentConceptLabel(question, 36) || 'Science question', {
+  addNode(nodes, 'ask', clipLabel(question, 32) || 'Science question', {
     kind: 'related',
     explanation: question || '',
   });

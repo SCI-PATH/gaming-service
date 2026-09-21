@@ -588,17 +588,6 @@ def query_chunks(payload: dict) -> dict:
         seen.add(hit["chunk_id"])
         merged.append(hit)
     selected = [h for h in merged if h["hybrid_score"] >= threshold][:top_k]
-    if selected:
-        chosen = {h["chunk_id"] for h in selected}
-        chapters = {h.get("chapter") for h in selected if h.get("chapter")}
-        neighbors = [
-            h
-            for h in merged
-            if h["chunk_id"] not in chosen
-            and h.get("chapter") in chapters
-            and h["hybrid_score"] >= threshold * 0.8
-        ][: max(2, top_k // 5)]
-        selected = selected + neighbors
     confidence = selected[0]["hybrid_score"] if selected else 0.0
     return {
         **processed,
