@@ -1,9 +1,7 @@
 /**
- * Assessment Engine → textbook evidence → pedagogical mind-map JSON.
- * The engine owns the correct answer. The LLM only organizes that knowledge.
- * Student wrong answers never appear on the map.
+ * Missed Science questions → Chroma RAG → Grok → pedagogical mind-map JSON.
+ * Facts come from retrieved textbook chunks. Student wrong answers never appear.
  */
-import { chatCompletion, getLlamaConfig } from './llamaClient.mjs';
 import { explainCorrectIdea, scienceKeyIdea } from '../../frontend/src/avatar/explainMisconception.js';
 import {
   collectAssessmentMisses,
@@ -11,6 +9,12 @@ import {
   validateMindMapAgainstAssessments,
   compactText,
 } from '../../frontend/src/avatar/assessmentMiss.js';
+import {
+  displayConceptName,
+  looksLikePoorStudentGraph,
+  studentConceptLabel,
+} from '../../frontend/src/avatar/conceptMapQuality.js';
+import { isCurriculumTopicId } from '../../frontend/src/data/curriculumTopics.js';
 import { toSageAssessmentType, SAGE_ASSESSMENT_TYPES } from '../../frontend/src/avatar/normalizeSageMindMapInput.js';
 import { buildConceptGraph, validateConceptGraph } from '../../frontend/src/avatar/conceptGraph.js';
 import {
@@ -19,7 +23,8 @@ import {
   excerptForQuestion,
 } from './textbookRetrieve.mjs';
 import { extractTextbookSentences, rankSentences } from '../../frontend/src/avatar/textbookGraph.js';
-import { hasAuthoritativeCorrectAnswer } from '../../frontend/src/assessmentEngine/engineCorrectAnswer.js';
+import { ragMindMapToConceptGraph, insufficientConceptGraph } from './ragConceptGraph.mjs';
+import { generateScienceMindMap } from './scienceMindMapGenerator.mjs';
 
 const TOPIC_ICONS = {
   photosynthesis: '☀️',
@@ -75,10 +80,12 @@ function looksLikeMetaAnswer(raw) {
 }
 
 function topicFromAttempt(a) {
+  const named = displayConceptName(a);
+  if (named) return named;
   const topic = compactText(a.topic);
-  if (topic && !/^science$/i.test(topic)) return topic;
-  const chapter = compactText(a.chapter || a.chapter_name);
-  if (chapter) return chapter;
+  if (topic && !isCurriculumTopicId(topic) && !/^science$/i.test(topic)) return topic;
+  const chapter = compactText(a.chapter_name || a.chapter);
+  if (chapter && !isCurriculumTopicId(chapter)) return chapter;
   return 'Science';
 }
 
@@ -141,6 +148,8 @@ function nounFromQuestion(prompt) {
  * Root is the scientific concept under assessment, not the raw answer sentence.
  */
 export function identifyCentralConcept(attempt = {}) {
+  const named = displayConceptName(attempt);
+  if (named) return named;
   const topic = topicFromAttempt(attempt);
   const correct = cleanCorrectAnswer(attempt.correctAnswer);
   const prompt = compactText(attempt.prompt || attempt.question);
@@ -149,27 +158,28 @@ export function identifyCentralConcept(attempt = {}) {
   if (sage === SAGE_ASSESSMENT_TYPES.TrueFalse || isTrueFalseToken(correct)) {
     const fromQ = nounFromQuestion(prompt);
     if (fromQ) return titleCase(fromQ);
-    if (topic && !/^science$/i.test(topic)) return topic;
+    if (topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) return topic;
     const idea = scienceKeyIdea(teachingView(attempt));
     if (idea && !isTrueFalseToken(idea)) return clip(idea, 40);
     return topic || 'Science';
   }
 
-  if (isMatchingType(attempt.questionType) && topic && !/^science$/i.test(topic)) {
+  if (isMatchingType(attempt.questionType) && topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) {
     return topic;
   }
 
   const fromQ = nounFromQuestion(prompt);
   if (fromQ && !sameRough(fromQ, correct)) return titleCase(fromQ);
 
-  if (correct && !isTrueFalseToken(correct) && correct.split(/\s+/).length <= 4) {
-    return titleCase(correct);
+  const shortCorrect = studentConceptLabel(correct, 40);
+  if (shortCorrect && !isTrueFalseToken(shortCorrect) && shortCorrect.split(/\s+/).length <= 5) {
+    return titleCase(shortCorrect);
   }
 
-  if (topic && !/^science$/i.test(topic)) return topic;
+  if (topic && !/^science$/i.test(topic) && !isCurriculumTopicId(topic)) return topic;
   const idea = scienceKeyIdea(teachingView(attempt));
-  if (idea && !sameRough(idea, prompt)) return clip(idea, 40);
-  return topic || 'Science';
+  if (idea && !sameRough(idea, prompt) && !isCurriculumTopicId(idea)) return clip(idea, 40);
+  return named || topic || 'Science';
 }
 
 function titleCase(text) {
@@ -324,6 +334,7 @@ function minimalPedagogy(attempt, adaptation) {
 }
 
 function looksLikeFragmentGraph(graph) {
+  if (looksLikePoorStudentGraph(graph)) return true;
   const labels = (graph?.nodes || []).map((n) => compactText(n.label));
   if (!labels.length) return true;
   if (
@@ -353,38 +364,43 @@ function slug(text, fallback = 'n') {
 
 export function structuredToConceptGraph(centralConcept, pedagogy) {
   const rootId = 'root';
+  const rootLabel = studentConceptLabel(centralConcept, 40) || clip(centralConcept, 40) || 'Science';
   const nodes = [
     {
       id: rootId,
-      label: clip(centralConcept, 40) || 'Science',
+      label: rootLabel,
       kind: 'root',
       importance: 'key',
       explanation: '',
     },
   ];
   const relationships = [];
-  const seen = new Set([rootId, compactText(centralConcept).toLowerCase()]);
+  const seen = new Set([rootId, compactText(rootLabel).toLowerCase()]);
   (pedagogy || []).forEach((cat, i) => {
-    const catId = slug(cat.title, `cat-${i}`);
+    const catLabel = studentConceptLabel(cat.title, 28) || clip(cat.title, 28);
+    if (!catLabel) return;
+    const catId = slug(catLabel, `cat-${i}`);
     if (seen.has(catId)) return;
     seen.add(catId);
     nodes.push({
       id: catId,
-      label: clip(cat.title, 28),
+      label: catLabel,
       kind: 'correct',
       importance: 'key',
       explanation: '',
     });
     relationships.push({ from: rootId, to: catId, label: 'includes' });
     (cat.children || []).forEach((child, j) => {
-      const id = slug(`${catId}-${child}`, `n-${i}-${j}`);
-      const key = compactText(child).toLowerCase();
+      const childLabel = studentConceptLabel(child, 48) || clip(child, 72);
+      if (!childLabel) return;
+      const id = slug(`${catId}-${childLabel}`, `n-${i}-${j}`);
+      const key = compactText(childLabel).toLowerCase();
       if (seen.has(id) || seen.has(key)) return;
       seen.add(id);
       seen.add(key);
       nodes.push({
         id,
-        label: clip(child, 72),
+        label: childLabel,
         kind: 'related',
         importance: 'supporting',
         explanation: clip(child, 140),
@@ -809,28 +825,15 @@ Return JSON only:
 }
 
 /**
- * Generate a correct-knowledge mind map from evaluated assessment results.
+ * Generate a mind map from missed questions via Chroma RAG + Grok.
+ * Local concept-graph templates are not used for the student-facing map.
  */
-export async function generateMindMapFromMistakes(body = {}) {
+export async function generateMindMapFromMistakes(body = {}, deps = {}) {
+  const generate = deps.generateScienceMindMap || generateScienceMindMap;
   const attempts = normalizeAttempts(body);
-  if (!attempts.length) {
-    return {
-      ok: true,
-      mindMap: buildLocalMindMap([]),
-      provider: 'none',
-      note: 'No assessed concept provided.',
-    };
-  }
-
-  const missing = attempts.filter((a) => !hasAuthoritativeCorrectAnswer(a.correctAnswer));
-  if (missing.length === attempts.length) {
-    return unavailableResult(missing.map((a) => a.questionId));
-  }
-  const usable = attempts.filter((a) => hasAuthoritativeCorrectAnswer(a.correctAnswer));
-  if (missing.length) {
-    console.warn('[mind-map] Skipping items without an engine key', {
-      questionIds: missing.map((a) => a.questionId).filter(Boolean),
-    });
+  const usable = attempts.filter((a) => compactText(a.prompt || a.question));
+  if (!usable.length) {
+    return unavailableResult(attempts.map((a) => a.questionId));
   }
 
   const frustrationScore = Number(body.frustrationScore ?? body.frustration_score);
@@ -839,72 +842,125 @@ export async function generateMindMapFromMistakes(body = {}) {
     body.frustrationAdaptation ||
     body.frustration_adaptation ||
     buildAdaptationFromScore(frustrationScore, frustrationLevel);
-
   const capped = usable.slice(0, adaptation.mindMap.maxBranches || usable.length);
-  const local = buildLocalMindMap(capped, adaptation);
-  const cfg = getLlamaConfig();
+  const gradeDefault = Number(body.grade || capped[0]?.grade || 6);
+  const studentId = String(body.studentId || '').trim();
 
-  if (cfg.provider === 'offline' || cfg.provider === 'fallback') {
-    const check = validatePedagogicalMindMap(local, capped);
-    const safe = check.ok ? local : buildLocalMindMap(capped, adaptation);
-    return {
-      ok: true,
-      mindMap: toClientShape({
-        ...safe,
-        summary: `${adaptation.mindMap.label}: ${safe.summary}`,
-      }),
-      provider: 'offline',
-      note: 'Local concept map (set GROQ_API_KEY for AI structuring).',
-      frustrationLevel: adaptation.level,
-    };
-  }
-
-  try {
-    const result = await chatCompletion({
-      messages: [
-        {
-          role: 'system',
-          content:
-            'The assessment engine owns the correct answer. Organize that knowledge pedagogically. Never mention a student mistake. JSON only. Never mention frustration.',
-        },
-        { role: 'user', content: buildPrompt(capped, adaptation) },
-      ],
-      maxTokens: Math.max(1400, Number(process.env.MINDMAP_MAX_TOKENS || 1800) || 1800),
-      temperature: adaptation.level === 'very_high' ? 0.2 : 0.3,
+  const branches = [];
+  for (const a of capped) {
+    const question = compactText(a.prompt || a.question);
+    const grade = [6, 7, 8, 9].includes(Number(a.grade))
+      ? Number(a.grade)
+      : [6, 7, 8, 9].includes(gradeDefault)
+        ? gradeDefault
+        : 6;
+    let rag;
+    try {
+      rag = await generate({
+        grade,
+        question,
+        studentId,
+        hint: compactText(a.correctAnswer),
+        correctAnswer: compactText(a.correctAnswer),
+        studentAnswer: compactText(a.studentAnswer),
+      });
+    } catch (err) {
+      rag = {
+        status: 'insufficient_context',
+        message: err instanceof Error ? err.message : 'Mind map generation failed',
+        mind_map: null,
+        sources: [],
+      };
+    }
+    const success = rag?.status === 'success' && rag.mind_map;
+    const map = success ? rag.mind_map : null;
+    const conceptGraph = success
+      ? ragMindMapToConceptGraph(map, a)
+      : insufficientConceptGraph(rag?.message, question);
+    const topic = success
+      ? compactText(map.central_concept || map.title) || topicFromAttempt(a)
+      : topicFromAttempt(a);
+    const firstSource = (rag?.sources || [])[0];
+    const ragKeywords = Array.isArray(rag?.keywords)
+      ? rag.keywords
+      : Array.isArray(rag?.retrieval?.keywords)
+        ? rag.retrieval.keywords
+        : [];
+    branches.push({
+      miss_index: branches.length + 1,
+      questionId: a.questionId || null,
+      questionType: a.questionType || '',
+      blankIndex: a.blankIndex || null,
+      topic,
+      icon: iconFor(topic),
+      question,
+      student_answer: '',
+      correct_answer: a.correctAnswer || '',
+      missed_blanks: [],
+      options: [],
+      why_wrong: '',
+      key_concept: success
+        ? compactText(map.one_sentence_summary || map.summary || topic)
+        : /temporarily unavailable|timed out|not configured|empty mind map|generation failed/i.test(
+            rag?.message || '',
+          )
+          ? 'Map not ready yet'
+          : 'Not enough textbook content',
+      key_concept_explain: success
+        ? compactText(map.summary || map.one_sentence_summary)
+        : rag?.message || 'No matching textbook chunks were found.',
+      pedagogy: success
+        ? (map.branches || []).map((b) => ({
+            title: b.title,
+            children: (b.points || []).map((p) => p.text).filter(Boolean),
+          }))
+        : [],
+      keywords: ragKeywords,
+      lesson: null,
+      concept_graph: conceptGraph,
+      farm_link: firstSource
+        ? clip(`${firstSource.textbook}${firstSource.chapter ? ` · ${firstSource.chapter}` : ''}`, 160)
+        : '',
+      color_index: branches.length % 6,
+      textbook_grounded: Boolean(success),
     });
-
-    const parsed = extractJson(result.content);
-    const merged = mergeAiOntoAttempts(capped, parsed, adaptation);
-    const check = validatePedagogicalMindMap(merged, capped);
-    const safe = check.ok ? merged : local;
-    return {
-      ok: true,
-      mindMap: toClientShape({
-        ...safe,
-        summary: safe.summary || `${adaptation.mindMap.label} map`,
-      }),
-      provider: check.ok ? result.provider : 'local-fallback',
-      model: check.ok ? result.model : undefined,
-      note: check.ok
-        ? `AI concept map (${adaptation.mindMap.label}).`
-        : 'AI map failed validation — showing the textbook-grounded local map.',
-      frustrationLevel: adaptation.level,
-      frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
-    };
-  } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err || '');
-    const soft = /model_not_found|does not exist|404|rate.?limit|429|GROQ|timeout/i.test(raw)
-      ? 'AI map unavailable — showing the local concept map.'
-      : 'AI unavailable — using the local concept map.';
-    return {
-      ok: true,
-      mindMap: toClientShape(local),
-      provider: 'local-fallback',
-      note: soft,
-      aiError: true,
-      frustrationLevel: adaptation.level,
-    };
   }
+
+  const title =
+    [...new Set(branches.map((b) => b.topic).filter(Boolean))].slice(0, 3).join(' · ') ||
+    'Science';
+  const grounded = branches.filter((b) => b.textbook_grounded).length;
+  const keywords = [
+    ...new Set(branches.flatMap((b) => (Array.isArray(b.keywords) ? b.keywords : []))),
+  ];
+
+  return {
+    ok: true,
+    mindMap: toClientShape({
+      title,
+      central_idea: title,
+      summary: grounded
+        ? `Textbook keyword map of ${grounded} idea${grounded === 1 ? '' : 's'} from Chroma RAG.`
+        : 'Not enough matching textbook content for this question.',
+      big_picture: grounded
+        ? 'Facts come from retrieved Grade 6–9 Science textbook chunks.'
+        : 'Ingest the Science textbooks, then try this question again.',
+      study_path: branches.flatMap((b) => b.concept_graph?.learningPath || []).slice(0, 6),
+      branches,
+      keywords,
+      missCount: branches.length,
+      conceptCount: grounded || branches.length,
+      sourceAttempts: capped,
+      generatedBy: 'chroma-rag',
+      textbookGrounded: grounded,
+    }),
+    provider: grounded ? 'chroma-rag' : 'insufficient_context',
+    note: grounded
+      ? 'Mind map built from ChromaDB textbook chunks + Grok.'
+      : 'No matching textbook chunks — ingest Grade 6–9 Science books.',
+    frustrationLevel: adaptation.level,
+    frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,
+  };
 }
 
 function buildAdaptationFromScore(score, levelIn) {
@@ -998,6 +1054,7 @@ export function toClientShape(map) {
     summary: b.key_concept_explain,
     lesson: null,
     pedagogy: b.pedagogy || [],
+    keywords: Array.isArray(b.keywords) ? b.keywords : [],
     conceptGraph: b.concept_graph || b.conceptGraph || null,
     textbookGrounded: Boolean(b.textbook_grounded),
   }));
@@ -1012,11 +1069,12 @@ export function toClientShape(map) {
     bigPicture: map.big_picture,
     studyPath: map.study_path || [],
     branches,
+    keywords: Array.isArray(map.keywords) ? map.keywords : [],
     missCount: map.missCount ?? branches.length,
     conceptCount: map.conceptCount ?? 1,
     sourceAttempts: map.sourceAttempts || [],
-    personalizedNote: map.summary || `Concept map with ${branches.length} idea${branches.length === 1 ? '' : 's'}.`,
-    layout: 'concept-map',
+    personalizedNote: map.summary || `Keyword mind map with ${branches.length} idea${branches.length === 1 ? '' : 's'}.`,
+    layout: 'radial',
     generatedBy: map.generatedBy || 'local',
   };
 }

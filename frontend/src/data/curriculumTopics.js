@@ -1168,3 +1168,18 @@ export function topicDisplayName(topicId, fallback = "") {
   if (hit) return hit.curriculumTitle;
   return fallback || id;
 }
+
+/**
+ * Student-facing skill name for mind maps. Never returns a curriculum ID.
+ */
+export function skillDisplayName(topicId, fallback = "") {
+  const id = String(topicId || "").trim();
+  const hit = TOPIC_BY_ID.get(id);
+  if (hit?.skillLabel) return hit.skillLabel;
+  if (hit?.curriculumTitle) {
+    return String(hit.curriculumTitle).replace(/^Ch\.\d+:\s*/i, "").trim();
+  }
+  const fb = String(fallback || "").trim();
+  if (fb && !isCurriculumTopicId(fb)) return fb;
+  return "";
+}

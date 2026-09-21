@@ -13,6 +13,10 @@ services:
       HOST: 0.0.0.0
       PORT: "8002"
       AVATAR_PORT: "8002"
+      CHROMA_PYTHON: python3
+      GAMING_ROOT: /app
+      CHROMA_PERSIST_DIR: /app/data/chroma
+      CHROMA_INGEST_ON_START: "1"
     volumes:
       - ./backend/data:/app/data
     restart: unless-stopped

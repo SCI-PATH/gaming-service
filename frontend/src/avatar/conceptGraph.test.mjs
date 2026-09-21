@@ -96,6 +96,29 @@ describe('concept graphs teach relationships', () => {
 });
 
 describe('plant maps are curriculum keywords, not placeholders', () => {
+  it('maps two flowering-plant groups by seed structure to monocots and dicots', () => {
+    const g = buildConceptGraph({
+      question:
+        'What are the two main groups of flowering plants based on their seed structure?',
+      studentAnswer: '',
+      correctAnswer: '',
+      questionType: 'TypedAnswer',
+      topic: 'Plant Biology',
+    });
+    const labels = g.nodes.map((n) => n.label.toLowerCase());
+    assert.equal(g.concept, 'Monocots and dicots');
+    assert.ok(labels.some((l) => l.includes('monocot')));
+    assert.ok(labels.some((l) => l.includes('dicot')));
+    assert.equal(labels.some((l) => /^(this idea|key idea|link)$/.test(l)), false);
+    assert.ok(g.learningPath.some((step) => /cotyledon|seed leaf/i.test(step)));
+    assert.equal(
+      validateConceptGraph(g, {
+        correctAnswer: 'Monocots and dicots',
+      }).ok,
+      true,
+    );
+  });
+
   it('teaches seed function without Function / Correct idea boxes', () => {
     const g = buildConceptGraph({
       question: 'What is the role of seeds in flowering plants?',

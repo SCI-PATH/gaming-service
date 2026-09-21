@@ -23,6 +23,8 @@ import {
 } from './explainMisconception.js';
 import { buildTypeAwareLesson, collectAssessmentMisses } from './assessmentMiss.js';
 import { buildConceptGraph } from './conceptGraph.js';
+import { displayConceptName } from './conceptMapQuality.js';
+import { isCurriculumTopicId } from '../data/curriculumTopics.js';
 import {
   isFillInQuestionType,
   isTypedAnswerQuestionType,
@@ -424,7 +426,12 @@ export function buildPersonalizedMindMap({
 
   const branches = list.map((a, i) => {
     const color = BRANCH_COLORS[i % BRANCH_COLORS.length];
-    const t = resolveTopicKey(a.topic) || a.topic || 'Science';
+    const resolvedTopic = resolveTopicKey(a.topic);
+    const t =
+      displayConceptName(a) ||
+      (resolvedTopic && !isCurriculumTopicId(resolvedTopic) ? resolvedTopic : '') ||
+      (a.topic && !isCurriculumTopicId(a.topic) ? a.topic : '') ||
+      'Science';
     topicsSeen.add(t);
     const miss = {
       ...a,
