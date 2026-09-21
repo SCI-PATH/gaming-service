@@ -1,5 +1,6 @@
 /**
  * Frustration-aware Grok prompts. Facts come only from retrieved textbook chunks.
+ * Output is a short paragraph per miss — not a mind map.
  */
 
 export const JSON_SCHEMA_HINT = `Return ONLY valid JSON:
@@ -7,24 +8,19 @@ export const JSON_SCHEMA_HINT = `Return ONLY valid JSON:
   "status": "success" | "insufficient_context",
   "title": "string",
   "central_concept": "string",
-  "summary": "string",
-  "branches": [{"id":"branch-1","title":"string","points":[{"id":"point-1","text":"string","source":{"textbook":"string","chapter":"string","page":1,"chunk_id":"string"}}]}],
-  "key_terms": [{"term":"string","meaning":"string"}],
-  "examples": ["string"],
-  "remember_this": ["string"],
-  "one_sentence_summary": "string",
+  "paragraph": "string",
   "message": "string or null"
 }`;
 
 const BAND_COPY = {
   VERY_LOW:
-    'Frustration is very low (0–20). Detailed mind map, more relationships, scientific terminology, extra supporting concepts, a few clear examples. Do not make it unnecessarily complicated.',
-  LOW: 'Frustration is low (21–40). Reasonably detailed map, clear hierarchy, important scientific terms, supporting examples.',
+    'Frustration is very low (0–20). Write 3–4 clear sentences with the important scientific terms. Do not make it unnecessarily complicated.',
+  LOW: 'Frustration is low (21–40). Write 2–3 clear sentences with the important scientific terms and one familiar example if the textbook has one.',
   MODERATE:
-    'Frustration is moderate (41–60). Simplified language, fewer branches, short explanations, important keywords, one or two examples, clear hierarchy.',
-  HIGH: 'Frustration is high (61–80). Very simple language, short phrases, fewer branches, step-by-step relationships, familiar examples, minimal extra terminology.',
+    'Frustration is moderate (41–60). Write 2 short sentences in simple language. Keep the important keywords.',
+  HIGH: 'Frustration is high (61–80). Write 1–2 very short sentences in simple language. One idea at a time.',
   VERY_HIGH:
-    'Frustration is very high (81–100). Highly simplified learning-recovery map. Maximum 3–5 major branches. Very short phrases, simple vocabulary, one concept at a time, basic examples, Remember this, and In one sentence. Do NOT remove scientifically important facts — simplify presentation only.',
+    'Frustration is very high (81–100). Write one short, gentle sentence. Simple vocabulary. Do NOT remove scientifically important facts — simplify presentation only.',
 };
 
 export function presentationBand(score) {
@@ -45,8 +41,10 @@ export function systemPrompt() {
     'Do not invent chapter names or page numbers.',
     'Do not fabricate citations.',
     'Do not introduce unrelated concepts.',
+    'Do not generate a mind map, branches, bullet lists, or a diagram.',
+    'Write one short paragraph that teaches the idea the student missed.',
+    'Use the student answer only to notice the mix-up. Never treat the student answer as a textbook fact.',
     'Adapt the complexity according to the student frustration score.',
-    'Generate a structured mind map rather than a long essay.',
     'If textbook context is present, you MUST return status "success" and use those facts.',
     'Return status "insufficient_context" only when no textbook context was supplied.',
     'Frustration changes presentation only. It must not change the scientific facts.',
@@ -57,6 +55,8 @@ export function systemPrompt() {
 export function userPrompt({
   grade,
   question,
+  studentAnswer,
+  correctAnswer,
   frustrationScore,
   frustrationLevel,
   context,
@@ -66,6 +66,8 @@ export function userPrompt({
     `Grade:\n${grade}`,
     'Subject:\nScience',
     `Student Question:\n${question}`,
+    `Student answer (may be wrong — do not treat as a fact):\n${studentAnswer || '(none)'}`,
+    `Engine correct answer (teach this idea, do not copy it if the textbook says more):\n${correctAnswer || '(none)'}`,
     `Internal retrieval query (do not show to the student):\n${retrievalQuery}`,
     `Frustration Score:\n${frustrationScore}`,
     `Frustration Level:\n${frustrationLevel}`,
@@ -75,7 +77,7 @@ export function userPrompt({
 }
 
 export function repairPrompt(raw) {
-  return `The previous response was not valid JSON for the mind-map schema. Convert it into the required JSON object only. Do not add new scientific facts.\n\n${String(raw).slice(0, 12000)}`;
+  return `The previous response was not valid JSON for the paragraph schema. Convert it into the required JSON object only. Do not add new scientific facts.\n\n${String(raw).slice(0, 12000)}`;
 }
 
 export function formatContext(chunks = []) {

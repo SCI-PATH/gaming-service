@@ -27,6 +27,8 @@ describe('prompts', () => {
     const system = systemPrompt();
     assert.match(system, /ground/i);
     assert.match(system, /presentation/i);
+    assert.match(system, /paragraph/i);
+    assert.match(system, /Do not generate a mind map/i);
     const user = userPrompt({
       grade: 7,
       question: 'Why do plants need sunlight?',

@@ -1,6 +1,6 @@
 /**
- * Missed Science questions → Chroma RAG → Grok → pedagogical mind-map JSON.
- * Facts come from retrieved textbook chunks. Student wrong answers never appear.
+ * Missed Science questions → Chroma RAG → Grok → short paragraph per miss.
+ * Facts come from retrieved textbook chunks. Student wrong answers never become facts.
  */
 import { explainCorrectIdea, scienceKeyIdea } from '../../frontend/src/avatar/explainMisconception.js';
 import {
@@ -17,7 +17,6 @@ import {
   excerptForQuestion,
 } from './textbookRetrieve.mjs';
 import { extractTextbookSentences, rankSentences } from '../../frontend/src/avatar/textbookGraph.js';
-import { ragMindMapToConceptGraph, insufficientConceptGraph } from './ragConceptGraph.mjs';
 import { generateScienceMindMap } from './scienceMindMapGenerator.mjs';
 
 const TOPIC_ICONS = {
@@ -845,6 +844,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
         studentId,
         hint: compactText(a.correctAnswer),
         correctAnswer: compactText(a.correctAnswer),
+        studentAnswer: compactText(a.studentAnswer),
       });
     } catch (err) {
       rag = {
@@ -856,9 +856,13 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
     }
     const success = rag?.status === 'success' && rag.mind_map;
     const map = success ? rag.mind_map : null;
-    const conceptGraph = success
-      ? ragMindMapToConceptGraph(map, rag.sources)
-      : insufficientConceptGraph(rag?.message, question);
+    const paragraph = success
+      ? compactText(map.paragraph || map.summary || map.one_sentence_summary)
+      : /temporarily unavailable|timed out|not configured|empty mind map|generation failed/i.test(
+          rag?.message || '',
+        )
+        ? 'Sage could not finish this explanation yet. Try again in a moment.'
+        : compactText(rag?.message) || 'Not enough matching textbook content for this question.';
     const topic = success
       ? compactText(map.central_concept || map.title) || topicFromAttempt(a)
       : topicFromAttempt(a);
@@ -876,29 +880,16 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
       missed_blanks: [],
       options: [],
       why_wrong: '',
-      key_concept: success
-        ? compactText(map.one_sentence_summary || map.summary || topic)
-        : /temporarily unavailable|timed out|not configured|empty mind map|generation failed/i.test(
-            rag?.message || '',
-          )
-          ? 'Map not ready yet'
-          : 'Not enough textbook content',
-      key_concept_explain: success
-        ? compactText(map.summary || map.one_sentence_summary)
-        : rag?.message || 'No matching textbook chunks were found.',
-      pedagogy: success
-        ? (map.branches || []).map((b) => ({
-            title: b.title,
-            children: (b.points || []).map((p) => p.text).filter(Boolean),
-          }))
-        : [],
+      key_concept: topic,
+      key_concept_explain: paragraph,
+      pedagogy: [],
       lesson: null,
-      concept_graph: conceptGraph,
+      concept_graph: null,
       farm_link: firstSource
         ? clip(`${firstSource.textbook}${firstSource.chapter ? ` · ${firstSource.chapter}` : ''}`, 160)
         : '',
       color_index: branches.length % 6,
-      textbook_grounded: Boolean(success),
+      textbook_grounded: Boolean(success && paragraph),
     });
   }
 
@@ -913,12 +904,12 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
       title,
       central_idea: title,
       summary: grounded
-        ? `Textbook-grounded map of ${grounded} idea${grounded === 1 ? '' : 's'} from Chroma RAG.`
+        ? `A short textbook explanation for each missed question.`
         : 'Not enough matching textbook content for this question.',
       big_picture: grounded
         ? 'Facts come from retrieved Grade 6–9 Science textbook chunks.'
         : 'Ingest the Science textbooks, then try this question again.',
-      study_path: branches.flatMap((b) => b.concept_graph?.learningPath || []).slice(0, 6),
+      study_path: [],
       branches,
       missCount: branches.length,
       conceptCount: grounded || branches.length,
@@ -928,7 +919,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
     }),
     provider: grounded ? 'chroma-rag' : 'insufficient_context',
     note: grounded
-      ? 'Mind map built from ChromaDB textbook chunks + Grok.'
+      ? 'Short explanation from ChromaDB textbook chunks + Grok.'
       : 'No matching textbook chunks — ingest Grade 6–9 Science books.',
     frustrationLevel: adaptation.level,
     frustrationScore: Number.isFinite(frustrationScore) ? frustrationScore : null,

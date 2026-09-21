@@ -21,18 +21,8 @@ function grokPayload(overrides = {}) {
     status: 'success',
     title: 'Photosynthesis',
     central_concept: 'Photosynthesis',
-    summary: 'Plants make food using sunlight.',
-    branches: [
-      {
-        title: 'What plants need',
-        points: [{ text: 'Sunlight, water and carbon dioxide' }],
-      },
-      { title: 'What they make', points: [{ text: 'Food and oxygen' }] },
-    ],
-    key_terms: [{ term: 'photosynthesis', meaning: 'making food with sunlight' }],
-    examples: ['A green leaf in sunlight'],
-    remember_this: ['No sunlight means no food making'],
-    one_sentence_summary: 'Green plants make food using sunlight.',
+    paragraph:
+      'Green plants make food by photosynthesis using sunlight, water and carbon dioxide.',
     ...overrides,
   });
 }
@@ -93,6 +83,7 @@ describe('generateScienceMindMap', () => {
     );
     assert.equal(result.status, 'success');
     assert.equal(result.mind_map.central_concept, 'Photosynthesis');
+    assert.match(result.mind_map.paragraph, /photosynthesis/i);
     assert.equal(result.frustration.frustrationScore, 88);
     assert.equal(result.frustration.frustrationLevel, 'VERY_HIGH');
     assert.match(seenUser, /photosynthesis using sunlight/);
@@ -123,7 +114,8 @@ describe('generateScienceMindMap', () => {
     assert.match(blob, /photosynthesis/i);
     assert.equal(/activity 1\.2/i.test(blob), false);
     assert.equal(/science \|/i.test(blob), false);
-    assert.ok(map.branches.length >= 1);
+    assert.match(map.paragraph, /photosynthesis/i);
+    assert.equal(map.branches.length, 0);
   });
 
   it('builds a textbook map from Chroma chunks when Grok fails', async () => {
@@ -154,7 +146,7 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.status, 'success');
     assert.equal(result.provider, 'chroma-extractive');
     assert.match(result.mind_map.central_concept, /photosynthesis/i);
-    assert.match(JSON.stringify(result.mind_map.branches), /sunlight/);
+    assert.match(result.mind_map.paragraph, /sunlight/);
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
   });
 

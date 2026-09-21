@@ -143,8 +143,8 @@ describe('missing question does not guess', () => {
   });
 });
 
-describe('farm Sage maps use Chroma RAG', () => {
-  it('builds a textbook graph from Grok RAG JSON, not Key idea placeholders', async () => {
+describe('farm Sage explanations use Chroma RAG', () => {
+  it('builds a textbook paragraph from Grok RAG JSON, not a mind map', async () => {
     const result = await generateMindMapFromMistakes(
       {
         grade: 6,
@@ -169,24 +169,10 @@ describe('farm Sage maps use Chroma RAG', () => {
             status: 'success',
             title: 'Monocots and dicots',
             central_concept: 'Monocots and dicots',
-            summary: 'Flowering plants are grouped by seed leaves.',
-            branches: [
-              {
-                id: 'b1',
-                title: 'Monocot',
-                points: [{ id: 'p1', text: 'One cotyledon (seed leaf)' }],
-              },
-              {
-                id: 'b2',
-                title: 'Dicot',
-                points: [{ id: 'p2', text: 'Two cotyledons (seed leaves)' }],
-              },
-            ],
-            key_terms: [{ term: 'cotyledon', meaning: 'seed leaf' }],
-            examples: ['Maize is a monocot; bean is a dicot.'],
-            remember_this: ['Count the seed leaves'],
-            one_sentence_summary:
-              'The two groups are monocots and dicots, based on seed leaves.',
+            paragraph:
+              'Flowering plants are grouped by seed leaves. Monocots have one seed leaf and dicots have two.',
+            summary:
+              'Flowering plants are grouped by seed leaves. Monocots have one seed leaf and dicots have two.',
           },
           sources: [
             {
@@ -201,11 +187,10 @@ describe('farm Sage maps use Chroma RAG', () => {
     );
     assert.equal(result.ok, true);
     assert.equal(result.provider, 'chroma-rag');
-    const graph = result.mindMap.branches[0].conceptGraph;
-    const labels = (graph.nodes || []).map((n) => n.label.toLowerCase());
-    assert.ok(labels.some((l) => l.includes('monocot')));
-    assert.ok(labels.some((l) => l.includes('dicot')));
-    assert.equal(labels.some((l) => /^(this idea|key idea|link)$/.test(l)), false);
+    const branch = result.mindMap.branches[0];
+    assert.equal(branch.conceptGraph, null);
+    assert.match(branch.keyExplain, /monocots/i);
+    assert.match(branch.keyExplain, /dicots/i);
     assert.equal(result.mindMap.generatedBy, 'chroma-rag');
   });
 
@@ -233,20 +218,14 @@ describe('farm Sage maps use Chroma RAG', () => {
       {
         generateScienceMindMap: async ({ question, grade }) => {
           seen.push({ question, grade });
-          const title = question.slice(0, 28);
           return {
             status: 'success',
             mind_map: {
               status: 'success',
-              title,
-              central_concept: title,
-              summary: 'Grounded in retrieved textbook chunks.',
-              branches: [
-                { title: 'Textbook idea', points: [{ text: 'Textbook fact one' }] },
-                { title: 'Related fact', points: [{ text: 'Textbook fact two' }] },
-              ],
-              remember_this: ['Use the textbook idea'],
-              one_sentence_summary: 'This comes from retrieved chunks.',
+              title: question.slice(0, 28),
+              central_concept: question.slice(0, 28),
+              paragraph: `Textbook fact for: ${question}`,
+              summary: `Textbook fact for: ${question}`,
             },
             sources: [{ textbook: 'Grade 7 Science', chapter: 'Any', chunk_id: 'x' }],
           };
@@ -262,11 +241,10 @@ describe('farm Sage maps use Chroma RAG', () => {
     assert.equal(result.provider, 'chroma-rag');
     assert.equal(result.mindMap.generatedBy, 'chroma-rag');
     assert.equal(result.mindMap.branches.length, questions.length);
-    for (const branch of result.mindMap.branches) {
-      assert.equal(branch.conceptGraph.generatedBy, 'chroma-rag');
+    for (const [i, branch] of result.mindMap.branches.entries()) {
+      assert.equal(branch.conceptGraph, null);
       assert.equal(branch.textbookGrounded, true);
-      const labels = (branch.conceptGraph.nodes || []).map((n) => n.label.toLowerCase());
-      assert.equal(labels.some((l) => /^(this idea|key idea)$/.test(l)), false);
+      assert.match(branch.keyExplain, new RegExp(questions[i].slice(0, 12), 'i'));
     }
   });
 });

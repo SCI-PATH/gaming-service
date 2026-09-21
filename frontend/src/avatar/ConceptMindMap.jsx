@@ -13,7 +13,6 @@ import {
   tokenizeMapText,
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
-import ConceptGraphTree from './ConceptGraphTree.jsx';
 import { getCurrentStudent } from '../data/mockStudents.js';
 
 const COLORS = [
@@ -258,7 +257,7 @@ function ConceptMindMap({
     }
 
     setStatus('loading');
-    setNote('Building mind map from textbook chunks…');
+    setNote('Writing a short explanation from textbooks…');
 
     (async () => {
       try {
@@ -286,7 +285,7 @@ function ConceptMindMap({
         }
         setNote(
           softProviderNote(result.note) ||
-            `Concept map for ${seedAttempts.length} assessed idea${seedAttempts.length === 1 ? '' : 's'}.`,
+            `Short explanation for ${seedAttempts.length} missed idea${seedAttempts.length === 1 ? '' : 's'}.`,
         );
         setStatus('ready');
       } catch (err) {
@@ -389,12 +388,12 @@ function ConceptMindMap({
         {status === 'loading' ? (
           <div className="mm-load" role="status">
             <span className="mm-load-dot" />
-            Building mind map from textbooks…
+            Writing a short explanation from textbooks…
           </div>
         ) : (
           <p className="mm-lead">
             {note ||
-              'Sage will open a textbook mind map when this miss is ready.'}
+              'Sage will explain this miss when the textbook search is ready.'}
           </p>
         )}
       </section>
@@ -457,11 +456,11 @@ function ConceptMindMap({
   return (
     <section
       className={`mm${compact ? ' is-compact' : ''}${speechFocus ? ' is-speech-linked' : ''}`}
-      aria-label={`Concept map of ${n} science idea${n === 1 ? '' : 's'}`}
+      aria-label={`Science explanation of ${n} missed idea${n === 1 ? '' : 's'}`}
     >
       <header className="mm-top">
         <p className="mm-kicker">
-          Concept map · {n} idea{n === 1 ? '' : 's'}
+          Miss review · {n} idea{n === 1 ? '' : 's'}
           {map.conceptCount > 1 ? ` · ${map.conceptCount} topics` : ''}
           {status === 'loading' ? ' · generating with AI…' : ''}
           {map.generatedBy === 'ai' || (status === 'ready' && note.includes('AI'))
@@ -483,7 +482,7 @@ function ConceptMindMap({
               text={
                 map.summary ||
                 map.personalizedNote ||
-                `One card per concept. All ${n} are shown together.`
+                `A short textbook paragraph for each missed question.`
               }
               on={overviewOn}
             />
@@ -504,7 +503,7 @@ function ConceptMindMap({
         {status === 'loading' ? (
           <div className="mm-load" role="status">
             <span className="mm-load-dot" />
-            Building mind map from textbooks…
+            Writing a short explanation from textbooks…
           </div>
         ) : null}
         {!compact && note && status !== 'loading' && softProviderNote(note) ? (
@@ -513,7 +512,7 @@ function ConceptMindMap({
         <button
           type="button"
           className={`mm-download${downloadState === 'done' ? ' is-done' : ''}`}
-          aria-label="Download mind map as an image"
+          aria-label="Download explanation as an image"
           disabled={!branches.length || downloadState === 'saving'}
           onClick={() => {
             if (downloadState === 'saving') return;
@@ -532,7 +531,7 @@ function ConceptMindMap({
             ? 'Saving…'
             : downloadState === 'done'
               ? 'Saved'
-              : 'Download map'}
+              : 'Download'}
         </button>
       </header>
 
@@ -619,8 +618,14 @@ function ConceptMindMap({
                   b.question || '—'
                 )}
               </p>
-              {b.conceptGraph?.nodes?.length ? (
-                <ConceptGraphTree graph={b.conceptGraph} compact={compact} />
+              {b.keyExplain ? (
+                <p className="mm-card-para">
+                  {speechOn ? (
+                    <Sync fieldKey="explain" text={b.keyExplain} on />
+                  ) : (
+                    b.keyExplain
+                  )}
+                </p>
               ) : b.pedagogy?.length ? (
                 <ul className="mm-pedagogy">
                   {b.pedagogy.map((cat) => (
@@ -653,8 +658,14 @@ function ConceptMindMap({
           <h4>
             {active.icon} {active.conceptGraph?.concept || active.topic}
           </h4>
-          {active.conceptGraph?.nodes?.length ? (
-            <ConceptGraphTree graph={active.conceptGraph} />
+          {active.keyExplain ? (
+            <p className="mm-focus-p">
+              {speechBranchId === active.id ? (
+                <Sync fieldKey="explain" text={active.keyExplain} on />
+              ) : (
+                active.keyExplain
+              )}
+            </p>
           ) : active.pedagogy?.length ? (
             <ul className="mm-pedagogy">
               {active.pedagogy.map((cat) => (
@@ -712,7 +723,7 @@ class ConceptMindMapBoundary extends Component {
       return (
         <section className="mm" aria-label="Science mind map">
           <p className="mm-lead">
-            Sage could not draw this map. Close Sage and miss the question again.
+            Sage could not write this explanation. Close Sage and miss the question again.
           </p>
         </section>
       );

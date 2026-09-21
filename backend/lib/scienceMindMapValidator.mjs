@@ -1,5 +1,5 @@
 /**
- * Validate structured mind-map JSON from Grok.
+ * Validate Grok JSON for a short textbook paragraph (legacy mind-map fields still accepted).
  */
 
 const FENCE = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -76,6 +76,13 @@ function asStrings(raw) {
   return raw.map((item) => String(item).trim()).filter(Boolean);
 }
 
+function paragraphFrom(data, branches) {
+  const direct = String(data.paragraph || data.summary || data.one_sentence_summary || data.oneSentence || '').trim();
+  if (direct) return direct;
+  const points = branches.flatMap((branch) => (branch.points || []).map((p) => p.text).filter(Boolean));
+  return points.slice(0, 3).join(' ').trim();
+}
+
 export function validateMindMap(raw) {
   const data = typeof raw === 'string' ? extractJsonObject(raw) : { ...raw };
   let status = String(data.status || 'success').toLowerCase();
@@ -84,21 +91,26 @@ export function validateMindMap(raw) {
   } else {
     status = 'success';
   }
+  const branches = asBranches(data.branches || data.nodes || []);
+  const paragraph = paragraphFrom(data, branches);
   const payload = {
     status,
     title: String(data.title || data.central_concept || 'Science').trim(),
     central_concept: String(data.central_concept || data.title || 'Science').trim(),
-    summary: String(data.summary || '').trim(),
-    branches: asBranches(data.branches || data.nodes || []),
+    paragraph,
+    summary: paragraph || String(data.summary || '').trim(),
+    branches,
     key_terms: asTerms(data.key_terms || data.keywords || []),
     examples: asStrings(data.examples),
     remember_this: asStrings(data.remember_this || data.rememberThis),
-    one_sentence_summary: String(data.one_sentence_summary || data.oneSentence || '').trim(),
+    one_sentence_summary: String(
+      data.one_sentence_summary || data.oneSentence || paragraph.split(/(?<=[.!?])\s+/)[0] || '',
+    ).trim(),
     message: data.message || null,
   };
   if (payload.status === 'insufficient_context') return payload;
-  if (!payload.central_concept || !payload.branches.length) {
-    throw new Error('mind map is missing a central concept or branches');
+  if (!payload.central_concept || !payload.paragraph) {
+    throw new Error('explanation is missing a topic or paragraph');
   }
   return payload;
 }
