@@ -247,6 +247,45 @@ describe('farm Sage explanations use Chroma RAG', () => {
       assert.match(branch.keyExplain, new RegExp(questions[i].slice(0, 12), 'i'));
     }
   });
+
+  it('passes the missed question chapter and topic into retrieval', async () => {
+    let seen = null;
+    await generateMindMapFromMistakes(
+      {
+        grade: 6,
+        studentId: 'maya',
+        attempts: [
+          {
+            questionId: 'q-magnet',
+            question: 'What are the poles of a magnet?',
+            prompt: 'What are the poles of a magnet?',
+            studentAnswer: 'east and west',
+            correctAnswer: 'north and south',
+            isCorrect: false,
+            grade: 6,
+            chapter_id: 'G6_C07',
+            topic_id: 'G6_S7_MAG_POLES',
+          },
+        ],
+      },
+      {
+        generateScienceMindMap: async (body) => {
+          seen = body;
+          return {
+            status: 'insufficient_context',
+            mind_map: null,
+            sources: [],
+            message: 'none',
+          };
+        },
+      },
+    );
+    assert.equal(seen.chapter_id, 'G6_C07');
+    assert.equal(seen.topic_id, 'G6_S7_MAG_POLES');
+    assert.equal(seen.studentAnswer, 'east and west');
+    assert.equal(seen.correctAnswer, 'north and south');
+    assert.match(seen.question, /poles of a magnet/i);
+  });
 });
 
 describe('textbook retrieval for explanation', () => {

@@ -3,9 +3,11 @@
  * Frustration changes presentation only. Facts come from retrieved textbook chunks.
  */
 import { queryChunks } from './chromaService.mjs';
+import { resolveChapter } from './curriculumChapters.mjs';
 import { grokJson } from './grokMindMap.mjs';
 import {
   formatContext,
+  plainParagraph,
   presentationBand,
   systemPrompt,
   userPrompt,
@@ -91,7 +93,10 @@ function paragraphLimit(band) {
 
 function applyPresentationCap(mindMap, band) {
   if (!mindMap || mindMap.status !== 'success') return mindMap;
-  const paragraph = clipSentence(mindMap.paragraph || mindMap.summary, paragraphLimit(band));
+  const paragraph = clipSentence(
+    plainParagraph(mindMap.paragraph || mindMap.summary),
+    paragraphLimit(band),
+  );
   return {
     ...mindMap,
     paragraph,
@@ -200,6 +205,16 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
   const hint = clipQuestion(body.hint || body.correctAnswer || '');
   const studentAnswer = clipQuestion(body.studentAnswer || body.student_answer || '');
   const correctAnswer = clipQuestion(body.correctAnswer || body.correct_answer || hint);
+  const chapter = resolveChapter({
+    grade,
+    chapter_id: body.chapter_id || body.chapterId,
+    topic_id: body.topic_id || body.topicId,
+    chapter: body.chapter || body.chapter_name,
+    chapter_name: body.chapter_name,
+    topic: body.topic,
+  });
+  const chapterId = String(chapter?.chapter_id || body.chapter_id || body.chapterId || '').trim();
+  const topicId = String(chapter?.topic_id || body.topic_id || body.topicId || '').trim();
   const retrievalQuestion =
     hint && !question.toLowerCase().includes(hint.toLowerCase().slice(0, 24))
       ? `${question} ${hint}`
@@ -211,6 +226,8 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
       grade,
       question: retrievalQuestion,
       top_k: Math.max(4, Math.min(12, Number(body.top_k) || 8)),
+      ...(chapterId ? { chapter_id: chapterId } : {}),
+      ...(topicId ? { topic_id: topicId } : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

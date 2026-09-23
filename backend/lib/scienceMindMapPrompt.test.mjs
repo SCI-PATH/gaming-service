@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   formatContext,
+  plainParagraph,
   presentationBand,
   systemPrompt,
   userPrompt,
@@ -23,24 +24,40 @@ describe('presentationBand', () => {
 });
 
 describe('prompts', () => {
-  it('grounds Grok in retrieved chunks and presentation-only frustration', () => {
+  it('asks for one encouraging paragraph grounded only in the textbook', () => {
     const system = systemPrompt();
-    assert.match(system, /ground/i);
+    assert.match(system, /encouraging, supportive, and educational/i);
+    assert.match(system, /why their answer was incorrect/i);
+    assert.match(system, /correct concept/i);
+    assert.match(system, /ONLY the provided textbook context/i);
+    assert.match(system, /plain text/i);
     assert.match(system, /presentation/i);
     assert.match(system, /paragraph/i);
     assert.match(system, /Do not generate a mind map/i);
     const user = userPrompt({
       grade: 7,
       question: 'Why do plants need sunlight?',
+      studentAnswer: 'for decoration',
+      correctAnswer: 'to make food',
       frustrationScore: 88,
       frustrationLevel: 'VERY_HIGH',
       retrievalQuery: 'plants sunlight photosynthesis',
       context: '[Source 1]\ntext: Plants make food using sunlight.',
     });
     assert.match(user, /Grade:\n7/);
+    assert.match(user, /Original question:\nWhy do plants need sunlight/);
+    assert.match(user, /Student's incorrect answer:\nfor decoration/);
+    assert.match(user, /Correct answer:\nto make food/);
     assert.match(user, /VERY_HIGH/);
     assert.match(user, /Plants make food using sunlight/);
     assert.match(user, /do NOT remove scientifically important facts/i);
+  });
+
+  it('strips markdown and preamble from the feedback paragraph', () => {
+    assert.equal(
+      plainParagraph('**Sure, here is the idea:** Green plants make food using sunlight.'),
+      'Green plants make food using sunlight.',
+    );
   });
 
   it('formats RAG chunks with citations the model may reuse', () => {

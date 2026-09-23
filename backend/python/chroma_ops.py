@@ -493,13 +493,35 @@ def _keyword_score(query: str, document: str) -> float:
     return min(1.0, hits / max(len(terms), 1))
 
 
-def _where(grade: int | None, subject: str = "Science") -> dict | None:
-    # Grade + Science only. Do not filter by chapter — any ingested chapter can match.
+def _scope_ids(payload: dict | None) -> tuple[str, str]:
+    data = payload or {}
+    chapter_id = str(data.get("chapter_id") or data.get("chapterId") or "").strip()
+    topic_id = str(data.get("topic_id") or data.get("topicId") or "").strip()
+    return chapter_id, topic_id
+
+
+def _where(
+    grade: int | None,
+    subject: str = "Science",
+    chapter_id: str | None = None,
+    topic_id: str | None = None,
+) -> dict | None:
+    """
+    Semantic search stays inside the question's chapter when ids are known.
+
+    where={"chapter_id": question_chapter_id} and/or {"topic_id": question_topic_id}
+    """
     clauses = []
     if grade is not None:
         clauses.append({"grade": int(grade)})
     if subject:
         clauses.append({"subject": subject})
+    cid = str(chapter_id or "").strip()
+    tid = str(topic_id or "").strip()
+    if cid:
+        clauses.append({"chapter_id": cid})
+    if tid:
+        clauses.append({"topic_id": tid})
     if not clauses:
         return None
     if len(clauses) == 1:
@@ -512,6 +534,8 @@ def query_chunks(payload: dict) -> dict:
     grade = int(payload["grade"])
     top_k = int(payload.get("top_k") or 8)
     threshold = float(payload.get("min_relevance") if payload.get("min_relevance") is not None else RAG_MIN_RELEVANCE)
+    chapter_id, topic_id = _scope_ids(payload)
+    scoped = bool(chapter_id or topic_id)
     col = _get_collection()
     count = int(col.count())
     if count == 0:
@@ -523,6 +547,8 @@ def query_chunks(payload: dict) -> dict:
             "threshold": threshold,
             "used_cross_grade": False,
             "collection_count": 0,
+            "chapter_id": chapter_id,
+            "topic_id": topic_id,
         }
 
     def search(where, n, role):
@@ -536,6 +562,9 @@ def query_chunks(payload: dict) -> dict:
         try:
             raw = col.query(**kwargs)
         except Exception:
+            # A chapter filter must not fall back to the whole textbook.
+            if scoped:
+                return []
             kwargs.pop("where", None)
             raw = col.query(**kwargs)
         ids = (raw.get("ids") or [[]])[0]
@@ -561,6 +590,8 @@ def query_chunks(payload: dict) -> dict:
                     "subject": meta.get("subject") or "Science",
                     "textbook": meta.get("textbook") or f"Grade {meta.get('grade')} Science",
                     "chapter": meta.get("chapter") or "",
+                    "chapter_id": meta.get("chapter_id") or "",
+                    "topic_id": meta.get("topic_id") or "",
                     "unit": meta.get("unit") or "",
                     "page": meta.get("page"),
                     "source_url": meta.get("source_url") or "",
@@ -570,11 +601,17 @@ def query_chunks(payload: dict) -> dict:
             )
         return hits
 
-    primary = search(_where(grade), max(24, top_k * 3), "primary")
+    fetch_n = max(24, top_k * 3)
+    primary = search(_where(grade, "Science", chapter_id, topic_id), fetch_n, "primary")
+    # Chunks always store both ids when mapped. If an older row has only one, stay inside that id.
+    if scoped and not primary and chapter_id and topic_id:
+        primary = search(_where(grade, "Science", chapter_id, None), fetch_n, "primary")
+    if scoped and not primary and topic_id:
+        primary = search(_where(grade, "Science", None, topic_id), fetch_n, "primary")
     confident = [h for h in primary if h["hybrid_score"] >= threshold]
     supporting = []
     used_cross = False
-    if len(confident) < 3:
+    if not scoped and len(confident) < 3:
         used_cross = True
         for other in (6, 7, 8, 9):
             if other == grade:
@@ -588,6 +625,14 @@ def query_chunks(payload: dict) -> dict:
         seen.add(hit["chunk_id"])
         merged.append(hit)
     selected = [h for h in merged if h["hybrid_score"] >= threshold][:top_k]
+    if scoped:
+        selected = [
+            h
+            for h in selected
+            if (not chapter_id or not h.get("chapter_id") or h.get("chapter_id") == chapter_id)
+            and (not topic_id or not h.get("topic_id") or h.get("topic_id") == topic_id)
+            and (h.get("chapter_id") or h.get("topic_id"))
+        ]
     confidence = selected[0]["hybrid_score"] if selected else 0.0
     return {
         **processed,
@@ -598,6 +643,8 @@ def query_chunks(payload: dict) -> dict:
         "used_cross_grade": used_cross and any(h["role"] == "supporting" for h in selected),
         "collection_count": count,
         "primary_grade": grade,
+        "chapter_id": chapter_id,
+        "topic_id": topic_id,
     }
 
 

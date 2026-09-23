@@ -150,7 +150,45 @@ describe('generateScienceMindMap', () => {
     assert.equal(result.sources[0].chunk_id, CHUNK.chunk_id);
   });
 
-  it('queries Chroma by grade and question only, for any chapter', async () => {
+  it('passes the question chapter_id and topic_id into the Chroma filter', async () => {
+    let payload = null;
+    await generateScienceMindMap(
+      {
+        grade: 6,
+        question: 'What are the poles of a magnet?',
+        studentAnswer: 'east and west',
+        correctAnswer: 'north and south',
+        topic_id: 'G6_S7_MAG_POLES',
+      },
+      {
+        queryChunks: async (body) => {
+          payload = body;
+          return {
+            original_question: 'What are the poles of a magnet?',
+            retrieval_query: 'poles magnet',
+            chunks: [],
+            enough: false,
+            confidence: 0,
+            collection_count: 4,
+          };
+        },
+        readExistingFrustration: async () => ({
+          frustrationScore: 40,
+          frustrationLevel: 'LOW',
+          missing: true,
+        }),
+        grokJson: async () => {
+          throw new Error('Grok should not run without textbook chunks');
+        },
+      },
+    );
+    assert.equal(payload.grade, 6);
+    assert.match(payload.question, /poles of a magnet/i);
+    assert.equal(payload.chapter_id, 'G6_C07');
+    assert.equal(payload.topic_id, 'G6_S7_MAG_POLES');
+  });
+
+  it('omits chapter filters when the question has no chapter or topic id', async () => {
     const seen = [];
     const questions = [
       { grade: 6, question: 'What is a magnet used for?' },

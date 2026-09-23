@@ -845,6 +845,10 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
         hint: compactText(a.correctAnswer),
         correctAnswer: compactText(a.correctAnswer),
         studentAnswer: compactText(a.studentAnswer),
+        chapter_id: compactText(a.chapter_id || a.chapterId),
+        topic_id: compactText(a.topic_id || a.topicId),
+        chapter: compactText(a.chapter || a.chapter_name),
+        topic: compactText(a.topic),
       });
     } catch (err) {
       rag = {

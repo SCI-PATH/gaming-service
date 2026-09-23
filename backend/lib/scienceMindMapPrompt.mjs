@@ -1,6 +1,7 @@
 /**
- * Frustration-aware Grok prompts. Facts come only from retrieved textbook chunks.
- * Output is a short paragraph per miss — not a mind map.
+ * Feedback prompts for a missed Science question.
+ * Facts come only from chapter-filtered textbook chunks.
+ * The student-facing field is one plain paragraph.
  */
 
 export const JSON_SCHEMA_HINT = `Return ONLY valid JSON:
@@ -10,7 +11,8 @@ export const JSON_SCHEMA_HINT = `Return ONLY valid JSON:
   "central_concept": "string",
   "paragraph": "string",
   "message": "string or null"
-}`;
+}
+The paragraph value must be one plain-text paragraph. No markdown, no preamble, no bullet list.`;
 
 const BAND_COPY = {
   VERY_LOW:
@@ -34,20 +36,20 @@ export function presentationBand(score) {
 
 export function systemPrompt() {
   return [
-    'You are an educational AI assistant helping a Sri Lankan school student understand Science.',
-    'The supplied textbook context is the primary factual source.',
-    'You MUST ground the answer in the retrieved textbook content.',
-    'Do not invent textbook facts.',
-    'Do not invent chapter names or page numbers.',
-    'Do not fabricate citations.',
-    'Do not introduce unrelated concepts.',
-    'Do not generate a mind map, branches, bullet lists, or a diagram.',
-    'Write one short paragraph that teaches the idea the student missed.',
-    'Use the student answer only to notice the mix-up. Never treat the student answer as a textbook fact.',
-    'Adapt the complexity according to the student frustration score.',
+    'You are an educational AI assistant helping a school student who answered a Science question incorrectly.',
+    'Tone: encouraging, supportive, and educational. Never scold or embarrass the student.',
+    'Write a single explanatory feedback paragraph.',
+    'Explain why their answer was incorrect, then clearly explain the correct concept.',
+    'Use ONLY the provided textbook context for scientific facts.',
+    'Do not invent textbook facts, chapter names, page numbers, or citations.',
+    'Do not introduce concepts that are not in the textbook context.',
+    'Do not treat the student answer as a fact.',
+    'Do not generate a mind map, headings, bullet lists, or markdown.',
+    'Do not add a preamble such as "Sure", "Here is", or "Incorrect:".',
+    'The paragraph itself is plain text.',
+    'Adapt sentence length according to the student frustration score. Frustration changes presentation only. It must not change the scientific facts.',
     'If textbook context is present, you MUST return status "success" and use those facts.',
     'Return status "insufficient_context" only when no textbook context was supplied.',
-    'Frustration changes presentation only. It must not change the scientific facts.',
     JSON_SCHEMA_HINT,
   ].join('\n');
 }
@@ -65,15 +67,36 @@ export function userPrompt({
   return [
     `Grade:\n${grade}`,
     'Subject:\nScience',
-    `Student Question:\n${question}`,
-    `Student answer (may be wrong — do not treat as a fact):\n${studentAnswer || '(none)'}`,
-    `Engine correct answer (teach this idea, do not copy it if the textbook says more):\n${correctAnswer || '(none)'}`,
+    `Original question:\n${question}`,
+    `Student's incorrect answer:\n${studentAnswer || '(none)'}`,
+    `Correct answer:\n${correctAnswer || '(none)'}`,
     `Internal retrieval query (do not show to the student):\n${retrievalQuery}`,
     `Frustration Score:\n${frustrationScore}`,
     `Frustration Level:\n${frustrationLevel}`,
     `Presentation guidance:\n${BAND_COPY[frustrationLevel] || BAND_COPY.MODERATE}`,
-    `Retrieved Textbook Context:\n${context}`,
+    'Textbook context (the only source of scientific facts):\n' +
+      `${context || '(none)'}`,
   ].join('\n\n');
+}
+
+/** Collapse model clutter so the student sees one plain paragraph. */
+export function plainParagraph(raw) {
+  let text = String(raw || '').trim();
+  if (!text) return '';
+  text = text.replace(/```(?:\w+)?/g, ' ');
+  text = text.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+  text = text.replace(/^\s*[-*•]\s+/gm, '');
+  text = text.replace(/\*\*(.*?)\*\*/g, '$1');
+  text = text.replace(/__(.*?)__/g, '$1');
+  text = text.replace(/`([^`]+)`/g, '$1');
+  const preamble =
+    /^(sure[,!]?\s+|of course[,!]?\s+|here(?:'s| is)(?:\s+\w+){0,8}[:.]?\s+|incorrect[:.]\s+)/i;
+  let previous = '';
+  while (text && previous !== text) {
+    previous = text;
+    text = text.replace(preamble, '').trim();
+  }
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 export function repairPrompt(raw) {

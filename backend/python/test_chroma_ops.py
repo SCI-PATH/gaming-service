@@ -33,12 +33,18 @@ def test_validate_url_rejects_local():
         pass
 
 
-def test_rag_filter_is_grade_and_subject_not_chapter():
-    where = _where(8, "Science")
-    blob = str(where)
+def test_rag_filter_is_grade_and_subject_until_ids_are_known():
+    open_where = _where(8, "Science")
+    blob = str(open_where)
     assert "grade" in blob
     assert "Science" in blob
     assert "chapter" not in blob.lower()
+    scoped = _where(8, "Science", chapter_id="G8_C10", topic_id="G8_S10_ELE_CIRCUIT")
+    scoped_blob = str(scoped)
+    assert "G8_C10" in scoped_blob
+    assert "G8_S10_ELE_CIRCUIT" in scoped_blob
+    assert "chapter_id" in scoped_blob
+    assert "topic_id" in scoped_blob
 
 
 if __name__ == "__main__":
@@ -46,5 +52,5 @@ if __name__ == "__main__":
     test_process_question_strips_fill_in_blanks()
     test_process_question_expands_monocot_hints()
     test_validate_url_rejects_local()
-    test_rag_filter_is_grade_and_subject_not_chapter()
+    test_rag_filter_is_grade_and_subject_until_ids_are_known()
     print("ok")

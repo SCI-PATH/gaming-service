@@ -77,7 +77,13 @@ function asStrings(raw) {
 }
 
 function paragraphFrom(data, branches) {
-  const direct = String(data.paragraph || data.summary || data.one_sentence_summary || data.oneSentence || '').trim();
+  const direct = String(data.paragraph || data.summary || data.one_sentence_summary || data.oneSentence || '')
+    .replace(/```(?:\w+)?/g, ' ')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (direct) return direct;
   const points = branches.flatMap((branch) => (branch.points || []).map((p) => p.text).filter(Boolean));
   return points.slice(0, 3).join(' ').trim();
