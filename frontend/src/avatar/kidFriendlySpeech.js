@@ -123,12 +123,14 @@ export function isGradeStatusText(raw) {
   const s = String(raw || '').trim();
   if (!s) return true;
   if (isProviderDumpText(s)) return true;
+  // A full explanation may mention a missed answer. Only the status line itself is dropped.
+  if (s.length > 80) return false;
   return (
     /^\d+\s+of\s+\d+\s+blanks?\s+correct\.?$/i.test(s) ||
     /^correct\.?$/i.test(s) ||
     /^no answer provided\.?$/i.test(s) ||
-    /^no answer was (typed|provided)/i.test(s) ||
-    /^matches the ideal answer/i.test(s) ||
+    /^no answer was (typed|provided)\.?$/i.test(s) ||
+    /^matches the ideal answer\.?$/i.test(s) ||
     /^we could not fully score/i.test(s)
   );
 }

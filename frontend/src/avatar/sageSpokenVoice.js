@@ -7,6 +7,7 @@ import {
 } from '../data/frustrationModel.js';
 import { compactText } from './assessmentMiss.js';
 import { friendlyStudentName } from './kidFriendlySpeech.js';
+import { explanationForMiss } from './textbookGraph.js';
 
 const CHAPTER_TOPIC = /^(plant biology|science|biology|topic)$/i;
 
@@ -150,7 +151,9 @@ export function buildSageMissScript(branch, voice) {
   if (!branch) return '';
   const graph = branch.conceptGraph || branch.concept_graph;
   const textbook = compactText(branch.textbook_excerpt || branch.textbookExcerpt);
+  const explained = explanationForMiss(branch);
   const idea =
+    (explained ? asSentence(explained) : '') ||
     spokenFromGraph(graph, voice) ||
     (textbook ? asSentence(textbook.split(/(?<=[.!?])\s+/)[0]) : '') ||
     asSentence(branch.keyConcept || branch.key_concept);

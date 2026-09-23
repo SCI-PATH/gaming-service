@@ -8,7 +8,11 @@ import {
   setTextbookDigest,
   buildTextbookGraph,
   graphFromTextbookSentences,
+  displayTopic,
+  explanationForMiss,
+  scopeAttemptForRetrieval,
 } from './textbookGraph.js';
+import { isGradeStatusText } from './kidFriendlySpeech.js';
 import { validateConceptGraph } from './conceptGraph.js';
 
 after(() => setTextbookDigest(null));
@@ -98,5 +102,92 @@ describe('textbook chapter graphs', () => {
     assert.equal(labels.some((l) => /^\d+$/.test(l)), false);
     assert.equal(labels.some((l) => /tabulate|duce flowers|and plants$/.test(l)), false);
     assert.equal(validateConceptGraph(graph, miss).ok, true);
+  });
+});
+
+describe('miss review explanation', () => {
+  it('names the skill and explains the miss instead of showing the skill id or the answer key', () => {
+    setTextbookDigest([
+      {
+        grade: 7,
+        chapter_id: 'G7_C14',
+        topic_id: 'G7_S14_HEA_TEMPER',
+        chapter_name: 'Heat and Temperature',
+        sentences: [
+          'The measurement of warmness or coldness of a substance is known as its temperature.',
+          'Travelling of heat from one place to another place is called heat transfer.',
+        ],
+      },
+      {
+        grade: 7,
+        chapter_id: 'G7_C15',
+        topic_id: 'G7_S15_SOI_TYPES',
+        chapter_name: 'Soil',
+        sentences: [
+          'A vertical section of the different layers of the soil from the earth crust is called soil profile.',
+        ],
+      },
+    ]);
+
+    const measure = {
+      topic: 'G7_C14_HEA_MEASURE',
+      topic_id: 'G7_C14_HEA_MEASURE',
+      grade: 7,
+      question: 'What happens to the temperature of an object when heat is removed from it?',
+      correctAnswer: 'The temperature decreases.',
+      keyExplain: 'The temperature decreases.',
+    };
+    assert.equal(displayTopic(measure), 'Measuring temperature and thermometers');
+    const measureText = explanationForMiss(measure);
+    assert.match(measureText, /temperature decreases when heat is removed/i);
+    assert.match(measureText, /warmness or coldness/i);
+    assert.doesNotMatch(measureText, /G7_C14/);
+
+    const transfer = {
+      topic: 'G7_C14_HEA_TRANSF',
+      grade: 7,
+      questionType: 'TrueFalse',
+      question: 'Heat travels from the sun to the earth by conduction.',
+      correctAnswer: 'False',
+      keyConcept: 'False',
+    };
+    assert.equal(displayTopic(transfer), 'Heat transfer and convection applications');
+    const transferText = explanationForMiss(transfer);
+    assert.match(transferText, /is not correct/i);
+    assert.match(transferText, /heat transfer/i);
+    assert.doesNotMatch(transferText, /^false$/i);
+
+    const blanks = {
+      topic: 'Soil Science',
+      grade: 7,
+      question:
+        'Temperature can be measured in different environments such as [____] and in a beaker of [____].',
+      correctAnswer: 'air · water',
+      keyExplain: 'the scientific idea named in this sentence',
+    };
+    assert.equal(displayTopic(blanks), 'Heat and Temperature');
+    const blankText = explanationForMiss(blanks);
+    assert.match(blankText, /warmness or coldness/i);
+    assert.doesNotMatch(blankText, /\[____\]|scientific idea named/);
+  });
+
+  it('sends the textbook chapter id and drops the farm skill id', () => {
+    const scoped = scopeAttemptForRetrieval({
+      topic: 'G7_C14_HEA_MEASURE',
+      topic_id: 'G7_C14_HEA_MEASURE',
+      question: 'What happens to the temperature?',
+    });
+    assert.equal(scoped.chapter_id, 'G7_C14');
+    assert.equal(scoped.topic_id, '');
+  });
+
+  it('keeps a real explanation that mentions a missed answer', () => {
+    assert.equal(isGradeStatusText('No answer was typed.'), true);
+    assert.equal(
+      isGradeStatusText(
+        'No answer was typed in time. When heat is removed from an object, its temperature decreases.',
+      ),
+      false,
+    );
   });
 });

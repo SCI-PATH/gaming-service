@@ -210,6 +210,43 @@ describe('generateScienceMindMap', () => {
     assert.equal(payload.topic_id, 'G6_S7_MAG_POLES');
   });
 
+  it('maps a farm skill id onto the textbook chapter instead of filtering on the skill id', async () => {
+    let payload = null;
+    await generateScienceMindMap(
+      {
+        grade: 7,
+        question: 'What happens to the temperature of an object when heat is removed from it?',
+        studentAnswer: 'The temperature increases.',
+        correctAnswer: 'The temperature decreases.',
+        topic: 'G7_C14_HEA_MEASURE',
+        topic_id: 'G7_C14_HEA_MEASURE',
+      },
+      {
+        queryChunks: async (body) => {
+          payload = body;
+          return {
+            original_question: 'temperature',
+            retrieval_query: 'temperature',
+            chunks: [],
+            enough: false,
+            confidence: 0,
+            collection_count: 4,
+          };
+        },
+        readExistingFrustration: async () => ({
+          frustrationScore: 40,
+          frustrationLevel: 'LOW',
+          missing: true,
+        }),
+        grokJson: async () => {
+          throw new Error('Grok should not run without textbook chunks');
+        },
+      },
+    );
+    assert.equal(payload.chapter_id, 'G7_C14');
+    assert.equal(payload.topic_id, 'G7_S14_HEA_TEMPER');
+  });
+
   it('omits chapter filters when the question has no chapter or topic id', async () => {
     const seen = [];
     const questions = [

@@ -14,6 +14,11 @@ import {
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
 import { getCurrentStudent } from '../data/mockStudents.js';
+import {
+  displayTopic,
+  explanationForMiss,
+  scopeAttemptForRetrieval,
+} from './textbookGraph.js';
 
 const COLORS = [
   { stroke: '#c45c5c', fill: '#fde8e8', bar: '#c45c5c' },
@@ -104,27 +109,28 @@ function uniqueQuestionBranches(branches) {
 function toDisplayBranches(map) {
   if (!map) return [];
   if (Array.isArray(map.branches) && map.branches.length) {
-    const mapped = map.branches.map((b, i) => ({
+    const mapped = map.branches.map((b, i) => {
+      const question = b.prompt || b.question || '';
+      const correctAnswer =
+        safeScienceLine(b.correctAnswer || b.correct_answer, null) || '';
+      const source = {
+        ...b,
+        question,
+        prompt: question,
+        correctAnswer,
+        grade: b.grade || map.grade,
+      };
+      return {
       id: b.id || `concept-${i}`,
       index: b.index || i + 1,
-      topic: b.topic || b.label || 'Science',
+      topic: displayTopic(source),
       icon: b.icon || '🔬',
-      question: b.prompt || b.question || '',
+      question,
       studentAnswer: '',
-      correctAnswer:
-        safeScienceLine(b.correctAnswer || b.correct_answer, null) ||
-        '',
+      correctAnswer,
       why: '',
-      keyConcept:
-        safeScienceLine(
-          b.keyConcept || b.key_concept || b.topic,
-          b.topic || 'Science',
-        ),
-      keyExplain:
-        safeScienceLine(
-          b.keyExplain || b.key_concept_explain || b.summary,
-          '',
-        ) || '',
+      keyConcept: '',
+      keyExplain: explanationForMiss(source),
       farmLink: b.farmLink || b.farm_link || '',
       colorIndex: b.colorIndex ?? b.color_index ?? i % 6,
       lesson: null,
@@ -140,7 +146,8 @@ function toDisplayBranches(map) {
           ? b.blank_indexes
           : [],
       conceptGraph: b.conceptGraph || b.concept_graph || null,
-    }));
+    };
+    });
     return uniqueQuestionBranches(mapped);
   }
   return [];
@@ -288,7 +295,7 @@ function ConceptMindMap({
           Number(student?.grade) ||
           6;
         const result = await fetchAiMindMap({
-          attempts: seedAttempts,
+          attempts: seedAttempts.map(scopeAttemptForRetrieval),
           misconceptions,
           frustrationScore: resolvedFrustrationScore,
           frustrationLevel: resolvedFrustrationLevel,
@@ -368,10 +375,7 @@ function ConceptMindMap({
       if (!b) return [];
       return [
         { key: 'topic', text: b.topic },
-        { key: 'question', text: b.question },
-        { key: 'key', text: b.keyConcept },
         { key: 'explain', text: b.keyExplain },
-        { key: 'farm', text: b.farmLink },
       ].filter((f) => String(f.text || '').trim());
     }
     return [];
@@ -645,28 +649,16 @@ function ConceptMindMap({
                     explanationText(b.keyExplain, b.correctAnswer)
                   )}
                 </p>
-              ) : b.keyExplain ? null : b.pedagogy?.length ? (
-                <ul className="mm-pedagogy">
-                  {b.pedagogy.map((cat) => (
-                    <li key={cat.title}>
-                      <strong>{cat.title}</strong>
-                      {(cat.children || []).join(' · ')}
-                    </li>
-                  ))}
-                </ul>
-              ) : b.keyConcept ? (
-                <p className="mm-card-key">
-                  <span className="mm-card-kicker">Key idea</span>{' '}
-                  {b.keyConcept}
+              ) : null}
+              {b.question && !/_{2,}|\[\s*_{0,6}\s*\]/.test(b.question) ? (
+                <p className="mm-card-q">
+                  {speechOn ? (
+                    <Sync fieldKey="question" text={b.question} on />
+                  ) : (
+                    b.question
+                  )}
                 </p>
               ) : null}
-              <p className="mm-card-q">
-                {speechOn ? (
-                  <Sync fieldKey="question" text={b.question || '—'} on />
-                ) : (
-                  b.question || '—'
-                )}
-              </p>
             </article>
           );
         })}
@@ -696,15 +688,6 @@ function ConceptMindMap({
                 explanationText(active.keyExplain, active.correctAnswer)
               )}
             </p>
-          ) : active.keyExplain ? null : active.pedagogy?.length ? (
-            <ul className="mm-pedagogy">
-              {active.pedagogy.map((cat) => (
-                <li key={cat.title}>
-                  <strong>{cat.title}</strong>
-                  <span>{(cat.children || []).join(' · ')}</span>
-                </li>
-              ))}
-            </ul>
           ) : null}
           {active.farmLink ? (
             <p className="mm-focus-p is-farm">

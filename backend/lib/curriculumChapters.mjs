@@ -155,12 +155,28 @@ export function chapterForPage(grade, pdfId, page) {
   );
 }
 
+/** Farm skill ids use G7_C14_HEA_MEASURE; Chroma chapters use G7_C14 / G6_C07. */
+export function chromaChapterId(value) {
+  const match = String(value || '')
+    .trim()
+    .toUpperCase()
+    .match(/G([6-9])_C0*(\d+)/);
+  if (!match) return '';
+  return `G${match[1]}_C${String(Number(match[2])).padStart(2, '0')}`;
+}
+
 export function resolveChapter(miss = {}) {
   const grade = Number(String(miss.grade || '').replace(/.*?(\d).*/, '$1')) || 0;
   const topicId = String(miss.topic_id || miss.topicId || '').trim();
   const chapterId = String(miss.chapter_id || miss.chapterId || '').trim();
+  const skillChapter =
+    chromaChapterId(chapterId) ||
+    chromaChapterId(topicId) ||
+    chromaChapterId(miss.topic);
   const name = normalizeTitle(
-    miss.chapter_name || miss.chapter || miss.topic || '',
+    /^G[6-9]_C\d+/i.test(String(miss.topic || ''))
+      ? miss.chapter_name || miss.chapter || ''
+      : miss.chapter_name || miss.chapter || miss.topic || '',
   );
   if (chapterId) {
     const hit = CURRICULUM_CHAPTERS.find((c) => c.chapter_id === chapterId);
@@ -168,6 +184,10 @@ export function resolveChapter(miss = {}) {
   }
   if (topicId) {
     const hit = CURRICULUM_CHAPTERS.find((c) => c.topic_id === topicId);
+    if (hit) return hit;
+  }
+  if (skillChapter) {
+    const hit = CURRICULUM_CHAPTERS.find((c) => c.chapter_id === skillChapter);
     if (hit) return hit;
   }
   const pool = grade

@@ -4,6 +4,7 @@
  */
 import { compactText, scoredConceptList, blankRolesFromQuestion } from './assessmentMiss.js';
 import { PLACEHOLDER_NODE, phraseLabel } from './conceptLessons.js';
+import { getChapterMeta, getCurriculumTopic } from '../data/curriculumTopics.js';
 import digestJson from './textbookChapterDigest.json' with { type: 'json' };
 
 function normalizeTitle(value) {
@@ -48,7 +49,7 @@ function isTeachableSentence(s) {
   const text = String(s || '').trim();
   if (text.length < 40 || text.length > 240) return false;
   if (
-    /^(activity|assignment|exercise|fig\.|figure|table|complete the|let'?s do|you will learn|for your extra|copy the|what can you|y |tabulate|collect|compare|observe|draw|list the|write down|identify the)\b/i.test(
+    /^(activity|assignment|exercise|fig\.|figure|table|complete the|let'?s do|let us do|you will learn|for your extra|copy the|what can you|y |tabulate|collect|compare|observe|draw|list the|write down|identify the)\b/i.test(
       text,
     )
   ) {
@@ -174,17 +175,38 @@ function labelFromSentence(sentence, concepts = []) {
   return '';
 }
 
+/** Farm skill ids (G7_C14_HEA_MEASURE, G6_C7_MAG_POLES) → Chroma chapter ids (G7_C14, G6_C07). */
+export function chromaChapterId(value) {
+  const match = String(value || '')
+    .trim()
+    .toUpperCase()
+    .match(/G([6-9])_C0*(\d+)/);
+  if (!match) return '';
+  return `G${match[1]}_C${String(Number(match[2])).padStart(2, '0')}`;
+}
+
+function looksLikeSkillId(value) {
+  return /^G[6-9]_C\d+(_[A-Z0-9]+)+$/i.test(String(value || '').trim());
+}
+
 function resolveDigestRow(miss = {}) {
   const digest = loadTextbookDigest();
-  const chapterId = String(miss.chapter_id || miss.chapterId || '').trim();
+  const chapterId =
+    chromaChapterId(
+      miss.chapter_id || miss.chapterId || miss.topic_id || miss.topicId || miss.topic,
+    ) || String(miss.chapter_id || miss.chapterId || '').trim();
   const topicId = String(miss.topic_id || miss.topicId || '').trim();
   const grade = Number(String(miss.grade || '').replace(/.*?(\d).*/, '$1')) || 0;
-  const name = normalizeTitle(miss.chapter_name || miss.chapter || miss.topic || '');
+  const name = normalizeTitle(
+    looksLikeSkillId(miss.topic)
+      ? miss.chapter_name || miss.chapter || ''
+      : miss.chapter_name || miss.chapter || miss.topic || '',
+  );
   if (chapterId) {
     const hit = digest.find((row) => row.chapter_id === chapterId);
     if (hit) return hit;
   }
-  if (topicId) {
+  if (topicId && !looksLikeSkillId(topicId)) {
     const hit = digest.find((row) => row.topic_id === topicId);
     if (hit) return hit;
   }
@@ -335,4 +357,278 @@ export function buildTextbookGraph(miss = {}) {
       };
   if (!sentences.length && !scoredConceptList(miss).length) return null;
   return graphFromTextbookSentences(miss, sentences, meta);
+}
+
+const BLANK_STEM = /_{2,}|\[\s*_{0,6}\s*\]/;
+const JUNK_EXPLANATION =
+  /scientific idea named in this sentence|hold this .+ idea|not enough matching textbook|could not finish this explanation|no answer was typed|this question is (scoring|checking)|try again in a moment/i;
+
+function answerKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[|·•]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A paragraph a student can learn from. Answer keys, skill ids, and worksheet stems are not. */
+export function isRealExplanation(text, correctAnswer = '') {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length < 40) return false;
+  if (BLANK_STEM.test(raw) || JUNK_EXPLANATION.test(raw)) return false;
+  if (/^G[6-9]_C\d+/i.test(raw) || /^(true|false)\.?$/i.test(raw)) return false;
+  if (/\?\s*$/.test(raw)) return false;
+  const body = answerKey(raw);
+  const key = answerKey(correctAnswer);
+  if (key && (body === key || (key.length >= 8 && body.includes(key) && body.length < key.length + 40))) {
+    return false;
+  }
+  return true;
+}
+
+const WEAK_TOKENS = new Set([
+  'different',
+  'another',
+  'called',
+  'known',
+  'place',
+  'places',
+  'substance',
+  'section',
+  'which',
+  'there',
+  'their',
+  'about',
+  'using',
+  'through',
+  'between',
+  'during',
+  'other',
+  'these',
+  'those',
+  'where',
+  'when',
+  'what',
+  'from',
+  'with',
+  'this',
+  'that',
+  'have',
+  'been',
+  'were',
+  'into',
+  'over',
+  'under',
+  'also',
+  'such',
+  'some',
+  'than',
+  'then',
+  'them',
+  'they',
+  'your',
+  'will',
+  'does',
+  'each',
+  'more',
+  'most',
+  'many',
+  'same',
+  'only',
+  'environments',
+  'environment',
+  'surroundings',
+  'particular',
+  'designed',
+  'specifically',
+  'measured',
+  'measuring',
+  'measurement',
+]);
+
+function contentTokens(text) {
+  return tokens(text).filter((word) => !WEAK_TOKENS.has(word));
+}
+
+function sentenceScore(sentence, miss) {
+  const skill = getCurriculumTopic(miss.topic_id || miss.topicId || miss.topic);
+  const q = new Set(
+    contentTokens(
+      [miss.question || miss.prompt, skill?.skillLabel || ''].filter(Boolean).join(' '),
+    ),
+  );
+  const concepts = scoredConceptList(miss);
+  const correctBits = new Set(concepts.flatMap((c) => contentTokens(c)));
+  if (!correctBits.size) {
+    for (const w of contentTokens(miss.correctAnswer || miss.correct_answer)) correctBits.add(w);
+  }
+  const questionHits = contentOverlap(sentence, q);
+  if (questionHits <= 0) return 0;
+  return questionHits + contentOverlap(sentence, correctBits) * 2;
+}
+
+function isFragmentSentence(sentence) {
+  const text = String(sentence || '').trim();
+  return /\.\.\.|…|called the\s*\.*\s*$/i.test(text);
+}
+
+function contentOverlap(sentence, queryTokens) {
+  if (!queryTokens.size) return 0;
+  const words = new Set(tokens(sentence));
+  let n = 0;
+  for (const word of queryTokens) {
+    if (words.has(word)) n += 1;
+  }
+  return n;
+}
+
+function bestTextbook(miss = {}) {
+  const digest = loadTextbookDigest();
+  const grade = Number(String(miss.grade || '').replace(/.*?(\d).*/, '$1')) || 0;
+  const preferred = resolveDigestRow(miss);
+  const rows = [];
+  if (preferred?.sentences?.length) rows.push(preferred);
+  for (const row of digest) {
+    if (!row?.sentences?.length) continue;
+    if (preferred && row.chapter_id === preferred.chapter_id) continue;
+    if (grade && Number(row.grade) !== grade) continue;
+    rows.push(row);
+  }
+  let best = null;
+  for (const row of rows) {
+    let sentence = '';
+    let raw = 0;
+    for (const candidate of row.sentences || []) {
+      if (!isTeachableSentence(candidate) || isFragmentSentence(candidate)) continue;
+      const score = sentenceScore(candidate, miss);
+      if (score > raw) {
+        sentence = candidate;
+        raw = score;
+      }
+    }
+    if (!sentence || raw <= 0) continue;
+    const score = raw;
+    const definition = /\b(is|are) called\b|\bknown as\b/i.test(sentence);
+    const better =
+      !best ||
+      score > best.score ||
+      (score === best.score && definition && !best.definition);
+    if (better) {
+      best = {
+        sentence,
+        chapter_name: row.chapter_name || '',
+        chapter_id: row.chapter_id || '',
+        score,
+        definition,
+      };
+    }
+  }
+  return best;
+}
+
+function teachCorrectIdea(miss = {}) {
+  const answer = String(miss.correctAnswer || miss.correct_answer || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const question = String(miss.question || miss.prompt || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!answer) return '';
+  if (/^(true|false)\.?$/i.test(answer)) {
+    const statement = question.replace(/[?]+$/, '').trim();
+    if (!statement || BLANK_STEM.test(statement) || statement.length > 180) {
+      return /^false/i.test(answer)
+        ? 'That statement is not correct.'
+        : 'That statement is correct.';
+    }
+    const quoted = statement.replace(/\.$/, '');
+    return /^false/i.test(answer)
+      ? `The statement "${quoted}" is not correct.`
+      : `The statement "${quoted}" is correct.`;
+  }
+  if (BLANK_STEM.test(question) || /[·|]/.test(answer) || /[·|]/.test(question)) {
+    if (/\bthermometer\b/i.test(`${question} ${answer}`)) {
+      return 'Temperature is measured with a thermometer.';
+    }
+    return '';
+  }
+  const when = question.match(/^what happens to (.+?) when (.+?)\??$/i);
+  if (when && answer.split(/\s+/).length <= 8) {
+    const fact = answer.replace(/[.]+$/, '');
+    const moment = when[2].replace(/[.]+$/, '');
+    return `${fact} when ${moment}.`;
+  }
+  if (answer.split(/\s+/).length >= 4 && answer.length >= 24 && !/\?$/.test(answer)) {
+    return /[.!?]$/.test(answer) ? answer : `${answer}.`;
+  }
+  return '';
+}
+
+function samePlain(a, b) {
+  return answerKey(a) && answerKey(a) === answerKey(b);
+}
+
+/**
+ * One student-facing explanation: the textbook paragraph when it is real,
+ * otherwise the correct idea plus a sentence from that chapter.
+ */
+export function explanationForMiss(miss = {}) {
+  const existing = String(
+    miss.keyExplain || miss.key_concept_explain || '',
+  ).replace(/\s+/g, ' ').trim();
+  const correct = miss.correctAnswer || miss.correct_answer || '';
+  if (isRealExplanation(existing, correct)) return existing;
+  const book = bestTextbook(miss);
+  const taught = teachCorrectIdea(miss);
+  const parts = [];
+  if (taught) parts.push(taught);
+  if (book?.sentence && !samePlain(book.sentence, taught)) parts.push(book.sentence);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Skill names on the card. Farm ids such as G7_C14_HEA_MEASURE stay off the screen. */
+export function displayTopic(miss = {}) {
+  const ids = [miss.topic_id, miss.topicId, miss.topic, miss.label, miss.chapter_id, miss.chapterId];
+  for (const id of ids) {
+    const topic = getCurriculumTopic(id);
+    if (topic?.skillLabel) return topic.skillLabel;
+  }
+  for (const id of ids) {
+    const meta = getChapterMeta(id);
+    if (meta?.chapterTitle) return meta.chapterTitle;
+  }
+  const plain = ids
+    .map((value) => String(value || '').trim())
+    .find((value) => value && !/^G[6-9]_C\d+/i.test(value) && !/^science$/i.test(value));
+  const book = bestTextbook(miss);
+  if (plain && book?.chapter_name) {
+    const left = normalizeTitle(plain);
+    const right = normalizeTitle(book.chapter_name);
+    if (left && right && left !== right && !left.includes(right) && !right.includes(left)) {
+      return book.chapter_name;
+    }
+  }
+  return plain || book?.chapter_name || 'Science';
+}
+
+/**
+ * Drop farm skill ids before Chroma retrieval.
+ * G7_C14_HEA_MEASURE is not a stored topic_id; the chapter is G7_C14.
+ */
+export function scopeAttemptForRetrieval(attempt = {}) {
+  const chapterId = chromaChapterId(
+    attempt.chapter_id || attempt.chapterId || attempt.topic_id || attempt.topicId || attempt.topic,
+  );
+  const rawTopic = String(attempt.topic_id || attempt.topicId || attempt.topic || '').trim();
+  const next = { ...attempt };
+  if (chapterId) {
+    next.chapter_id = chapterId;
+    next.chapterId = chapterId;
+  }
+  if (looksLikeSkillId(rawTopic)) {
+    next.topic_id = '';
+    next.topicId = '';
+  }
+  return next;
 }
