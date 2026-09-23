@@ -1,6 +1,6 @@
 """process_question and URL checks do not need chromadb."""
 
-from chroma_ops import process_question, validate_url, _where
+from chroma_ops import process_question, validate_url, _is_exercise, _where
 
 
 def test_process_question_expands_photosynthesis_hints():
@@ -33,6 +33,14 @@ def test_validate_url_rejects_local():
         pass
 
 
+def test_exercise_stems_are_not_retrieved_as_explanations():
+    assert _is_exercise("Temperature can be measured using a [_____], which indicates heat.")
+    assert _is_exercise("When heat is supplied, a solid _____.")
+    assert not _is_exercise(
+        "When a solid is heated to its melting point, it changes into a liquid."
+    )
+
+
 def test_rag_filter_is_grade_and_subject_until_ids_are_known():
     open_where = _where(8, "Science")
     blob = str(open_where)
@@ -52,5 +60,6 @@ if __name__ == "__main__":
     test_process_question_strips_fill_in_blanks()
     test_process_question_expands_monocot_hints()
     test_validate_url_rejects_local()
+    test_exercise_stems_are_not_retrieved_as_explanations()
     test_rag_filter_is_grade_and_subject_until_ids_are_known()
     print("ok")

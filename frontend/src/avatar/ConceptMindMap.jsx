@@ -65,6 +65,27 @@ function localMapFromAttempts(attempts, misconceptions, frustration = {}) {
   return null;
 }
 
+function normalizeAnswerKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[|·•]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** The question stem and the blank answers are not an explanation. */
+function explanationText(text, correctAnswer) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw || /_{2,}|\[\s*_{0,4}\s*\]/.test(raw)) return '';
+  const body = normalizeAnswerKey(raw);
+  const key = normalizeAnswerKey(correctAnswer);
+  if (key && (body === key || (key.length >= 8 && body.includes(key) && body.length < key.length + 20))) {
+    return '';
+  }
+  return raw;
+}
+
 function uniqueQuestionBranches(branches) {
   const seen = new Set();
   const out = [];
@@ -611,22 +632,20 @@ function ConceptMindMap({
                   )}
                 </span>
               </header>
-              <p className="mm-card-q">
-                {speechOn ? (
-                  <Sync fieldKey="question" text={b.question || '—'} on />
-                ) : (
-                  b.question || '—'
-                )}
-              </p>
-              {b.keyExplain ? (
+              {explanationText(b.keyExplain, b.correctAnswer) ? (
                 <p className="mm-card-para">
+                  <span className="mm-card-kicker">Explanation</span>{' '}
                   {speechOn ? (
-                    <Sync fieldKey="explain" text={b.keyExplain} on />
+                    <Sync
+                      fieldKey="explain"
+                      text={explanationText(b.keyExplain, b.correctAnswer)}
+                      on
+                    />
                   ) : (
-                    b.keyExplain
+                    explanationText(b.keyExplain, b.correctAnswer)
                   )}
                 </p>
-              ) : b.pedagogy?.length ? (
+              ) : b.keyExplain ? null : b.pedagogy?.length ? (
                 <ul className="mm-pedagogy">
                   {b.pedagogy.map((cat) => (
                     <li key={cat.title}>
@@ -641,6 +660,13 @@ function ConceptMindMap({
                   {b.keyConcept}
                 </p>
               ) : null}
+              <p className="mm-card-q">
+                {speechOn ? (
+                  <Sync fieldKey="question" text={b.question || '—'} on />
+                ) : (
+                  b.question || '—'
+                )}
+              </p>
             </article>
           );
         })}
@@ -658,15 +684,19 @@ function ConceptMindMap({
           <h4>
             {active.icon} {active.conceptGraph?.concept || active.topic}
           </h4>
-          {active.keyExplain ? (
+          {explanationText(active.keyExplain, active.correctAnswer) ? (
             <p className="mm-focus-p">
               {speechBranchId === active.id ? (
-                <Sync fieldKey="explain" text={active.keyExplain} on />
+                <Sync
+                  fieldKey="explain"
+                  text={explanationText(active.keyExplain, active.correctAnswer)}
+                  on
+                />
               ) : (
-                active.keyExplain
+                explanationText(active.keyExplain, active.correctAnswer)
               )}
             </p>
-          ) : active.pedagogy?.length ? (
+          ) : active.keyExplain ? null : active.pedagogy?.length ? (
             <ul className="mm-pedagogy">
               {active.pedagogy.map((cat) => (
                 <li key={cat.title}>

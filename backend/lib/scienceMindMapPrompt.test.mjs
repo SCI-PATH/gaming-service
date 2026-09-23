@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   formatContext,
+  isNonExplanation,
   plainParagraph,
   presentationBand,
   systemPrompt,
@@ -51,6 +52,21 @@ describe('prompts', () => {
     assert.match(user, /VERY_HIGH/);
     assert.match(user, /Plants make food using sunlight/);
     assert.match(user, /do NOT remove scientifically important facts/i);
+  });
+
+  it('rejects the question stem and the blank answer list as feedback', () => {
+    const question =
+      'Temperature can be measured using a [_____], which accurately indicates the degree of heat present.';
+    const correct = 'thermometer · body temperature · 35 oc - 43 oc · capillary tube · mercury';
+    assert.equal(isNonExplanation(question, { question, correctAnswer: correct }), true);
+    assert.equal(isNonExplanation(correct, { question, correctAnswer: correct }), true);
+    assert.equal(
+      isNonExplanation(
+        'A clinical thermometer measures body temperature. The bend in the capillary tube holds the mercury reading.',
+        { question, correctAnswer: correct },
+      ),
+      false,
+    );
   });
 
   it('strips markdown and preamble from the feedback paragraph', () => {

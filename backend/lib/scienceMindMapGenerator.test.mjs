@@ -98,6 +98,28 @@ describe('generateScienceMindMap', () => {
     );
   });
 
+  it('does not turn a fill-in worksheet into the explanation', () => {
+    const map = mindMapFromChunks({
+      question: 'Temperature can be measured using a thermometer.',
+      chunks: [
+        {
+          chunk_id: 'worksheet',
+          textbook: 'Grade 6 Science',
+          chapter: 'Heat',
+          text: 'Temperature can be measured using a [_____], which accurately indicates the degree of heat present. A clinical thermometer is specifically designed to measure [_____].',
+        },
+        {
+          chunk_id: 'theory',
+          textbook: 'Grade 6 Science',
+          chapter: 'Heat',
+          text: 'When a solid is heated to its melting point, it changes into a liquid. A clinical thermometer measures body temperature.',
+        },
+      ],
+    });
+    assert.match(map.paragraph, /melting point|body temperature/i);
+    assert.equal(/\[_____\]/.test(map.paragraph), false);
+  });
+
   it('extracts clean textbook facts from messy PDF chunks', () => {
     const map = mindMapFromChunks({
       question: 'Plant leaves come in various shapes. Photosynthesis occurs in the leaves.',

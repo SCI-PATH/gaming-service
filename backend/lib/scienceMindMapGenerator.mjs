@@ -7,6 +7,7 @@ import { resolveChapter } from './curriculumChapters.mjs';
 import { grokJson } from './grokMindMap.mjs';
 import {
   formatContext,
+  isNonExplanation,
   plainParagraph,
   presentationBand,
   systemPrompt,
@@ -117,6 +118,7 @@ function clipSentence(text, n = 160) {
 function isUsableSentence(sentence) {
   const s = String(sentence || '').replace(/\s+/g, ' ').trim();
   if (s.length < 28 || s.length > 220) return false;
+  if (/_{2,}|\[\s*_{0,4}\s*\]/.test(s)) return false;
   if (/science\s*\|/i.test(s)) return false;
   if (/\d+Science\s*\|/i.test(s)) return false;
   if (/^(activity|assignment|assingnment|figure|table|exercise|tabulate)\b/i.test(s)) return false;
@@ -158,13 +160,7 @@ export function mindMapFromChunks({ question, chunks = [] } = {}) {
     picked.push(row);
     if (picked.length >= 2) break;
   }
-  if (!picked.length) {
-    picked.push({
-      sentence: clipSentence(pool[0].text, 220),
-      chunk: pool[0],
-      overlap: 1,
-    });
-  }
+  if (!picked.length) return null;
   const paragraph = picked.map((row) => clipSentence(row.sentence, 180)).join(' ');
   const title = pool[0]?.chapter || clipSentence(question, 48) || 'Science';
   return {
@@ -289,6 +285,9 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     });
     raw = await complete({ system, user, temperature: 0.2, maxTokens: 400 });
     parsed = validateMindMap(raw.content);
+    if (isNonExplanation(parsed?.paragraph, { question, correctAnswer })) {
+      throw new Error('model repeated the question or the answer key');
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[mind-map] Grok failed after Chroma retrieval; using textbook chunks (${message})`);

@@ -40,6 +40,7 @@ export function systemPrompt() {
     'Tone: encouraging, supportive, and educational. Never scold or embarrass the student.',
     'Write a single explanatory feedback paragraph.',
     'Explain why their answer was incorrect, then clearly explain the correct concept.',
+    'Do not repeat the question. Do not copy fill-in blanks. Do not reply with only the answer words.',
     'Use ONLY the provided textbook context for scientific facts.',
     'Do not invent textbook facts, chapter names, page numbers, or citations.',
     'Do not introduce concepts that are not in the textbook context.',
@@ -77,6 +78,30 @@ export function userPrompt({
     'Textbook context (the only source of scientific facts):\n' +
       `${context || '(none)'}`,
   ].join('\n\n');
+}
+
+function normalizeAnswer(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[|·•]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** True when the text is the question, a worksheet blank, or only the answer key. */
+export function isNonExplanation(text, { question = '', correctAnswer = '' } = {}) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return true;
+  if (/_{2,}|\[\s*_{0,4}\s*\]/.test(raw)) return true;
+  const body = normalizeAnswer(raw);
+  const key = normalizeAnswer(correctAnswer);
+  if (key && (body === key || (key.length >= 8 && body.includes(key) && body.length < key.length + 20))) {
+    return true;
+  }
+  const stem = String(question || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (stem.length >= 24 && raw.toLowerCase().includes(stem.slice(0, 48))) return true;
+  return false;
 }
 
 /** Collapse model clutter so the student sees one plain paragraph. */

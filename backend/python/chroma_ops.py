@@ -480,6 +480,17 @@ def process_question(question: str) -> dict:
     }
 
 
+_EXERCISE_RE = re.compile(
+    r"\[?\s*_{2,}\s*\]?|\[\s*_{0,4}\s*\]|\bactivity\s+\d|\blet us do\b|\bfill in the blank|\bexercise\s+\d",
+    re.I,
+)
+
+
+def _is_exercise(text: str) -> bool:
+    """Worksheet stems are not explanations. Do not retrieve them as textbook context."""
+    return bool(_EXERCISE_RE.search(text or ""))
+
+
 def _keyword_score(query: str, document: str) -> float:
     terms = [t for t in re.findall(r"[a-z0-9]+", query.lower()) if len(t) > 2]
     if not terms:
@@ -577,6 +588,8 @@ def query_chunks(payload: dict) -> dict:
             meta = metas[i] if i < len(metas) else {}
             distance = dists[i] if i < len(dists) else None
             similarity = max(0.0, min(1.0, 1.0 - float(distance))) if isinstance(distance, (int, float)) else 0.0
+            if _is_exercise(text):
+                continue
             keyword = _keyword_score(processed["retrieval_query"], text)
             hybrid = 0.72 * similarity + 0.28 * keyword
             hits.append(
