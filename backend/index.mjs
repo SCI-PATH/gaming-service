@@ -322,6 +322,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/explanation-mindmap') {
+    try {
+      const body = await readJson(req);
+      const { generateExplanationMindMaps } = await import(
+        './lib/explanationMindMap.mjs'
+      );
+      const maps = await generateExplanationMindMaps(body);
+      sendJson(res, 200, { ok: true, maps });
+    } catch (err) {
+      sendJson(res, err?.statusCode || 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Bad request',
+      });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/mind-map') {
     try {
       const body = await readJson(req);

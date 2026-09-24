@@ -13,6 +13,7 @@ import {
   tokenizeMapText,
 } from './speechSync.js';
 import { downloadMindMap } from './downloadMindMap.js';
+import { downloadExplanationMindMap } from './explanationMindMapDownload.js';
 import { getCurrentStudent } from '../data/mockStudents.js';
 import {
   displayTopic,
@@ -537,12 +538,14 @@ function ConceptMindMap({
         <button
           type="button"
           className={`mm-download${downloadState === 'done' ? ' is-done' : ''}`}
-          aria-label="Download explanation as an image"
+          aria-label="Download explanation as a mind map"
           disabled={!branches.length || downloadState === 'saving'}
           onClick={() => {
             if (downloadState === 'saving') return;
             setDownloadState('saving');
-            void downloadMindMap(map, branches)
+            void (branches.some((b) => b.keyExplain)
+              ? downloadExplanationMindMap(branches)
+              : downloadMindMap(map, branches))
               .then(() => {
                 setDownloadState('done');
                 window.setTimeout(() => setDownloadState('idle'), 1800);
