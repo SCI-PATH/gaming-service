@@ -1346,12 +1346,8 @@ body {
   position: fixed;
   inset: 0;
   z-index: 25;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 100vw;
-  min-height: 100vh;
-  padding: 24px;
+  height: 100vh;
   pointer-events: auto;
   background-image: url('/assets/farm-launch-bg.png');
   background-size: cover;
@@ -1360,32 +1356,35 @@ body {
 }
 
 .game-lobby-modal {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: min(980px, 100%);
-  max-height: calc(100vh - 48px);
-  padding: 16px;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(56, 189, 248, 0.2);
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 5.5rem 1.25rem 1.5rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   overflow: auto;
 }
 
 .game-lobby-topbar {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  width: calc(100% - 2rem);
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
 .game-lobby-player {
@@ -1421,6 +1420,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
 }
 
 .game-lobby-player-copy span {
@@ -1477,20 +1477,20 @@ body {
 }
 
 .game-lobby-body {
-  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
-  gap: 14px;
-  align-items: center;
-  min-height: 0;
+  gap: 16px;
+  align-items: stretch;
+  width: min(980px, 100%);
 }
 
 .game-lobby-hero,
 .game-lobby-progress-card {
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(12, 20, 36, 0.82);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
 .game-lobby-hero {
@@ -1504,7 +1504,8 @@ body {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #c4a8ff;
+  color: #e9d5ff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
 }
 
 .game-lobby-title {
@@ -1513,7 +1514,7 @@ body {
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #ffffff;
-  text-shadow: 0 2px 16px rgba(56, 189, 248, 0.45);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
 }
 
 .game-lobby-tagline {
@@ -1580,13 +1581,14 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.45);
-  transition: transform 0.15s ease, filter 0.15s ease;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
 }
 
 .game-lobby-play:hover:not(:disabled) {
   filter: brightness(1.06);
   transform: scale(1.03);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.7);
 }
 
 .game-lobby-play:active:not(:disabled) {
@@ -1647,6 +1649,7 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #9de8ff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
 }
 
 .game-lobby-progress-count {

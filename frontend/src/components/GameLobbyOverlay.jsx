@@ -73,7 +73,6 @@ export default function GameLobbyOverlay({
       aria-modal="true"
       aria-label={isGuide ? 'How to play' : 'Game lobby'}
     >
-      <div className="game-lobby-modal">
       <header className="game-lobby-topbar">
         <div className="game-lobby-player">
           <span className="game-lobby-avatar" aria-hidden>
@@ -106,6 +105,7 @@ export default function GameLobbyOverlay({
         </div>
       </header>
 
+      <div className="game-lobby-modal">
       <div className="game-lobby-body">
         <section className="game-lobby-hero">
           <p className="game-lobby-kicker">{isGuide ? 'Briefing' : GAME_PLATFORM}</p>
