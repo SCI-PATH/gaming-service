@@ -194,10 +194,6 @@ export function renderMindMapHtml(maps = []) {
         <h2>${title}</h2>
         ${question}
         ${map.svg || renderMindMapSvg(map.tree)}
-        <h3>Mermaid</h3>
-        <pre class="mmd">${escapeHtml(map.mermaid || '')}</pre>
-        <h3>JSON</h3>
-        <pre>${escapeHtml(JSON.stringify(map.tree || {}, null, 2))}</pre>
       </section>`;
     })
     .join('\n');
@@ -210,16 +206,13 @@ export function renderMindMapHtml(maps = []) {
     body { margin: 0; padding: 24px; background: #f6edd4; color: #243028; font-family: "Segoe UI", "Trebuchet MS", sans-serif; }
     h1 { font-size: 1.4rem; margin: 0 0 8px; }
     h2 { font-size: 1.05rem; margin: 0 0 6px; }
-    h3 { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; margin: 16px 0 6px; }
     section { background: #fffaf0; border: 2px solid #2a3220; border-radius: 16px; padding: 16px; margin: 16px 0; }
     .q { margin: 0 0 12px; color: #5c6b76; font-size: 0.9rem; }
-    pre { white-space: pre-wrap; background: #fff; border-radius: 10px; padding: 12px; font-size: 0.82rem; }
     svg { max-width: 100%; height: auto; }
   </style>
 </head>
 <body>
   <h1>Science explanation mind map</h1>
-  <p>Built from the explanation already on screen.</p>
   ${sections}
 </body>
 </html>

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { generate_mindmap_data } from './explanationMindMap.mjs';
-import { parseExplanationToTree, treeToMermaid } from './explanationMindMapFormat.mjs';
+import { parseExplanationToTree, renderMindMapHtml, treeToMermaid } from './explanationMindMapFormat.mjs';
 
 const EXPLANATION =
   'The temperature decreases when heat is removed from it. The measurement of warmness or coldness of a substance is known as its temperature.';
@@ -76,5 +76,14 @@ describe('generate_mindmap_data', () => {
     const mermaid = treeToMermaid(tree);
     assert.match(mermaid, /root\(\(Heat transfer\)\)/);
     assert.match(mermaid, /heat transfer/i);
+  });
+
+  it('shows the diagram only, not the mermaid source or the JSON', () => {
+    const tree = parseExplanationToTree(EXPLANATION, 'What happens to the temperature?', 'Heat removal effect');
+    const html = renderMindMapHtml([
+      { concept: 'Measuring temperature and thermometers', question: 'What happens to the temperature?', tree, mermaid: treeToMermaid(tree) },
+    ]);
+    assert.match(html, /<svg/);
+    assert.doesNotMatch(html, /<h3>Mermaid|<h3>JSON|<pre/);
   });
 });
