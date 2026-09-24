@@ -1,5 +1,6 @@
 import { GAME_NAME, GAME_PLATFORM } from '../data/gameBrand.js';
 import { IconChart } from './GameIcons.jsx';
+import GameMoodMascot from './GameMoodMascot.jsx';
 
 function playerInitials(name = '') {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -66,6 +67,7 @@ export default function GameShellHeader({
 
       {isPlaying ? (
         <div className="game-shell-header-stats" aria-label="Run stats">
+          <GameMoodMascot />
           <span className="game-shell-stat-chip">
             <span className="game-shell-stat-label">Level</span>
             <strong>

@@ -212,6 +212,94 @@ export async function upsertLevelProgress(body = {}) {
   return { levelProgressId, studentId, levelNumber };
 }
 
+/** Relative level inside the active lesson, plus the question the student can resume. */
+export async function getLessonResume(studentId, lessonId = '') {
+  const idValue = String(studentId || '').trim();
+  if (!idValue) return null;
+  const lesson = String(lessonId || '').trim();
+  const found = await query(
+    `SELECT level_number, status, points_earned, quiz_correct, quiz_incorrect, metrics_snapshot
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1
+        AND ($2 = '' OR metrics_snapshot->>'lesson_id' = $2)
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [idValue, lesson],
+  );
+  const row = found.rows?.[0];
+  if (!row) return null;
+  const metrics = row.metrics_snapshot || {};
+  const last = Number(metrics.last_completed_question_index);
+  return {
+    lessonId: metrics.lesson_id || lesson || null,
+    levelNumber: 1,
+    lastCompletedQuestionIndex: Number.isFinite(last) ? last : 0,
+    resumeQuestionIndex: Number.isFinite(last) ? last + 1 : 1,
+    pointsEarned: Number(row.points_earned) || 0,
+    quizCorrect: Number(row.quiz_correct) || 0,
+    quizIncorrect: Number(row.quiz_incorrect) || 0,
+    mindmap: metrics.mindmap || null,
+    status: row.status || 'in_progress',
+  };
+}
+
+/** Write question progress, points, and the mind map without treating the lesson id as the level. */
+export async function saveLessonCheckpoint(body = {}) {
+  const studentId = String(body.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
+  const lessonId = String(body.lessonId || body.lesson_id || '').trim();
+  const levelNumber = 1;
+  const lastCompleted = Math.max(
+    0,
+    Number(body.lastCompletedQuestionIndex ?? body.questionIndex) || 0,
+  );
+  const metrics = {
+    lesson_id: lessonId,
+    relative_level: levelNumber,
+    last_completed_question_index: lastCompleted,
+    mindmap: body.mindmap || body.mindMap || null,
+  };
+  await upsertLevelProgress({
+    ...body,
+    studentId,
+    levelNumber,
+    status: body.status || 'in_progress',
+    lessonsCompleted: lastCompleted,
+    quizCorrect: body.quizCorrect,
+    quizIncorrect: body.quizIncorrect,
+    pointsEarned: body.pointsEarned,
+    metricsSnapshot: metrics,
+  });
+  if (body.questionId) {
+    await insertQuizAttempt({
+      ...body,
+      studentId,
+      levelNumber,
+      lessonKey: lessonId || null,
+      isCorrect: Boolean(body.isCorrect),
+      rawPayload: { mindmap: metrics.mindmap },
+    });
+  }
+  const amount = Number(body.pointsDelta ?? body.amount) || 0;
+  if (amount) {
+    await insertPointsLedger({
+      studentId,
+      sessionId: body.sessionId || null,
+      levelNumber,
+      amount,
+      reason: body.reason || 'quiz',
+    });
+  }
+  await insertGameplayEvent({
+    studentId,
+    sessionId: body.sessionId || null,
+    levelNumber,
+    eventType: body.eventType || (body.isCorrect ? 'answer_correct' : 'answer_incorrect'),
+    payload: { lessonId, lastCompletedQuestionIndex: lastCompleted },
+  });
+  return { studentId, lessonId, levelNumber, lastCompletedQuestionIndex: lastCompleted };
+}
+
 export async function insertLessonCompletion(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');

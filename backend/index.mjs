@@ -146,6 +146,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/engagement/resume') {
+    try {
+      const eng = await import('./lib/engagementDb.mjs');
+      if (!eng.engagementAvailable()) {
+        sendJson(res, 200, { ok: false, skipped: true, resume: null });
+        return;
+      }
+      const resume = await eng.getLessonResume(
+        url.searchParams.get('studentId') || '',
+        url.searchParams.get('lessonId') || '',
+      );
+      sendJson(res, 200, { ok: true, resume });
+    } catch (err) {
+      sendJson(res, 400, {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Bad request',
+      });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/engagement/student') {
     try {
       const eng = await import('./lib/engagementDb.mjs');
@@ -261,6 +282,9 @@ const server = http.createServer(async (req, res) => {
           break;
         case 'level':
           result = await eng.upsertLevelProgress(body);
+          break;
+        case 'checkpoint':
+          result = await eng.saveLessonCheckpoint(body);
           break;
         case 'lesson':
           result = await eng.insertLessonCompletion(body);

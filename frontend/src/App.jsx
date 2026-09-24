@@ -83,6 +83,7 @@ import {
   parkFarmProgressAtCompletedLevel,
   returnToLearningPath,
 } from './data/chapterPath.js';
+import { fetchLessonResume } from './data/lessonCheckpoint.js';
 import {
   clearAssessmentSession,
   exportAssessmentSession,
@@ -175,6 +176,19 @@ export default function App() {
       });
     }
   }, []);
+
+  const [lessonResume, setLessonResume] = useState(null);
+  useEffect(() => {
+    const id = student?.id;
+    if (!id) return undefined;
+    let cancel = false;
+    fetchLessonResume(id, getChapterLaunch().lessonId).then((resume) => {
+      if (!cancel) setLessonResume(resume);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [student?.id]);
 
   const [gameReady, setGameReady] = useState(false);
   const [farm, setFarm] = useState(() => {
@@ -1659,6 +1673,7 @@ export default function App() {
               onStart={handleLobbyStart}
               onStartOver={handleLobbyStartOver}
               savedRun={savedRun}
+              resumeQuestion={lessonResume?.resumeQuestionIndex}
               onLeaderboard={handleLobbyLeaderboard}
               onToggleMusic={handleLobbyToggleMusic}
               onOpenProgress={handleOpenResearchDashboard}

@@ -36,6 +36,7 @@ export default function GameLobbyOverlay({
   musicEnabled = true,
   gameReady = false,
   savedRun = null,
+  resumeQuestion = null,
   onStart,
   onStartOver,
   onLeaderboard,
@@ -147,11 +148,9 @@ export default function GameLobbyOverlay({
             <IconPlay size={18} />
             {isGuide
               ? 'Enter the Farm'
-              : savedRun
-                ? 'Continue farm'
-                : progress.phase === 'returning'
-                  ? `Continue Level ${progress.levelId ?? farm.levelId ?? 1}`
-                  : 'Start Adventure'}
+              : savedRun || progress.phase === 'returning' || resumeQuestion > 1
+                ? 'Continue'
+                : 'Play'}
           </button>
           {!isGuide && savedRun ? (
             <p className="game-lobby-saved">
@@ -177,7 +176,22 @@ export default function GameLobbyOverlay({
               Start this level over
             </button>
           ) : null}
-          <p className="game-lobby-enter-hint">Press Enter to continue</p>
+          <div className="game-lobby-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="game-lobby-start-over" onClick={onOpenProgress}>
+              Stats
+            </button>
+            {onLeaderboard ? (
+              <button type="button" className="game-lobby-start-over" onClick={onLeaderboard}>
+                Rewards
+              </button>
+            ) : null}
+          </div>
+          <p className="game-lobby-enter-hint">
+            Level 1
+            {resumeQuestion > 1 ? ` · resume question ${resumeQuestion}` : ''}
+            {progress.progressCountLabel ? ` · ${progress.progressCountLabel}` : ''}
+            {' · '}Press Enter to continue
+          </p>
         </section>
 
         {!isGuide && (

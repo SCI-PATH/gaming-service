@@ -56,12 +56,21 @@ export function getScipathAppUrl() {
   return envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
 }
 
-export function farmLevelFromLessonId(lessonId) {
+/** Lesson index from ids such as g7_sci_14. Not a farm level. */
+export function lessonIndexFromLessonId(lessonId) {
   const match = String(lessonId || '')
     .trim()
     .match(/^g\d+_sci_(\d+)$/i);
   if (match) return Math.max(1, Number(match[1]) || 1);
   return null;
+}
+
+/**
+ * The farm loop always starts at relative Level 1 for the active lesson.
+ * Lesson 14 must not become Level 14.
+ */
+export function farmLevelFromLessonId(lessonId) {
+  return lessonIndexFromLessonId(lessonId) ? 1 : null;
 }
 
 export function chapterRewardItemId(levelId) {
@@ -120,11 +129,17 @@ export function readChapterLaunchFromSearch(search) {
   const lessonId = String(
     search.get('lessonId') || search.get('chapterId') || '',
   ).trim();
+  const lessonIndex = lessonIndexFromLessonId(lessonId);
   const startRaw = search.get('startLevel') || search.get('level');
-  const startLevel =
+  const requested =
     startRaw != null && startRaw !== '' && Number.isFinite(Number(startRaw))
       ? Math.max(1, Number(startRaw))
-      : farmLevelFromLessonId(lessonId);
+      : null;
+  // A launch that copies the lesson number into startLevel is still Level 1.
+  const startLevel =
+    requested != null && !(lessonIndex && requested === lessonIndex)
+      ? requested
+      : 1;
   const rewardItem = String(
     search.get('rewardItem') || search.get('unlockItem') || '',
   ).trim();

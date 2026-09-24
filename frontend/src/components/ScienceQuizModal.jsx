@@ -11,6 +11,9 @@ import {
   normalizeSageMindMapInput,
   buildSageAssessment,
 } from '../avatar/normalizeSageMindMapInput.js';
+import { getChapterLaunch } from '../data/chapterPath.js';
+import { saveLessonCheckpoint } from '../data/lessonCheckpoint.js';
+import { getCurrentStudent } from '../data/mockStudents.js';
 
 const TYPE_LABELS = {
   MCQ: 'Multiple choice',
@@ -327,6 +330,15 @@ export default function ScienceQuizModal({
     if (remoteGrade && questionData?.id) {
       setBusy(true);
       setGradeError(null);
+      setResult({
+        isCorrect: Boolean(isCorrectLocal),
+        selectedIndex,
+        selectedText: selectedText || '',
+        responseTimeMs,
+        timedOut: Boolean(timedOut),
+        pending: true,
+      });
+      finish(Boolean(isCorrectLocal), responseTimeMs);
       try {
         const graded = await submitAssessmentAnswer({
           questionId: questionData.id,
@@ -342,6 +354,20 @@ export default function ScienceQuizModal({
           return;
         }
         isCorrect = Boolean(graded?.ok && graded?.isCorrect);
+        const player = getCurrentStudent();
+        if (player?.id) {
+          void saveLessonCheckpoint({
+            studentId: player.id,
+            sessionId: player.sessionId,
+            lessonId: getChapterLaunch().lessonId,
+            questionId: questionData.id,
+            isCorrect,
+            lastCompletedQuestionIndex: Number(questionData.questionIndex || questionData.index) || 1,
+            pointsDelta: isCorrect ? Number(questionData.rp) || 1 : 0,
+            quizCorrect: isCorrect ? 1 : 0,
+            quizIncorrect: isCorrect ? 0 : 1,
+          });
+        }
         const gradePayload =
           graded?.data?.grade && typeof graded.data.grade === 'object'
             ? graded.data.grade
@@ -424,7 +450,7 @@ export default function ScienceQuizModal({
         if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = window.setTimeout(() => {
           finish(isCorrect, responseTimeMs);
-        }, isCorrect ? 1800 : 2800);
+        }, 0);
         setBusy(false);
         return;
       } catch {
