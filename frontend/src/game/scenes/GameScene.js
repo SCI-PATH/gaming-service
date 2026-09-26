@@ -15,6 +15,7 @@ import {
   FARM_CAMERA_ZOOM,
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
+import { shouldBlockQuestionOpen } from '../levelClock.js';
 import { getFarmLevel } from '../../data/farmLevels';
 import {
   clearAssessmentSession,
@@ -250,6 +251,11 @@ export default class GameScene extends Phaser.Scene {
     this.retryCount = 0;
     this.levelStartedAtMs = Date.now();
     this.levelStartMoney = this.currentMoney;
+    this.levelTimeExpired = false;
+    this._finishAfterQuiz = null;
+    this._levelFinishStarted = false;
+    this.levelEndReason = null;
+    this._scienceQuizGen = (this._scienceQuizGen || 0) + 1;
 
     // Time target at level start from previous level avg / mastery (no cash goal)
     const prior = getMasteryForLevelStart(this.levelId);
@@ -741,6 +747,11 @@ export default class GameScene extends Phaser.Scene {
     this.retryCount = 0;
     this.levelStartedAtMs = Date.now();
     this.levelStartMoney = this.currentMoney;
+    this.levelTimeExpired = false;
+    this._finishAfterQuiz = null;
+    this._levelFinishStarted = false;
+    this.levelEndReason = null;
+    this._scienceQuizGen = (this._scienceQuizGen || 0) + 1;
     this.startTime = this.time.now;
 
     const prior = getMasteryForLevelStart(this.levelId);
@@ -1982,6 +1993,11 @@ export default class GameScene extends Phaser.Scene {
    * Caller must freeze farm + set pendingQuizMode first so actions stay blocked.
    */
   async emitScienceQuizFromEngine(mode, pickMode, extraFromQuestion) {
+    if (this.levelQuestionsClosed()) {
+      this.holdOrFinishLevel('time_expired');
+      if (this.farmInputLocked || this.pendingQuizMode) this.resumeAfterQuiz();
+      return false;
+    }
     const quizGen = (this._scienceQuizGen = (this._scienceQuizGen || 0) + 1);
     try {
       ForestGameBridge.emit(
@@ -2002,7 +2018,10 @@ export default class GameScene extends Phaser.Scene {
         this.lastQuestionId,
         pickMode,
       );
-      if (!this.sys?.isActive() || quizGen !== this._scienceQuizGen) return false;
+      if (!this.sys?.isActive() || quizGen !== this._scienceQuizGen) {
+        if (this.sys?.isActive() && this._finishAfterQuiz) this.resumeAfterQuiz();
+        return false;
+      }
       if (!isRenderableQuizQuestion(question)) {
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'quiz_blocked',
@@ -2387,16 +2406,93 @@ export default class GameScene extends Phaser.Scene {
     return this.questionsAnswered() < DDA_CONFIG.maxQuestions;
   }
 
-  /** Level complete only after the science-question quota (15). Farm jobs do not skip it. */
-  checkTargetReached() {
-    if (this.forestUnlocked) return;
+  elapsedLevelTimeMs() {
+    return Math.max(0, Date.now() - (this.levelStartedAtMs || Date.now()));
+  }
 
-    if (this.needsQuestionQuota()) {
+  levelClockExpired() {
+    const target = Number(this.levelTargetCompletionMs) || 0;
+    if (target <= 0) return false;
+    return this.elapsedLevelTimeMs() >= target;
+  }
+
+  questionCardOpen() {
+    return Boolean(this.pendingQuizMode || this.farmInputLocked);
+  }
+
+  /** Clock, quota, or a finished run — ignores a card the opener just locked. */
+  levelQuestionsClosed() {
+    if (this._runEnded || this.forestUnlocked || this._levelFinishStarted || this.levelTimeExpired) {
+      return true;
+    }
+    return shouldBlockQuestionOpen({
+      elapsedLevelTimeMs: this.elapsedLevelTimeMs(),
+      levelTargetCompletionMs: this.levelTargetCompletionMs,
+      quotaReached: !this.needsQuestionQuota(),
+    });
+  }
+
+  /** True when a new question card must not open. */
+  blockNewQuestion() {
+    if (this.pendingQuizMode) return true;
+    return this.levelQuestionsClosed();
+  }
+
+  /**
+   * Level clock or question quota is done.
+   * An open card is allowed to finish; the next opener is refused.
+   */
+  holdOrFinishLevel(reason) {
+    if (this.forestUnlocked || this._runEnded || this._levelFinishStarted) return;
+    if (!this.levelTimeExpired && !this.levelClockExpired() && this.needsQuestionQuota()) return;
+    if ((this.quizIncorrect || 0) >= MAX_WRONG_ANSWERS) {
+      this.levelTimeExpired = true;
+      return;
+    }
+    const why = !this.needsQuestionQuota() ? 'question_quota' : reason || 'time_expired';
+    this.levelTimeExpired = true;
+    if (this.pendingQuizMode) {
+      this._finishAfterQuiz = this._finishAfterQuiz || why;
+      this._scienceQuizGen = (this._scienceQuizGen || 0) + 1;
+      return;
+    }
+    this.finishLevelRun(why);
+  }
+
+  tickLevelClock() {
+    if (this.forestUnlocked || this._runEnded || this._levelFinishStarted || this._finishAfterQuiz) {
+      return;
+    }
+    if (!this.levelClockExpired() && this.needsQuestionQuota()) return;
+    this.holdOrFinishLevel(this.levelClockExpired() ? 'time_expired' : 'question_quota');
+  }
+
+  /** Level ends when the question quota is met or the level target clock expires. */
+  checkTargetReached() {
+    if (this.forestUnlocked || this._runEnded) return;
+
+    if (this.needsQuestionQuota() && !this.levelTimeExpired && !this.levelClockExpired()) {
       this.syncVegetableGoalText();
       this.emitFarmState();
       return;
     }
 
+    this.holdOrFinishLevel(
+      !this.needsQuestionQuota() ? 'question_quota' : 'time_expired',
+    );
+  }
+
+  finishLevelRun(reason = 'question_quota') {
+    if (this.forestUnlocked || this._runEnded || this._levelFinishStarted) return;
+    if ((this.quizIncorrect || 0) >= MAX_WRONG_ANSWERS) {
+      this.levelTimeExpired = true;
+      return;
+    }
+
+    this._levelFinishStarted = true;
+    this.levelTimeExpired = true;
+    this.levelEndReason = reason;
+    this._scienceQuizGen = (this._scienceQuizGen || 0) + 1;
     this.forestUnlocked = true;
     clearFarmRun();
     this.persistLevelMastery();
@@ -2420,7 +2516,10 @@ export default class GameScene extends Phaser.Scene {
 
     this.farmLevel = {
       ...this.farmLevel,
-      goalText: `Level complete!${timeNote}${bonusNote} Unlock shop is open — then return to your learning path.`,
+      goalText:
+        this.levelEndReason === 'time_expired'
+          ? `Level time is up.${timeNote} Checking this topic before the next level opens.`
+          : `Level complete!${timeNote}${bonusNote} Unlock shop is open — then return to your learning path.`,
     };
 
     const shopPerf = this.buildShopPerformance();
@@ -2439,6 +2538,13 @@ export default class GameScene extends Phaser.Scene {
       openUnlockShop: true,
       frustrationScore: this.frustrationScore || 0,
       frustrationLevel: this.frustrationLevel || 'low',
+      levelEndReason: this.levelEndReason,
+      quizCorrect: this.quizCorrect || 0,
+      quizIncorrect: this.quizIncorrect || 0,
+      questionsAnswered: this.questionsAnswered(),
+      elapsedLevelTimeMs: this.elapsedLevelTimeMs(),
+      levelTargetCompletionMs: this.levelTargetCompletionMs,
+      evaluateProgression: true,
       ...shopPerf,
       gameplayBand: gp?.classification || this.gameplayBand,
       gameplayLabel: gp?.classificationLabel,
@@ -3071,6 +3177,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   startStorylineQuiz(challenge) {
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     const step = getNextChallengeStep(challenge);
     if (!step?.prompt || !Array.isArray(step.options) || !step.options.length) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
@@ -3384,6 +3494,10 @@ export default class GameScene extends Phaser.Scene {
    */
   startChallengeForUnlock(itemId) {
     if (!itemId || SKIP_UNLOCK_ITEMS.has(itemId)) return false;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return false;
+    }
     if (this.farmInputLocked) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'challenge_blocked',
@@ -3508,6 +3622,10 @@ export default class GameScene extends Phaser.Scene {
    * Nearby farm cluster → one science quiz for the whole group.
    */
   beginWorldChallenge(nodeId) {
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return false;
+    }
     if (this.farmInputLocked) {
       const busy =
         Boolean(this.pendingQuizMode) || Boolean(this.pendingWorldChallenge);
@@ -3884,6 +4002,10 @@ export default class GameScene extends Phaser.Scene {
 
   beginAnimalTend() {
     if (this.farmInputLocked || !this.player) return;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     if (this.forestUnlocked) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'animal_blocked',
@@ -3911,6 +4033,10 @@ export default class GameScene extends Phaser.Scene {
 
   openAnimalCollectQuestion() {
     if (!this.player || this.farmInputLocked) return;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     this.pendingQuizMode = 'animal_collect';
     this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
@@ -3949,6 +4075,10 @@ export default class GameScene extends Phaser.Scene {
 
   beginCleaningStart() {
     if (this.farmInputLocked || !this.player) return;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     if (this.forestUnlocked) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'clean_blocked',
@@ -3977,6 +4107,10 @@ export default class GameScene extends Phaser.Scene {
 
   openCleanSweepQuestion() {
     if (!this.player || this.farmInputLocked) return;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     this.pendingQuizMode = 'clean_sweep';
     this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
@@ -4127,6 +4261,10 @@ export default class GameScene extends Phaser.Scene {
     // Extra quizzes still count until the 15-question quota
     if (this.cropPlantedSet?.has(bedCropId)) {
       if (this.needsQuestionQuota()) {
+        if (this.blockNewQuestion()) {
+          this.holdOrFinishLevel('time_expired');
+          return;
+        }
         this.openPracticeScienceQuiz(bedDef);
         return;
       }
@@ -4152,6 +4290,11 @@ export default class GameScene extends Phaser.Scene {
         gridKey: cell.key,
         plotId: plot?.id,
       });
+      return;
+    }
+
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
       return;
     }
 
@@ -4187,6 +4330,10 @@ export default class GameScene extends Phaser.Scene {
   /** Extra science quiz on an already-planted bed until the 15-question quota. */
   openPracticeScienceQuiz(bedDef = {}) {
     if (this.farmInputLocked || this.forestUnlocked || !this.needsQuestionQuota()) {
+      return;
+    }
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
       return;
     }
     this.pendingQuizMode = 'practice';
@@ -4380,6 +4527,10 @@ export default class GameScene extends Phaser.Scene {
 
     // One harvest quiz per vegetable challenge, then free picking onto the back
     if (!this.harvestUnlocked) {
+      if (this.blockNewQuestion()) {
+        this.holdOrFinishLevel('time_expired');
+        return;
+      }
       this.openHarvestQuestion();
       return;
     }
@@ -4486,10 +4637,15 @@ export default class GameScene extends Phaser.Scene {
   }
 
   resumeAfterQuiz() {
+    const finishReason = this._finishAfterQuiz;
+    this._finishAfterQuiz = null;
     this.farmInputLocked = false;
     this.pendingQuizMode = null;
     this.thawFarmCombat();
     this.focusGameCanvas();
+    if (finishReason && !this.forestUnlocked && !this._runEnded) {
+      this.finishLevelRun(finishReason);
+    }
   }
 
   /**
@@ -4499,6 +4655,10 @@ export default class GameScene extends Phaser.Scene {
   openHarvestQuestion() {
     if (!this.player || this.farmInputLocked) return;
     if (this.pendingQuizMode === 'harvest') return;
+    if (this.blockNewQuestion()) {
+      this.holdOrFinishLevel('time_expired');
+      return;
+    }
     this.pendingQuizMode = 'harvest';
     this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
@@ -4506,6 +4666,9 @@ export default class GameScene extends Phaser.Scene {
       cropType: this.farmLevel.cropId,
     })).then((ok) => {
       if (ok || !this.sys?.isActive()) return;
+      if (this.forestUnlocked || this.levelTimeExpired || this._runEnded || this._levelFinishStarted) {
+        return;
+      }
       this.harvestUnlocked = true;
       this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
@@ -5151,6 +5314,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time) {
+    this.tickLevelClock();
     this.releaseStaleFarmLocks();
     // Keep the map pin tracking even while a quiz or Sage locks farm input
     this.emitPlayerMapPos();

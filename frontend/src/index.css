@@ -9673,6 +9673,37 @@ body {
   color: var(--muted);
 }
 
+.remediation-copy,
+.remediation-explain p {
+  margin: 12px 0 0;
+  line-height: 1.45;
+  color: #f3eedc;
+}
+
+.remediation-explain {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.remediation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.remediation-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #38bdf8;
+  color: #082032;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .motivation-frust-pill {
   flex-shrink: 0;
   display: flex;

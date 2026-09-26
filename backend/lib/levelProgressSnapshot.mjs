@@ -76,6 +76,8 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
     },
     farm_snapshot: farmSnapshot,
     mindmap,
+    progression_outcome: prev.progression_outcome || null,
+    level_end_reason: prev.level_end_reason || null,
   };
 }
 

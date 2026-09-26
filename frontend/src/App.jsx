@@ -13,6 +13,7 @@ import { ForestGameBridge, FARM_EVENTS } from './components/ForestGameBridge.js'
 import ScienceQuizModal from './components/ScienceQuizModal.jsx';
 import UnlockShopModal from './components/UnlockShopModal.jsx';
 import MotivationalVideoModal from './components/MotivationalVideoModal.jsx';
+import LevelRemediationModal from './components/LevelRemediationModal.jsx';
 import LevelQuestScroll from './components/LevelQuestScroll.jsx';
 import PlayWizard from './components/PlayWizard.jsx';
 import CustomerMoodHud from './components/CustomerMoodHud.jsx';
@@ -74,6 +75,7 @@ import {
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
 import { shouldRetryLessonAfterFarm } from './data/frustrationModel.js';
+import { submitLevelOutcome } from './data/levelOutcome.js';
 import {
   getChapterLaunch,
   isLearningPathLinked,
@@ -253,6 +255,9 @@ export default function App() {
   const [shopOpen, setShopOpen] = useState(false);
   const [shopPerformance, setShopPerformance] = useState(null);
   const [motivationOpen, setMotivationOpen] = useState(false);
+  const [remediation, setRemediation] = useState(null);
+  const outcomeRequestRef = useRef(0);
+  const levelDecisionRef = useRef(null);
   const [motivationContext, setMotivationContext] = useState(null);
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
@@ -831,6 +836,7 @@ export default function App() {
     ForestGameBridge.on(FARM_EVENTS.MUSIC_STATE, onMusic);
     ForestGameBridge.on(FARM_EVENTS.LEADERBOARD_OPEN, onLeaderboardOpen);
     const onGameOver = (payload = {}) => {
+      setQuizPayload(null);
       setGameOverPayload(payload);
       setInFarm(false);
       emitUiInputLock(true, { freezeCombat: true });
@@ -1128,85 +1134,118 @@ export default function App() {
   }, []);
 
   const handleTargetReached = useCallback((payload) => {
-    setFarm((prev) => ({
-      ...prev,
-      goalText:
-        payload.goalText ||
-        'Level complete! Unlock shop is open — then head to the Forest.',
-      forestUnlocked: true,
-      earnings: payload.earnings ?? payload.currentMoney ?? prev.earnings,
-      target: payload.timeTargetMs ?? payload.target ?? prev.target,
-      timeTargetMs: payload.timeTargetMs ?? prev.timeTargetMs,
-      timeTargetLabel:
-        payload.timeTargetLabel ?? prev.timeTargetLabel,
-      beatTimeTarget: payload.beatTimeTarget ?? prev.beatTimeTarget,
-      performanceBand: payload.performanceBand ?? prev.performanceBand,
-      questionsAnswered:
-        payload.questionsAnswered ?? prev.questionsAnswered,
-    }));
+    setQuizPayload(null);
+    const frScore =
+      payload.frustrationScore ?? telemetrySession.frustrationScore ?? 0;
+    const frLevel =
+      payload.frustrationLevel ?? telemetrySession.frustrationLevel ?? 'low';
+    const requestId = outcomeRequestRef.current + 1;
+    outcomeRequestRef.current = requestId;
 
-    if (payload.openUnlockShop === true) {
-      const frScore =
-        payload.frustrationScore ?? telemetrySession.frustrationScore ?? 0;
-      const frLevel =
-        payload.frustrationLevel ?? telemetrySession.frustrationLevel ?? 'low';
-      const perf = {
-        attemptScores: payload.attemptScores ?? [],
-        avgResponseMs: payload.avgResponseMs ?? 0,
-        performanceScore: payload.performanceScore,
-        performanceBand: payload.performanceBand,
-        questionsAnswered: payload.questionsAnswered,
-        frustrationScore: frScore,
-        frustrationLevel: frLevel,
-      };
-      setShopPerformance(perf);
-      // Suggest a genius-life motivational video before the unlock shop
-      setMotivationContext({
-        frustrationScore: frScore,
-        frustrationLevel: frLevel,
-        levelId: payload.levelId ?? farm.levelId ?? 1,
-        pendingShop: true,
-      });
-      setMotivationOpen(true);
-      const beatNote =
-        payload.beatTimeTarget === true
-          ? ' You beat the time target!'
-          : '';
-      const bonus = payload.pendingGameplayBonus;
-      const bonusNote =
-        bonus?.totalBonus > 0
-          ? ` Next level bonus: +$${bonus.totalBonus} (${bonus.gradeLabel}${
-              bonus.improvementBonusPct
-                ? ` + improvement`
-                : ''
-            }).`
-          : '';
-      setBanner(
-        `Level complete!${beatNote}${bonusNote} Spend cash on unlocks, then return to your learning path.`,
-      );
-    } else {
-      setBanner('Level complete! Proceed to the Forest Entrance!');
-    }
-
-    if (payload.gameplayBand || payload.pendingGameplayBonus) {
-      setGameplay((prev) => ({
+    const applyFarmComplete = (goalText) => {
+      setFarm((prev) => ({
         ...prev,
-        band: payload.gameplayBand ?? prev.band,
-        label: payload.gameplayLabel ?? prev.label,
-        pendingBonus: payload.pendingGameplayBonus ?? prev.pendingBonus,
-        nextGameplaySettings:
-          payload.nextGameplaySettings ?? prev.nextGameplaySettings,
-        live: {
-          retries: payload.retries ?? prev.live?.retries,
-          avgAnswerTimeSec:
-            payload.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
-          levelElapsedSec:
-            payload.levelCompletionTimeSec ?? prev.live?.levelElapsedSec,
-        },
+        goalText: goalText || payload.goalText || prev.goalText,
+        forestUnlocked: true,
+        earnings: payload.earnings ?? payload.currentMoney ?? prev.earnings,
+        target: payload.timeTargetMs ?? payload.target ?? prev.target,
+        timeTargetMs: payload.timeTargetMs ?? prev.timeTargetMs,
+        timeTargetLabel: payload.timeTargetLabel ?? prev.timeTargetLabel,
+        beatTimeTarget: payload.beatTimeTarget ?? prev.beatTimeTarget,
+        performanceBand: payload.performanceBand ?? prev.performanceBand,
+        questionsAnswered: payload.questionsAnswered ?? prev.questionsAnswered,
       }));
+    };
+
+    const openPassedLevel = () => {
+      applyFarmComplete(payload.goalText);
+      if (payload.openUnlockShop === true) {
+        const perf = {
+          attemptScores: payload.attemptScores ?? [],
+          avgResponseMs: payload.avgResponseMs ?? 0,
+          performanceScore: payload.performanceScore,
+          performanceBand: payload.performanceBand,
+          questionsAnswered: payload.questionsAnswered,
+          frustrationScore: frScore,
+          frustrationLevel: frLevel,
+        };
+        setShopPerformance(perf);
+        setMotivationContext({
+          frustrationScore: frScore,
+          frustrationLevel: frLevel,
+          levelId: payload.levelId ?? farm.levelId ?? 1,
+          pendingShop: true,
+        });
+        setMotivationOpen(true);
+        const beatNote = payload.beatTimeTarget === true ? ' You beat the time target!' : '';
+        const bonus = payload.pendingGameplayBonus;
+        const bonusNote =
+          bonus?.totalBonus > 0
+            ? ` Next level bonus: +$${bonus.totalBonus} (${bonus.gradeLabel}${
+                bonus.improvementBonusPct ? ` + improvement` : ''
+              }).`
+            : '';
+        setBanner(
+          `Level complete!${beatNote}${bonusNote} Spend cash on unlocks, then return to your learning path.`,
+        );
+      } else {
+        setBanner('Level complete! Proceed to the Forest Entrance!');
+      }
+      if (payload.gameplayBand || payload.pendingGameplayBonus) {
+        setGameplay((prev) => ({
+          ...prev,
+          band: payload.gameplayBand ?? prev.band,
+          label: payload.gameplayLabel ?? prev.label,
+          pendingBonus: payload.pendingGameplayBonus ?? prev.pendingBonus,
+          nextGameplaySettings:
+            payload.nextGameplaySettings ?? prev.nextGameplaySettings,
+          live: {
+            retries: payload.retries ?? prev.live?.retries,
+            avgAnswerTimeSec:
+              payload.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
+            levelElapsedSec:
+              payload.levelCompletionTimeSec ?? prev.live?.levelElapsedSec,
+          },
+        }));
+      }
+    };
+
+    if (!payload.evaluateProgression) {
+      openPassedLevel();
+      return;
     }
+
+    applyFarmComplete(payload.goalText || 'Checking this topic…');
+    setBanner('Checking frustration and mastery for this topic…');
+    void submitLevelOutcome({
+      studentId: student?.id,
+      studentName: student?.displayName,
+      displayName: student?.displayName,
+      levelNumber: payload.levelId ?? farm.levelId ?? 1,
+      frustrationScore: frScore,
+      frustrationLevel: frLevel,
+      quizCorrect: payload.quizCorrect,
+      quizIncorrect: payload.quizIncorrect,
+      mastery: payload.mastery,
+      levelEndReason: payload.levelEndReason,
+      pointsEarned: payload.earnings ?? payload.currentMoney,
+    }).then((decision) => {
+      if (outcomeRequestRef.current !== requestId) return;
+      levelDecisionRef.current = decision;
+      if (decision?.retryLesson) {
+        setRemediation(decision);
+        setMotivationOpen(false);
+        setShopOpen(false);
+        setBanner(decision.mentorReply || 'Practice this topic again before the next level opens.');
+        return;
+      }
+      setRemediation(null);
+      openPassedLevel();
+    });
   }, [
     farm.levelId,
+    student?.id,
+    student?.displayName,
     telemetrySession.frustrationScore,
     telemetrySession.frustrationLevel,
   ]);
@@ -1556,9 +1595,14 @@ export default function App() {
       const launch = getChapterLaunch();
       const frustrationScore = Number(telemetrySession.frustrationScore) || 0;
       const frustrationLevel = telemetrySession.frustrationLevel || 'low';
+      const decided = levelDecisionRef.current;
       const retryLesson =
-        shouldRetryLessonAfterFarm(frustrationScore) ||
-        shouldRetryLessonAfterFarm(frustrationLevel);
+        decided?.retryLesson === true ||
+        (decided ? false : (
+          remediation?.retryLesson === true ||
+          shouldRetryLessonAfterFarm(frustrationScore) ||
+          shouldRetryLessonAfterFarm(frustrationLevel)
+        ));
       returnToLearningPath({
         lessonId: launch.lessonId,
         levelId,
@@ -1572,6 +1616,7 @@ export default function App() {
           ? newlyUnlockedLabels(levelId)
           : ownedUnlockLabels(),
       });
+      levelDecisionRef.current = null;
     },
     [
       farm.levelId,
@@ -1579,6 +1624,7 @@ export default function App() {
       farm.currentMoney,
       telemetrySession.frustrationScore,
       telemetrySession.frustrationLevel,
+      remediation?.retryLesson,
     ],
   );
 
@@ -1590,9 +1636,15 @@ export default function App() {
       });
       return;
     }
+    const decided = levelDecisionRef.current;
     const retryLesson =
-      shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
-      shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel);
+      decided?.retryLesson === true ||
+      (decided ? false : (
+        remediation?.retryLesson === true ||
+        shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
+        shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
+      ));
+    levelDecisionRef.current = null;
     const nextLevelId = retryLesson
       ? Math.max(1, farm.levelId || 1)
       : Math.max(1, (farm.levelId || 1) + 1);
@@ -1639,7 +1691,39 @@ export default function App() {
     handleReturnToLearningPath,
     telemetrySession.frustrationScore,
     telemetrySession.frustrationLevel,
+    remediation?.retryLesson,
   ]);
+
+  const handlePracticeTopicAgain = useCallback(() => {
+    levelDecisionRef.current = null;
+    const levelId = Math.max(1, Number(remediation?.levelNumber ?? farm.levelId) || 1);
+    const cash = Math.max(0, Number(farm.earnings ?? farm.currentMoney) || 0);
+    setRemediation(null);
+    setQuizPayload(null);
+    setBanner(null);
+    setShopOpen(false);
+    setMotivationOpen(false);
+    playerMapRef.current = { x: 48, y: 32 };
+    setPlayerMap({ x: 48, y: 32 });
+    setFarm((prev) => ({
+      ...prev,
+      levelId,
+      forestUnlocked: false,
+      questionsAnswered: 0,
+      plantedCount: 0,
+      inventory: 0,
+      harvestedCount: 0,
+      carriedCount: 0,
+      earnings: cash,
+      goalText: `Level ${levelId}: practice this topic again`,
+    }));
+    window.setTimeout(() => {
+      emitStartFarmLevel({
+        levelId,
+        startingMoney: cash,
+      });
+    }, 80);
+  }, [farm.levelId, farm.earnings, farm.currentMoney, remediation?.levelNumber]);
 
   useEffect(() => {
     const onChapterGameComplete = (payload = {}) => {
@@ -1839,6 +1923,25 @@ export default function App() {
             }
             chapterTitle={chapterLaunch.chapterTitle}
             nextChapterTitle={chapterLaunch.nextChapterTitle}
+          />
+
+          <LevelRemediationModal
+            open={Boolean(remediation)}
+            decision={remediation}
+            onReviewMindMap={() => setAvatarOpen(true)}
+            onPracticeAgain={handlePracticeTopicAgain}
+            onReturnToPath={
+              pathLinked
+                ? () => {
+                    const decision = remediation;
+                    setRemediation(null);
+                    handleReturnToLearningPath({
+                      levelId: decision?.levelNumber ?? farm.levelId,
+                      currentMoney: farm.earnings ?? farm.currentMoney,
+                    });
+                  }
+                : null
+            }
           />
 
           <MotivationalVideoModal

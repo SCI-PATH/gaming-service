@@ -289,6 +289,9 @@ const server = http.createServer(async (req, res) => {
         case 'checkpoint':
           result = await eng.saveLessonCheckpoint(body);
           break;
+        case 'level-outcome':
+          result = await eng.evaluateLevelOutcome(body);
+          break;
         case 'quiz-explanation':
           result = await eng.saveQuizExplanation(body);
           break;

@@ -179,7 +179,7 @@ async function bootstrapCoreTables(schema, prefixedPublic = false) {
       session_id TEXT REFERENCES ${sessions} (session_id) ON DELETE SET NULL,
       level_number INTEGER NOT NULL CHECK (level_number >= 1),
       status TEXT NOT NULL DEFAULT 'in_progress'
-        CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned')),
+        CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned', 'needs_repeat')),
       lessons_completed INTEGER NOT NULL DEFAULT 0,
       lessons_total INTEGER,
       points_earned INTEGER NOT NULL DEFAULT 0,

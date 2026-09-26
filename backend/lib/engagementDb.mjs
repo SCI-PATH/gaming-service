@@ -10,6 +10,11 @@ import {
   mergeLevelMetrics,
   resumeView,
 } from './levelProgressSnapshot.mjs';
+import {
+  decideLevelOutcome,
+  frustrationScoreFromSnapshots,
+  mentorReplyForOutcome,
+} from './levelOutcome.mjs';
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -127,16 +132,30 @@ export async function ensureInProgressLevel(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
   const active = await query(
-    `SELECT level_progress_id
+    `SELECT level_progress_id, status, level_number
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status = 'in_progress'
+        AND status IN ('in_progress', 'needs_repeat')
       ORDER BY updated_at DESC
       LIMIT 1`,
     [studentId],
   );
   if (active.rows?.[0]) {
-    return { created: false, levelProgressId: active.rows[0].level_progress_id, levelNumber: 1 };
+    const row = active.rows[0];
+    if (row.status === 'needs_repeat') {
+      await query(
+        `UPDATE engagement_gaming.level_progress
+            SET status = 'in_progress', updated_at = NOW()
+          WHERE level_progress_id = $1`,
+        [row.level_progress_id],
+      );
+    }
+    return {
+      created: false,
+      levelProgressId: row.level_progress_id,
+      levelNumber: Math.max(1, Number(row.level_number) || 1),
+      status: row.status === 'needs_repeat' ? 'in_progress' : row.status,
+    };
   }
   const existingLevel = await query(
     `SELECT level_progress_id, status
@@ -314,7 +333,7 @@ export async function getLessonResume(studentId, lessonId = '') {
     `SELECT *
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status = 'in_progress'
+        AND status IN ('in_progress', 'needs_repeat')
       ORDER BY updated_at DESC
       LIMIT 1`,
     [idValue],
@@ -323,6 +342,296 @@ export async function getLessonResume(studentId, lessonId = '') {
   if (!resume) return null;
   resume.questionHistory = await questionHistoryForStudent(idValue);
   return resume;
+}
+
+let statusConstraintReady = false;
+
+function quoteIdent(name) {
+  const clean = String(name || '').replace(/[^a-zA-Z0-9_]/g, '');
+  if (!clean) throw new Error('constraint name required');
+  return `"${clean}"`;
+}
+
+/** Existing databases reject needs_repeat until the status check is widened. */
+export async function ensureLevelStatusConstraint() {
+  if (statusConstraintReady) return;
+  const found = await query(
+    `SELECT con.conname AS name, pg_get_constraintdef(con.oid) AS def
+       FROM pg_constraint con
+      WHERE con.conrelid = 'engagement_gaming.level_progress'::regclass
+        AND con.contype = 'c'
+        AND pg_get_constraintdef(con.oid) ILIKE '%status%'`,
+  );
+  const rows = found.rows || [];
+  const already = rows.some((row) => String(row.def || '').includes('needs_repeat'));
+  if (!already) {
+    for (const row of rows) {
+      await query(
+        `ALTER TABLE engagement_gaming.level_progress DROP CONSTRAINT IF EXISTS ${quoteIdent(row.name)}`,
+      );
+    }
+    await query(
+      `ALTER TABLE engagement_gaming.level_progress
+         ADD CONSTRAINT level_progress_status_check
+         CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned', 'needs_repeat'))`,
+    );
+  }
+  statusConstraintReady = true;
+}
+
+function relativeLevelNumber(body = {}) {
+  const lessonId = String(body.lessonId || body.lesson_id || '').trim();
+  const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || 0;
+  let levelNumber = Math.max(1, Number(body.levelNumber ?? body.level_number) || 1);
+  if (lessonOrdinal && levelNumber === lessonOrdinal) levelNumber = 1;
+  return { lessonId, levelNumber };
+}
+
+/**
+ * Frustration average + quiz accuracy decide repeat-topic vs unlock-next.
+ * Writes level_progress, a level_end frustration snapshot, and a mentor row when repeating.
+ */
+export async function evaluateLevelOutcome(body = {}) {
+  const studentId = String(body.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
+  const { lessonId, levelNumber } = relativeLevelNumber(body);
+  const sessionId = String(body.sessionId || '').trim() || null;
+  const studentName = body.studentName || body.displayName || studentId;
+  const displayName = body.displayName || body.studentName || studentId;
+
+  try {
+    await ensureLevelStatusConstraint();
+  } catch {
+    /* older databases may deny ALTER; the write below falls back */
+  }
+
+  const snaps = await query(
+    `SELECT frustration_score
+       FROM engagement_gaming.frustration_snapshots
+      WHERE student_id = $1
+        AND ($2::int IS NULL OR level_number = $2)
+        AND ($3::text IS NULL OR session_id::text = $3)
+      ORDER BY recorded_at DESC
+      LIMIT 20`,
+    [studentId, levelNumber, sessionId],
+  );
+  let snapRows = snaps.rows || [];
+  if (snapRows.length < 1) {
+    const latest = await query(
+      `SELECT frustration_score
+         FROM engagement_gaming.frustration_snapshots
+        WHERE student_id = $1
+        ORDER BY recorded_at DESC
+        LIMIT 1`,
+      [studentId],
+    );
+    snapRows = latest.rows || [];
+  }
+  const frustrationScore = frustrationScoreFromSnapshots(
+    snapRows,
+    body.frustrationScore ?? body.frustration_score ?? 0,
+  );
+
+  const attempts = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE is_correct)::int AS correct,
+       COUNT(*) FILTER (WHERE NOT is_correct)::int AS incorrect
+     FROM engagement_gaming.quiz_attempts
+     WHERE student_id = $1
+       AND ($2::int IS NULL OR level_number = $2)
+       AND ($3::text IS NULL OR session_id::text = $3)`,
+    [studentId, levelNumber, sessionId],
+  );
+  let correct = Number(attempts.rows?.[0]?.correct) || 0;
+  let incorrect = Number(attempts.rows?.[0]?.incorrect) || 0;
+  if (correct + incorrect < 1) {
+    correct = Math.max(0, Number(body.quizCorrect ?? body.quiz_correct) || 0);
+    incorrect = Math.max(0, Number(body.quizIncorrect ?? body.quiz_incorrect) || 0);
+  }
+
+  const review = await query(
+    `SELECT raw_payload
+       FROM engagement_gaming.quiz_attempts
+      WHERE student_id = $1
+        AND raw_payload <> '{}'::jsonb
+      ORDER BY answered_at DESC
+      LIMIT 1`,
+    [studentId],
+  );
+  const raw = review.rows?.[0]?.raw_payload || {};
+  const explanation = String(raw.explanation || raw.keyExplain || '');
+  const mindmap = raw.mindmap || raw.structuredMap || null;
+  const mermaid = raw.mermaid || null;
+
+  const decision = decideLevelOutcome({ frustrationScore, correct, incorrect });
+  const mentorReply = mentorReplyForOutcome(decision);
+  const existing = await query(
+    `SELECT metrics_snapshot, points_earned
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1 AND level_number = $2`,
+    [studentId, levelNumber],
+  );
+  const prevMetrics = existing.rows?.[0]?.metrics_snapshot || {};
+  const pointsEarned =
+    Number(existing.rows?.[0]?.points_earned) || Number(body.pointsEarned) || 0;
+  const questionIndex = decision.retryLesson
+    ? 0
+    : Number(prevMetrics.current_question_index) || 0;
+  const metrics = {
+    ...prevMetrics,
+    lesson_id: prevMetrics.lesson_id || lessonId,
+    chapter_title: prevMetrics.chapter_title || body.chapterTitle || body.chapter_title || '',
+    relative_level: levelNumber,
+    progression_outcome: decision.outcome,
+    level_end_reason: body.levelEndReason || body.level_end_reason || decision.reason,
+    mastery_percentage: decision.masteryPercentage,
+    frustration_score: decision.frustrationScore,
+    current_question_index: questionIndex,
+    last_completed_question_index: decision.retryLesson
+      ? 0
+      : Number(prevMetrics.last_completed_question_index) || 0,
+    farm_snapshot: decision.retryLesson ? null : prevMetrics.farm_snapshot || null,
+    snapshot_data: {
+      ...(prevMetrics.snapshot_data || {}),
+      lessonId: prevMetrics.lesson_id || lessonId,
+      levelNumber,
+      currentQuestionIndex: questionIndex,
+      progressionOutcome: decision.outcome,
+    },
+  };
+
+  const progressBody = {
+    studentId,
+    studentName,
+    displayName,
+    sessionId,
+    levelNumber,
+    currentLevel: decision.retryLesson ? levelNumber : levelNumber + 1,
+    status: decision.status,
+    lessonsCompleted: decision.retryLesson ? 0 : correct,
+    pointsEarned,
+    quizCorrect: correct,
+    quizIncorrect: incorrect,
+    masteryScore: decision.masteryPercentage,
+    metricsSnapshot: metrics,
+  };
+  try {
+    await upsertLevelProgress(progressBody);
+  } catch (err) {
+    const msg = String(err?.message || '');
+    if (!decision.retryLesson || !/check constraint|needs_repeat/i.test(msg)) throw err;
+    metrics.progression_status = 'needs_repeat';
+    await upsertLevelProgress({
+      ...progressBody,
+      status: 'in_progress',
+      currentLevel: levelNumber,
+      metricsSnapshot: metrics,
+    });
+    decision.persistedStatus = 'in_progress';
+  }
+
+  await insertFrustrationSnapshot({
+    studentId,
+    studentName,
+    displayName,
+    sessionId,
+    levelNumber,
+    frustrationScore: decision.frustrationScore,
+    frustrationLevel: decision.frustrationLevel,
+    source: 'level_end',
+    signals: {
+      outcome: decision.outcome,
+      masteryPercentage: decision.masteryPercentage,
+      reason: decision.reason,
+    },
+    dominantIndicators: [decision.reason],
+  }).catch(() => {});
+
+  let interventionId = null;
+  if (decision.retryLesson) {
+    const mentorBody = {
+      studentId,
+      sessionId,
+      levelNumber,
+      interventionMode: 'SUPPORT_AND_SCAFFOLD',
+      perceivedState: decision.frustrationLevel,
+      triggerReason: decision.reason,
+      frustrationScore: decision.frustrationScore,
+      provider: 'gaming-service',
+      mentorReply,
+      focusPayload: {
+        outcome: decision.outcome,
+        explanation,
+        mindmap,
+        mermaid,
+        masteryPercentage: decision.masteryPercentage,
+        frustrationScore: decision.frustrationScore,
+      },
+      telemetrySnapshot: {
+        quizCorrect: correct,
+        quizIncorrect: incorrect,
+        levelEndReason: body.levelEndReason || body.level_end_reason || null,
+      },
+    };
+    try {
+      const saved = await insertMentorIntervention(mentorBody);
+      interventionId = saved?.interventionId || null;
+    } catch (err) {
+      if (!isSessionIdError(err)) throw err;
+      const saved = await insertMentorIntervention({ ...mentorBody, sessionId: null });
+      interventionId = saved?.interventionId || null;
+    }
+  } else {
+    const nextLevel = levelNumber + 1;
+    const nextRow = await query(
+      `SELECT level_progress_id, status
+         FROM engagement_gaming.level_progress
+        WHERE student_id = $1 AND level_number = $2`,
+      [studentId, nextLevel],
+    );
+    if (!nextRow.rows?.[0]) {
+      const chapterTitle = body.chapterTitle || body.chapter_title || prevMetrics.chapter_title || '';
+      const nextMetrics = initialLevelMetrics({ lessonId, chapterTitle });
+      nextMetrics.relative_level = nextLevel;
+      nextMetrics.snapshot_data = {
+        ...nextMetrics.snapshot_data,
+        levelNumber: nextLevel,
+      };
+      await upsertLevelProgress({
+        studentId,
+        studentName,
+        displayName,
+        sessionId,
+        levelNumber: nextLevel,
+        currentLevel: nextLevel,
+        status: 'in_progress',
+        lessonsCompleted: 0,
+        pointsEarned: 0,
+        quizCorrect: 0,
+        quizIncorrect: 0,
+        metricsSnapshot: nextMetrics,
+      });
+    } else if (nextRow.rows[0].status === 'locked') {
+      await query(
+        `UPDATE engagement_gaming.level_progress
+            SET status = 'in_progress', updated_at = NOW()
+          WHERE level_progress_id = $1`,
+        [nextRow.rows[0].level_progress_id],
+      );
+    }
+  }
+
+  return {
+    ...decision,
+    levelNumber,
+    nextLevelNumber: decision.retryLesson ? levelNumber : levelNumber + 1,
+    nextLevelUnlocked: !decision.retryLesson,
+    mentorReply,
+    explanation,
+    mindmap,
+    mermaid,
+    interventionId,
+  };
 }
 
 /** Write question progress, points, and the mind map without treating the lesson id as the level. */
@@ -898,7 +1207,7 @@ export async function getStudentProgress(studentId) {
     `SELECT *
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status = 'in_progress'
+        AND status IN ('in_progress', 'needs_repeat')
       ORDER BY updated_at DESC
       LIMIT 1`,
     [id],
