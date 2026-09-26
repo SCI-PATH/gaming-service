@@ -6,6 +6,49 @@
 export const FRUSTRATION_THRESHOLD = 61;
 export const MASTERY_THRESHOLD = 0.65;
 
+/** Level clock from the latest frustration score. Unknown score uses the middle band. */
+export const LEVEL_DURATION_MS = Object.freeze({
+  high: 22 * 60 * 1000,
+  medium: 13 * 60 * 1000,
+  low: 9 * 60 * 1000,
+});
+
+const CHAPTER_REWARD_ITEMS = Object.freeze([
+  'sheep',
+  'well',
+  'tree_large',
+  'tent',
+  'cart',
+  'windmill',
+  'lamb',
+  'bushes_large',
+  'campfire',
+  'chest',
+  'rooster',
+  'tree_medium',
+  'barrel',
+  'supplies',
+  'piglet',
+  'turkey',
+  'bull',
+]);
+
+export function levelDurationMsFromFrustration(score) {
+  if (score == null || score === '') return LEVEL_DURATION_MS.medium;
+  const raw = Number(score);
+  if (!Number.isFinite(raw)) return LEVEL_DURATION_MS.medium;
+  const s = Math.max(0, Math.min(100, raw));
+  if (s >= FRUSTRATION_THRESHOLD) return LEVEL_DURATION_MS.high;
+  if (s > 30) return LEVEL_DURATION_MS.medium;
+  return LEVEL_DURATION_MS.low;
+}
+
+/** Catalog item granted when the next chapter opens. */
+export function chapterRewardItemId(chapterOrdinal) {
+  const i = Math.max(0, Math.floor(Number(chapterOrdinal) || 1) - 1);
+  return CHAPTER_REWARD_ITEMS[i % CHAPTER_REWARD_ITEMS.length];
+}
+
 export const LEVEL_OUTCOME = Object.freeze({
   REMEDIATION_REQUIRED: 'REMEDIATION_REQUIRED',
   LEVEL_PASSED: 'LEVEL_PASSED',
@@ -63,7 +106,7 @@ export function decideLevelOutcome({
       ? LEVEL_OUTCOME.REMEDIATION_REQUIRED
       : LEVEL_OUTCOME.LEVEL_PASSED,
     retryLesson: remediate,
-    status: remediate ? 'needs_repeat' : 'completed',
+    status: remediate ? 'remediation_required' : 'completed',
     reason,
     frustrationScore: Math.round(score * 100) / 100,
     frustrationLevel: frustrationLevelFromScore(score),
@@ -80,7 +123,7 @@ export function mentorReplyForOutcome(decision) {
     return 'You handled this topic with a steady pace. The next level is open.';
   }
   if (decision.reason === 'low_mastery') {
-    return 'You are close. A few ideas from this topic still need practice, so the next level stays locked. Review the explanation and mind map, then try the farm again.';
+    return "Let's master this topic before moving on! A few ideas still need practice, so the next chapter stays locked. Review the explanation and mind map, then try this chapter again.";
   }
-  return 'You worked hard on this topic. It still looks heavy, so we will practice it again before the next level opens. Review the explanation and mind map, then try once more.';
+  return "Let's master this topic before moving on! This chapter still looks heavy, so the next one stays locked. Review the explanation and mind map, then try once more.";
 }

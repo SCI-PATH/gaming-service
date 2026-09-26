@@ -11,10 +11,14 @@ import {
   resumeView,
 } from './levelProgressSnapshot.mjs';
 import {
+  chapterRewardItemId,
   decideLevelOutcome,
   frustrationScoreFromSnapshots,
+  levelDurationMsFromFrustration,
   mentorReplyForOutcome,
 } from './levelOutcome.mjs';
+
+const OPEN_LEVEL_STATUSES = `('in_progress', 'needs_repeat', 'remediation_required')`;
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -124,7 +128,51 @@ export async function startSession(body = {}) {
     sessionId,
     levelNumber: 1,
   });
-  return { sessionId, studentId, levelProgress };
+  const duration = await planLevelDuration(
+    studentId,
+    levelProgress?.levelNumber || 1,
+  );
+  return { sessionId, studentId, levelProgress, ...duration };
+}
+
+/** Latest frustration snapshot sets this session's level clock and stores it on the row. */
+export async function planLevelDuration(studentId, levelNumber) {
+  let frustrationScore = null;
+  try {
+    const latest = await query(
+      `SELECT frustration_score
+         FROM engagement_gaming.frustration_snapshots
+        WHERE student_id = $1
+        ORDER BY recorded_at DESC
+        LIMIT 1`,
+      [studentId],
+    );
+    const raw = Number(latest.rows?.[0]?.frustration_score);
+    frustrationScore = Number.isFinite(raw) ? raw : null;
+  } catch {
+    frustrationScore = null;
+  }
+  const levelTargetCompletionMs = levelDurationMsFromFrustration(frustrationScore);
+  const level = Math.max(1, Number(levelNumber) || 1);
+  try {
+    await query(
+      `UPDATE engagement_gaming.level_progress
+          SET metrics_snapshot = COALESCE(metrics_snapshot, '{}'::jsonb) || $3::jsonb,
+              updated_at = NOW()
+        WHERE student_id = $1 AND level_number = $2`,
+      [
+        studentId,
+        level,
+        JSON.stringify({
+          level_target_completion_ms: levelTargetCompletionMs,
+          frustration_score_at_start: frustrationScore,
+        }),
+      ],
+    );
+  } catch {
+    /* the client still receives the calculated clock */
+  }
+  return { levelTargetCompletionMs, frustrationScore };
 }
 
 /** Create the relative Level 1 row as soon as a session starts, before any answer. */
@@ -135,14 +183,16 @@ export async function ensureInProgressLevel(body = {}) {
     `SELECT level_progress_id, status, level_number
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status IN ('in_progress', 'needs_repeat')
+        AND status IN ${OPEN_LEVEL_STATUSES}
       ORDER BY updated_at DESC
       LIMIT 1`,
     [studentId],
   );
   if (active.rows?.[0]) {
     const row = active.rows[0];
-    if (row.status === 'needs_repeat') {
+    const retryStatus =
+      row.status === 'needs_repeat' || row.status === 'remediation_required';
+    if (retryStatus) {
       await query(
         `UPDATE engagement_gaming.level_progress
             SET status = 'in_progress', updated_at = NOW()
@@ -154,7 +204,7 @@ export async function ensureInProgressLevel(body = {}) {
       created: false,
       levelProgressId: row.level_progress_id,
       levelNumber: Math.max(1, Number(row.level_number) || 1),
-      status: row.status === 'needs_repeat' ? 'in_progress' : row.status,
+      status: retryStatus ? 'in_progress' : row.status,
     };
   }
   const existingLevel = await query(
@@ -333,15 +383,41 @@ export async function getLessonResume(studentId, lessonId = '') {
     `SELECT *
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status IN ('in_progress', 'needs_repeat')
+        AND status IN ${OPEN_LEVEL_STATUSES}
       ORDER BY updated_at DESC
       LIMIT 1`,
     [idValue],
   );
+  const ownedUnlocks = await listStudentUnlocks(idValue).catch(() => []);
   const resume = resumeFromProgressRow(found.rows?.[0], lesson);
-  if (!resume) return null;
+  if (!resume) {
+    return ownedUnlocks.length ? { ownedUnlocks } : null;
+  }
   resume.questionHistory = await questionHistoryForStudent(idValue);
+  resume.ownedUnlocks = ownedUnlocks;
   return resume;
+}
+
+export async function listStudentUnlocks(studentId) {
+  const idValue = String(studentId || '').trim();
+  if (!idValue) return [];
+  const found = await query(
+    `SELECT item_id, purchased_at_level, price_paid, placement, session_id, purchased_at
+       FROM engagement_gaming.student_unlocks
+      WHERE student_id = $1
+      ORDER BY purchased_at ASC`,
+    [idValue],
+  );
+  return (found.rows || []).map((row) => ({
+    itemId: row.item_id,
+    purchasedAtLevel: Number(row.purchased_at_level) || null,
+    pricePaid: Number(row.price_paid) || 0,
+    placement: row.placement || {},
+    purchaseChapterId: row.placement?.purchaseChapterId || '',
+    purchaseChapterOrdinal: Number(row.placement?.purchaseChapterOrdinal) || 0,
+    sessionId: row.session_id || null,
+    purchasedAt: row.purchased_at || null,
+  }));
 }
 
 let statusConstraintReady = false;
@@ -352,7 +428,7 @@ function quoteIdent(name) {
   return `"${clean}"`;
 }
 
-/** Existing databases reject needs_repeat until the status check is widened. */
+/** Existing databases reject remediation_required until the status check is widened. */
 export async function ensureLevelStatusConstraint() {
   if (statusConstraintReady) return;
   const found = await query(
@@ -363,7 +439,10 @@ export async function ensureLevelStatusConstraint() {
         AND pg_get_constraintdef(con.oid) ILIKE '%status%'`,
   );
   const rows = found.rows || [];
-  const already = rows.some((row) => String(row.def || '').includes('needs_repeat'));
+  const already = rows.some((row) => {
+    const def = String(row.def || '');
+    return def.includes('needs_repeat') && def.includes('remediation_required');
+  });
   if (!already) {
     for (const row of rows) {
       await query(
@@ -373,7 +452,7 @@ export async function ensureLevelStatusConstraint() {
     await query(
       `ALTER TABLE engagement_gaming.level_progress
          ADD CONSTRAINT level_progress_status_check
-         CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned', 'needs_repeat'))`,
+         CHECK (status IN ('locked', 'in_progress', 'completed', 'abandoned', 'needs_repeat', 'remediation_required'))`,
     );
   }
   statusConstraintReady = true;
@@ -519,8 +598,8 @@ export async function evaluateLevelOutcome(body = {}) {
     await upsertLevelProgress(progressBody);
   } catch (err) {
     const msg = String(err?.message || '');
-    if (!decision.retryLesson || !/check constraint|needs_repeat/i.test(msg)) throw err;
-    metrics.progression_status = 'needs_repeat';
+    if (!decision.retryLesson || !/check constraint|needs_repeat|remediation_required/i.test(msg)) throw err;
+    metrics.progression_status = 'remediation_required';
     await upsertLevelProgress({
       ...progressBody,
       status: 'in_progress',
@@ -618,6 +697,28 @@ export async function evaluateLevelOutcome(body = {}) {
           WHERE level_progress_id = $1`,
         [nextRow.rows[0].level_progress_id],
       );
+    }
+    const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || levelNumber;
+    const rewardItemId = chapterRewardItemId(lessonOrdinal + 1);
+    try {
+      await insertStudentUnlock({
+        studentId,
+        studentName,
+        displayName,
+        sessionId,
+        itemId: rewardItemId,
+        itemName: rewardItemId,
+        category: 'other',
+        purchasedAtLevel: 1,
+        pricePaid: 0,
+        source: 'shop',
+        purchaseChapterId: lessonId,
+        purchaseChapterOrdinal: lessonOrdinal,
+        description: `Opened with the next chapter after ${lessonId || `level ${levelNumber}`}`,
+      });
+      decision.unlockedItemId = rewardItemId;
+    } catch {
+      decision.unlockedItemId = null;
     }
   }
 
@@ -879,7 +980,35 @@ export async function insertStudentUnlock(body = {}) {
     imagePath: body.imagePath,
   });
 
+  const existing = await query(
+    `SELECT student_unlock_id
+       FROM engagement_gaming.student_unlocks
+      WHERE student_id = $1 AND item_id = $2
+      LIMIT 1`,
+    [studentId, itemId],
+  );
+  const isNew = !existing.rows?.[0];
+  const chapterOrdinal = Number(
+    body.purchaseChapterOrdinal ?? body.placement?.purchaseChapterOrdinal,
+  );
+  const placement = {
+    ...(body.placement && typeof body.placement === 'object' ? body.placement : {}),
+    purchaseChapterId: String(
+      body.purchaseChapterId || body.lessonId || body.placement?.purchaseChapterId || '',
+    ).trim(),
+    purchaseChapterOrdinal: Number.isFinite(chapterOrdinal) && chapterOrdinal > 0
+      ? chapterOrdinal
+      : 0,
+    placementStatus:
+      body.placementStatus || body.placement?.placementStatus || 'owned_pending_placement',
+    source: body.source || body.placement?.source || 'shop',
+  };
+  if (Number(body.availableAtLevel) > 0) {
+    placement.availableAtLevel = Number(body.availableAtLevel);
+  }
+
   const studentUnlockId = String(body.studentUnlockId || rowUuid());
+  const pricePaid = Math.max(0, Number(body.pricePaid) || 0);
   const insertSql = `INSERT INTO engagement_gaming.student_unlocks (
        student_unlock_id, student_id, item_id, session_id,
        purchased_at_level, price_paid, is_equipped, placement
@@ -894,9 +1023,9 @@ export async function insertStudentUnlock(body = {}) {
     itemId,
     body.sessionId || null,
     body.purchasedAtLevel ?? null,
-    body.pricePaid ?? 0,
+    pricePaid,
     Boolean(body.isEquipped),
-    JSON.stringify(body.placement || {}),
+    JSON.stringify(placement),
   ];
   try {
     await query(insertSql, row);
@@ -919,7 +1048,60 @@ export async function insertStudentUnlock(body = {}) {
     [studentId],
   );
 
-  return { studentUnlockId, itemId };
+  if (isNew && pricePaid > 0) {
+    const balance = await applyReportedFarmCash(studentId, body.walletBalance ?? body.currentMoney);
+    await insertPointsLedger({
+      studentId,
+      studentName: body.studentName || body.displayName || studentId,
+      sessionId: body.sessionId || null,
+      levelNumber: body.purchasedAtLevel ?? null,
+      entryType: 'spend',
+      amount: -pricePaid,
+      balanceAfter: balance,
+      reason: 'unlock_shop',
+      referenceId: itemId,
+      meta: {
+        itemId,
+        purchaseChapterId: placement.purchaseChapterId,
+      },
+    }).catch(() => {});
+  }
+
+  return { studentUnlockId, itemId, placement };
+}
+
+/** Store the cash the farm already deducted, without subtracting the price a second time. */
+async function applyReportedFarmCash(studentId, reported) {
+  const nextCash = Number(reported);
+  if (!studentId || !Number.isFinite(nextCash)) return null;
+  const found = await query(
+    `SELECT level_progress_id, metrics_snapshot
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1
+        AND status IN ${OPEN_LEVEL_STATUSES}
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [studentId],
+  );
+  const row = found.rows?.[0];
+  const metrics = row?.metrics_snapshot || {};
+  const farm = metrics.farm_snapshot;
+  if (!row || !farm || typeof farm !== 'object') return null;
+  const cash = Math.max(0, nextCash);
+  const nextFarm = { ...farm, currentMoney: cash, earnings: cash };
+  await query(
+    `UPDATE engagement_gaming.level_progress
+        SET metrics_snapshot = jsonb_set(
+              COALESCE(metrics_snapshot, '{}'::jsonb),
+              '{farm_snapshot}',
+              $2::jsonb,
+              true
+            ),
+            updated_at = NOW()
+      WHERE level_progress_id = $1`,
+    [row.level_progress_id, JSON.stringify(nextFarm)],
+  );
+  return nextCash;
 }
 
 export async function insertPointsLedger(body = {}) {
@@ -1207,7 +1389,7 @@ export async function getStudentProgress(studentId) {
     `SELECT *
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status IN ('in_progress', 'needs_repeat')
+        AND status IN ${OPEN_LEVEL_STATUSES}
       ORDER BY updated_at DESC
       LIMIT 1`,
     [id],

@@ -41,7 +41,7 @@ export async function submitLevelOutcome(body = {}) {
     outcome: retryLesson ? 'REMEDIATION_REQUIRED' : 'LEVEL_PASSED',
     retryLesson,
     reason: local.reason,
-    status: retryLesson ? 'needs_repeat' : 'completed',
+    status: retryLesson ? 'remediation_required' : 'completed',
     mentorReply: retryLesson
       ? 'Let’s practice this topic again before the next level opens. Review the explanation, then try the farm once more.'
       : 'This topic looks ready. The next level can open.',

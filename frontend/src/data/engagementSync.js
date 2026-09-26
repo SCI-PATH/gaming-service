@@ -4,6 +4,7 @@
  */
 
 import { getChapterLaunch } from './chapterPath.js';
+import { rememberLevelDuration } from '../game/levelClock.js';
 
 const SESSION_KEY = 'scipath_engagement_session_id';
 const STUDENT_KEY = 'scipath_engagement_student_id';
@@ -149,6 +150,9 @@ export async function syncStudentLogin(student, options = {}) {
   });
 
   if (started?.sessionId) rememberSession(started.sessionId);
+  if (started?.levelTargetCompletionMs) {
+    rememberLevelDuration(started.levelTargetCompletionMs);
+  }
   return started;
 }
 
@@ -227,6 +231,21 @@ export async function syncUnlock(itemId, opts = {}, student = null) {
     pricePaid: opts.pricePaid ?? opts.price ?? 0,
     purchasedAtLevel: opts.purchasedAtLevel ?? 1,
     basePrice: opts.basePrice ?? opts.pricePaid ?? 0,
+    purchaseChapterId: opts.purchaseChapterId || '',
+    purchaseChapterOrdinal: Number(opts.purchaseChapterOrdinal) || 0,
+    lessonId: opts.purchaseChapterId || '',
+    source: opts.source || 'shop',
+    walletBalance: opts.walletBalance,
+    currentMoney: opts.walletBalance,
+    placement: {
+      purchaseChapterId: opts.purchaseChapterId || '',
+      purchaseChapterOrdinal: Number(opts.purchaseChapterOrdinal) || 0,
+      placementStatus: 'owned_pending_placement',
+      source: opts.source || 'shop',
+      ...(Number(opts.availableAtLevel) > 0
+        ? { availableAtLevel: Number(opts.availableAtLevel) }
+        : {}),
+    },
   });
 }
 

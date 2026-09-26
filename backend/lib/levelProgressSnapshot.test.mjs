@@ -77,6 +77,11 @@ describe('level progress snapshot', () => {
     assert.equal(merged.currentQuestionIndex, 0);
     assert.equal(merged.resumeQuestionIndex, 1);
     assert.equal(merged.farmSnapshot.currentMoney, 8);
+    const kept = mergeLevelMetrics(
+      { level_target_completion_ms: 22 * 60 * 1000, frustration_score_at_start: 70 },
+      { lessonId: 'g7_sci_14', questionId: 'q3' },
+    );
+    assert.equal(kept.level_target_completion_ms, 22 * 60 * 1000);
     assert.equal(view.levelNumber, 1);
   });
 });

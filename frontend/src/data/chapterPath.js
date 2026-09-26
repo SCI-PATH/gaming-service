@@ -239,6 +239,7 @@ export function buildLearningPathReturnUrl({
   retryLesson = false,
   frustrationScore = null,
   frustrationLevel = '',
+  mastery = null,
 } = {}) {
   const launch = readStoredLaunch();
   const app = getScipathAppUrl();
@@ -271,6 +272,10 @@ export function buildLearningPathReturnUrl({
   }
   if (frustrationLevel) {
     url.searchParams.set('frustrationLevel', String(frustrationLevel));
+  }
+  const masteryValue = Number(mastery);
+  if (Number.isFinite(masteryValue)) {
+    url.searchParams.set('mastery', String(Math.round(masteryValue * 1000) / 1000));
   }
   const labels = Array.isArray(unlockedLabels) ? unlockedLabels : newlyUnlockedLabels(levelId);
   if (labels.length) url.searchParams.set('unlocked', labels.join(','));

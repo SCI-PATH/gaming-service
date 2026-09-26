@@ -78,6 +78,11 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
     mindmap,
     progression_outcome: prev.progression_outcome || null,
     level_end_reason: prev.level_end_reason || null,
+    level_target_completion_ms:
+      Number(body.levelTargetCompletionMs ?? body.level_target_completion_ms) ||
+      Number(prev.level_target_completion_ms) ||
+      null,
+    frustration_score_at_start: prev.frustration_score_at_start ?? null,
   };
 }
 
@@ -111,5 +116,7 @@ export function resumeView(row, lessonId = '') {
     farmSnapshot,
     snapshotData: metrics.snapshot_data || null,
     status: row.status || 'in_progress',
+    levelTargetCompletionMs: Number(metrics.level_target_completion_ms) || null,
+    frustrationScoreAtStart: metrics.frustration_score_at_start ?? null,
   };
 }

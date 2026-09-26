@@ -4,9 +4,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  chapterRewardItemId,
   decideLevelOutcome,
   frustrationScoreFromSnapshots,
+  LEVEL_DURATION_MS,
   LEVEL_OUTCOME,
+  levelDurationMsFromFrustration,
   masteryPercentage,
 } from './levelOutcome.mjs';
 
@@ -18,7 +21,7 @@ describe('decideLevelOutcome', () => {
       incorrect: 3,
     });
     assert.equal(decision.outcome, LEVEL_OUTCOME.REMEDIATION_REQUIRED);
-    assert.equal(decision.status, 'needs_repeat');
+    assert.equal(decision.status, 'remediation_required');
     assert.equal(decision.retryLesson, true);
     assert.equal(decision.reason, 'high_frustration');
   });
@@ -58,5 +61,16 @@ describe('decideLevelOutcome', () => {
       incorrect: 2,
     });
     assert.equal(decision.outcome, LEVEL_OUTCOME.LEVEL_PASSED);
+  });
+});
+
+describe('levelDurationMsFromFrustration', () => {
+  it('stretches the level clock for a high score and shortens it for a calm one', () => {
+    assert.equal(levelDurationMsFromFrustration(72), LEVEL_DURATION_MS.high);
+    assert.equal(levelDurationMsFromFrustration(40), LEVEL_DURATION_MS.medium);
+    assert.equal(levelDurationMsFromFrustration(10), LEVEL_DURATION_MS.low);
+    assert.equal(levelDurationMsFromFrustration(null), LEVEL_DURATION_MS.medium);
+    assert.equal(chapterRewardItemId(1), 'sheep');
+    assert.equal(chapterRewardItemId(2), 'well');
   });
 });

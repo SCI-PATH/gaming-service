@@ -15,7 +15,11 @@ import {
   FARM_CAMERA_ZOOM,
 } from '../config/constants';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
-import { shouldBlockQuestionOpen } from '../levelClock.js';
+import { readLevelDuration, shouldBlockQuestionOpen } from '../levelClock.js';
+import {
+  getChapterLaunch,
+  lessonIndexFromLessonId,
+} from '../../data/chapterPath.js';
 import { getFarmLevel } from '../../data/farmLevels';
 import {
   clearAssessmentSession,
@@ -56,6 +60,7 @@ import {
   resolveUnlockDisplayScale,
   isUnlocked,
   markUnlocked,
+  shouldPlaceOwnedUnlock,
   advanceChallengeProgress,
   getChallengeProgress,
   shopBandFromPerformance,
@@ -296,6 +301,8 @@ export default class GameScene extends Phaser.Scene {
     this.gameplayPreviousLevel = gameplayStart.previousLevel;
     this.gameplayAppliedBonus = null;
     this.levelTargetCompletionMs = this.gameplaySettings.levelTargetTimeMs;
+    this._levelDurationApplied = false;
+    this.applyPlannedLevelDuration();
     this.answerTimerMs = this.gameplaySettings.answerTimerMs;
     this.applyFrustrationGamePersonalization({ respawnSpeedOnly: false });
 
@@ -782,6 +789,8 @@ export default class GameScene extends Phaser.Scene {
     this.gameplayPreviousLevel = gameplayStart.previousLevel;
     this.gameplayAppliedBonus = null;
     this.levelTargetCompletionMs = this.gameplaySettings.levelTargetTimeMs;
+    this._levelDurationApplied = false;
+    this.applyPlannedLevelDuration();
     this.answerTimerMs = this.gameplaySettings.answerTimerMs;
     this.applyFrustrationGamePersonalization({ respawnSpeedOnly: false });
 
@@ -1477,6 +1486,11 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
     ForestGameBridge.on(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
     ForestGameBridge.on(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
+    this._onOwnedUnlocks = () => {
+      if (!this.sys?.isActive()) return;
+      this.placeOwnedUnlocks();
+    };
+    ForestGameBridge.on(FARM_EVENTS.OWNED_UNLOCKS_LOADED, this._onOwnedUnlocks);
     ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
     ForestGameBridge.on(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
     ForestGameBridge.on(
@@ -1497,6 +1511,7 @@ export default class GameScene extends Phaser.Scene {
       ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
       ForestGameBridge.off(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
       ForestGameBridge.off(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
+      ForestGameBridge.off(FARM_EVENTS.OWNED_UNLOCKS_LOADED, this._onOwnedUnlocks);
       ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_OPEN, this._onShopOpen);
       ForestGameBridge.off(FARM_EVENTS.UNLOCK_SHOP_CLOSE, this._onShopClose);
       ForestGameBridge.off(
@@ -2410,6 +2425,20 @@ export default class GameScene extends Phaser.Scene {
     return Math.max(0, Date.now() - (this.levelStartedAtMs || Date.now()));
   }
 
+  /** Session start stores a frustration-based clock. It replaces the band default. */
+  applyPlannedLevelDuration() {
+    const planned = readLevelDuration();
+    if (!(planned > 0)) return;
+    this.levelTargetCompletionMs = planned;
+    this._levelDurationApplied = true;
+    if (this.farmLevel) {
+      this.farmLevel = {
+        ...this.farmLevel,
+        levelTargetCompletionMs: planned,
+      };
+    }
+  }
+
   levelClockExpired() {
     const target = Number(this.levelTargetCompletionMs) || 0;
     if (target <= 0) return false;
@@ -2446,7 +2475,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.forestUnlocked || this._runEnded || this._levelFinishStarted) return;
     if (!this.levelTimeExpired && !this.levelClockExpired() && this.needsQuestionQuota()) return;
     if ((this.quizIncorrect || 0) >= MAX_WRONG_ANSWERS) {
-      this.levelTimeExpired = true;
+      this.finishLevelRun('wrong_answers');
       return;
     }
     const why = !this.needsQuestionQuota() ? 'question_quota' : reason || 'time_expired';
@@ -2460,6 +2489,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   tickLevelClock() {
+    if (!this._levelDurationApplied) this.applyPlannedLevelDuration();
     if (this.forestUnlocked || this._runEnded || this._levelFinishStarted || this._finishAfterQuiz) {
       return;
     }
@@ -2484,10 +2514,6 @@ export default class GameScene extends Phaser.Scene {
 
   finishLevelRun(reason = 'question_quota') {
     if (this.forestUnlocked || this._runEnded || this._levelFinishStarted) return;
-    if ((this.quizIncorrect || 0) >= MAX_WRONG_ANSWERS) {
-      this.levelTimeExpired = true;
-      return;
-    }
 
     this._levelFinishStarted = true;
     this.levelTimeExpired = true;
@@ -2519,7 +2545,9 @@ export default class GameScene extends Phaser.Scene {
       goalText:
         this.levelEndReason === 'time_expired'
           ? `Level time is up.${timeNote} Checking this topic before the next level opens.`
-          : `Level complete!${timeNote}${bonusNote} Unlock shop is open — then return to your learning path.`,
+          : this.levelEndReason === 'wrong_answers'
+            ? 'Six misses on this topic. Checking whether to practice it again or open the next chapter.'
+            : `Level complete!${timeNote}${bonusNote} Checking this topic before you return to your learning path.`,
     };
 
     const shopPerf = this.buildShopPerformance();
@@ -2849,16 +2877,14 @@ export default class GameScene extends Phaser.Scene {
     this.unlockSlotUsed = [];
   }
 
-  /** Owned shop items appear starting the level after purchase; LPE rewards can appear now. */
+  /** Owned shop items appear on a later chapter. Learning Path rewards can appear now. */
   shouldShowOwnedUnlock(itemId) {
     if (!itemId || SKIP_UNLOCK_ITEMS.has(itemId)) return false;
-    const levelId = Math.max(1, Number(this.levelId) || 1);
-    const meta = getUnlockMeta(itemId) || {};
-    const availableAt = Number(meta.availableAtLevel) || 0;
-    if (availableAt > 0) return levelId >= availableAt;
-    const purchasedAt = Number(meta.purchasedAtLevel) || 0;
-    if (purchasedAt > 0 && levelId <= purchasedAt) return false;
-    return true;
+    const launch = getChapterLaunch();
+    return shouldPlaceOwnedUnlock(getUnlockMeta(itemId) || {}, {
+      levelId: this.levelId,
+      chapterOrdinal: lessonIndexFromLessonId(launch.lessonId) || 0,
+    });
   }
 
   placeOwnedUnlocks() {
@@ -3804,7 +3830,15 @@ export default class GameScene extends Phaser.Scene {
 
     this.currentMoney -= price;
     this.syncMoneyAliases();
-    markUnlocked(itemId, { purchasedAtLevel: this.levelId });
+    const launch = getChapterLaunch();
+    markUnlocked(itemId, {
+      purchasedAtLevel: this.levelId,
+      pricePaid: price,
+      purchaseChapterId: launch.lessonId || '',
+      purchaseChapterOrdinal: lessonIndexFromLessonId(launch.lessonId) || 0,
+      source: 'shop',
+      walletBalance: this.currentMoney,
+    });
     // Show on the farm starting next level — no unlock-item quests
     this.audioItem?.play();
 
@@ -5019,7 +5053,8 @@ export default class GameScene extends Phaser.Scene {
   checkWrongAnswerGameOver() {
     if ((this.quizIncorrect || 0) < MAX_WRONG_ANSWERS) return false;
     this.time.delayedCall(420, () => {
-      if (this.sys?.isActive()) this.gameOver('wrong_answers');
+      if (!this.sys?.isActive() || this.forestUnlocked || this._levelFinishStarted) return;
+      this.finishLevelRun('wrong_answers');
     });
     return true;
   }

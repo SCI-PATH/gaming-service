@@ -11,6 +11,7 @@ import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { normalizePerformanceCategory, PERFORMANCE_CATEGORIES } from './performanceCategories.js';
 import { FRUSTRATION_LEVELS, frustrationShopPriceFactor, buildFrustrationAdaptation } from './frustrationModel.js';
 import { syncUnlock } from './engagementSync.js';
+import { shouldPlaceOwnedUnlock } from './unlockPlacement.js';
 
 const BASE_STORAGE_KEY = 'scipath_unlocks';
 
@@ -355,7 +356,7 @@ export function clearOwnedUnlocks() {
  * Persist ownership. Pass purchasedAtLevel so later levels can stage challenges.
  * Learning Path rewards may set availableAtLevel = current level so they appear now.
  * @param {string} itemId
- * @param {{ purchasedAtLevel?: number, availableAtLevel?: number, source?: string, pricePaid?: number }} [opts]
+ * @param {{ purchasedAtLevel?: number, availableAtLevel?: number, source?: string, pricePaid?: number, purchaseChapterId?: string, purchaseChapterOrdinal?: number, skipSync?: boolean }} [opts]
  */
 export function markUnlocked(itemId, opts = {}) {
   const store = readStore();
@@ -375,29 +376,71 @@ export function markUnlocked(itemId, opts = {}) {
       : Number(prev.availableAtLevel) > 0
         ? Number(prev.availableAtLevel)
         : null;
+  const purchaseChapterOrdinal =
+    Number(opts.purchaseChapterOrdinal) > 0
+      ? Number(opts.purchaseChapterOrdinal)
+      : Number(prev.purchaseChapterOrdinal) > 0
+        ? Number(prev.purchaseChapterOrdinal)
+        : 0;
+  const purchaseChapterId = String(
+    opts.purchaseChapterId || prev.purchaseChapterId || '',
+  ).trim();
   store.meta[itemId] = {
     ...prev,
     purchasedAtLevel: level,
     ...(availableAt ? { availableAtLevel: availableAt } : {}),
+    ...(purchaseChapterOrdinal ? { purchaseChapterOrdinal } : {}),
+    ...(purchaseChapterId ? { purchaseChapterId } : {}),
     source: opts.source || prev.source || 'shop',
     stageProgress: prev.stageProgress || {},
   };
 
   writeStore(store);
-  const catalogItem = UNLOCK_ITEMS.find((i) => i.id === itemId);
-  syncUnlock(
-    itemId,
-    {
-      itemName: catalogItem?.name || itemId,
-      category: catalogItem?.category || 'other',
-      basePrice: catalogItem?.basePrice ?? 0,
-      pricePaid: opts.pricePaid ?? catalogItem?.basePrice ?? 0,
-      purchasedAtLevel: level,
-    },
-    getCurrentStudent(),
-  );
+  if (!opts.skipSync) {
+    const catalogItem = UNLOCK_ITEMS.find((i) => i.id === itemId);
+    syncUnlock(
+      itemId,
+      {
+        itemName: catalogItem?.name || itemId,
+        category: catalogItem?.category || 'other',
+        basePrice: catalogItem?.basePrice ?? 0,
+        pricePaid: opts.pricePaid ?? catalogItem?.basePrice ?? 0,
+        purchasedAtLevel: level,
+        purchaseChapterId,
+        purchaseChapterOrdinal,
+        source: store.meta[itemId].source,
+        availableAtLevel: availableAt,
+        walletBalance: opts.walletBalance,
+      },
+      getCurrentStudent(),
+    );
+  }
   return store.owned;
 }
+
+/** Copy Postgres ownership into this browser so the next farm can place the items. */
+export function mergeRemoteUnlocks(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    const itemId = String(row?.itemId || row?.item_id || '').trim();
+    if (!itemId) continue;
+    const placement =
+      row.placement && typeof row.placement === 'object' ? row.placement : {};
+    markUnlocked(itemId, {
+      purchasedAtLevel: row.purchasedAtLevel ?? row.purchased_at_level,
+      purchaseChapterId: placement.purchaseChapterId || row.purchaseChapterId || '',
+      purchaseChapterOrdinal:
+        placement.purchaseChapterOrdinal || row.purchaseChapterOrdinal,
+      availableAtLevel: placement.availableAtLevel,
+      source: placement.source || '',
+      pricePaid: row.pricePaid ?? row.price_paid ?? 0,
+      skipSync: true,
+    });
+  }
+  return getOwnedUnlockIds();
+}
+
+export { shouldPlaceOwnedUnlock };
 
 /**
  * Ensure every owned item has purchase meta (migrates older saves).

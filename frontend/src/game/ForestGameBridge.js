@@ -49,6 +49,8 @@ export const FARM_EVENTS = {
   INTERACTION: 'GAME_INTERACTION',
   /** Spend cash on unlock shop item (React → Phaser) */
   PURCHASE_UNLOCK: 'PURCHASE_UNLOCK',
+  /** React → Phaser: Postgres ownership is in the local shop store */
+  OWNED_UNLOCKS_LOADED: 'OWNED_UNLOCKS_LOADED',
   /** Lock farm input while unlock shop is open */
   UNLOCK_SHOP_OPEN: 'UNLOCK_SHOP_OPEN',
   UNLOCK_SHOP_CLOSE: 'UNLOCK_SHOP_CLOSE',

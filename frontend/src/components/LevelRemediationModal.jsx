@@ -26,7 +26,7 @@ export default function LevelRemediationModal({
         <div className="motivation-story-top">
           <div>
             <p className="motivation-kicker">Sage</p>
-            <h2 id="remediation-title">Practice this topic again</h2>
+            <h2 id="remediation-title">Let&apos;s master this topic before moving on!</h2>
             <p className="motivation-meta">
               Frustration {Math.round(Number(decision.frustrationScore) || 0)}
               {masteryLabel ? ` · mastery ${masteryLabel}` : ''}
@@ -52,7 +52,7 @@ export default function LevelRemediationModal({
           </button>
           {onReturnToPath ? (
             <button type="button" className="motivation-next" onClick={onReturnToPath}>
-              Back to learning path
+              Back to learning path — this chapter stays open
             </button>
           ) : null}
         </div>

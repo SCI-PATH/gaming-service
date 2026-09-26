@@ -87,6 +87,8 @@ import {
   returnToLearningPath,
 } from './data/chapterPath.js';
 import { fetchLessonResume } from './data/lessonCheckpoint.js';
+import { rememberLevelDuration } from './game/levelClock.js';
+import { mergeRemoteUnlocks } from './data/unlockShop.js';
 import { mergeRemoteMindMaps } from './avatar/mindMapHistoryStore.js';
 import {
   clearAssessmentSession,
@@ -189,6 +191,13 @@ export default function App() {
     fetchLessonResume(id, getChapterLaunch().lessonId).then((resume) => {
       if (cancel) return;
       setLessonResume(resume);
+      if (resume?.levelTargetCompletionMs) {
+        rememberLevelDuration(resume.levelTargetCompletionMs);
+      }
+      if (Array.isArray(resume?.ownedUnlocks) && resume.ownedUnlocks.length) {
+        mergeRemoteUnlocks(resume.ownedUnlocks);
+        ForestGameBridge.emit(FARM_EVENTS.OWNED_UNLOCKS_LOADED);
+      }
       if (!resume?.levelNumber) return;
       const levelNumber = Math.max(1, Number(resume.levelNumber) || 1);
       const answered = Math.max(0, Number(resume.lastCompletedQuestionIndex) || 0);
@@ -1159,6 +1168,36 @@ export default function App() {
 
     const openPassedLevel = () => {
       applyFarmComplete(payload.goalText);
+      if (payload.gameplayBand || payload.pendingGameplayBonus) {
+        setGameplay((prev) => ({
+          ...prev,
+          band: payload.gameplayBand ?? prev.band,
+          label: payload.gameplayLabel ?? prev.label,
+          pendingBonus: payload.pendingGameplayBonus ?? prev.pendingBonus,
+          nextGameplaySettings:
+            payload.nextGameplaySettings ?? prev.nextGameplaySettings,
+          live: {
+            retries: payload.retries ?? prev.live?.retries,
+            avgAnswerTimeSec:
+              payload.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
+            levelElapsedSec:
+              payload.levelCompletionTimeSec ?? prev.live?.levelElapsedSec,
+          },
+        }));
+      }
+      if (isLearningPathLinked()) {
+        setShopOpen(false);
+        setMotivationContext({
+          frustrationScore: frScore,
+          frustrationLevel: frLevel,
+          levelId: payload.levelId ?? farm.levelId ?? 1,
+          pendingShop: false,
+          returnToPath: true,
+        });
+        setMotivationOpen(true);
+        setBanner('Level complete! The next chapter unlocks when you return to your learning path.');
+        return;
+      }
       if (payload.openUnlockShop === true) {
         const perf = {
           attemptScores: payload.attemptScores ?? [],
@@ -1190,23 +1229,6 @@ export default function App() {
         );
       } else {
         setBanner('Level complete! Proceed to the Forest Entrance!');
-      }
-      if (payload.gameplayBand || payload.pendingGameplayBonus) {
-        setGameplay((prev) => ({
-          ...prev,
-          band: payload.gameplayBand ?? prev.band,
-          label: payload.gameplayLabel ?? prev.label,
-          pendingBonus: payload.pendingGameplayBonus ?? prev.pendingBonus,
-          nextGameplaySettings:
-            payload.nextGameplaySettings ?? prev.nextGameplaySettings,
-          live: {
-            retries: payload.retries ?? prev.live?.retries,
-            avgAnswerTimeSec:
-              payload.avgAnswerTimeSec ?? prev.live?.avgAnswerTimeSec,
-            levelElapsedSec:
-              payload.levelCompletionTimeSec ?? prev.live?.levelElapsedSec,
-          },
-        }));
       }
     };
 
@@ -1251,14 +1273,41 @@ export default function App() {
   ]);
 
   const handleMotivationContinue = useCallback(() => {
+    const returnToPath = motivationContext?.returnToPath === true;
+    const levelId = motivationContext?.levelId ?? farm.levelId;
     setMotivationOpen(false);
     const openShop = motivationContext?.pendingShop === true;
     setMotivationContext(null);
+    if (returnToPath) {
+      const decided = levelDecisionRef.current;
+      const launch = getChapterLaunch();
+      parkFarmProgressAtCompletedLevel(levelId, farm.earnings ?? farm.currentMoney);
+      returnToLearningPath({
+        lessonId: launch.lessonId,
+        levelId,
+        chapterTitle: launch.chapterTitle,
+        nextLessonId: launch.nextLessonId,
+        nextChapterTitle: launch.nextChapterTitle,
+        retryLesson: false,
+        frustrationScore: decided?.frustrationScore ?? telemetrySession.frustrationScore,
+        frustrationLevel: decided?.frustrationLevel ?? telemetrySession.frustrationLevel,
+        mastery: decided?.masteryPercentage,
+      });
+      levelDecisionRef.current = null;
+      return;
+    }
     if (openShop) {
       setShopOpen(true);
       emitUnlockShopOpen();
     }
-  }, [motivationContext]);
+  }, [
+    motivationContext,
+    farm.levelId,
+    farm.earnings,
+    farm.currentMoney,
+    telemetrySession.frustrationScore,
+    telemetrySession.frustrationLevel,
+  ]);
 
   const handleInteraction = useCallback((detail) => {
     if (detail?.type === 'plant_success' && detail.rp) {
@@ -1610,11 +1659,14 @@ export default function App() {
         nextLessonId: retryLesson ? '' : launch.nextLessonId,
         nextChapterTitle: retryLesson ? '' : launch.nextChapterTitle,
         retryLesson,
-        frustrationScore,
-        frustrationLevel,
-        unlockedLabels: newlyUnlockedLabels(levelId).length
-          ? newlyUnlockedLabels(levelId)
-          : ownedUnlockLabels(),
+        frustrationScore: decided?.frustrationScore ?? frustrationScore,
+        frustrationLevel: decided?.frustrationLevel ?? frustrationLevel,
+        mastery: decided?.masteryPercentage,
+        unlockedLabels: retryLesson
+          ? []
+          : (newlyUnlockedLabels(levelId).length
+            ? newlyUnlockedLabels(levelId)
+            : ownedUnlockLabels()),
       });
       levelDecisionRef.current = null;
     },
