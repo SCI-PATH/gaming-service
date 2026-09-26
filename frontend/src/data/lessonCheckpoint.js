@@ -3,16 +3,23 @@
  * Level number stays relative (Level 1 of this lesson).
  */
 
+async function readResume(path, params) {
+  const res = await fetch(`${path}?${params.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false || !data?.resume) return null;
+  return data.resume;
+}
+
 export async function fetchLessonResume(studentId, lessonId = '') {
   const id = String(studentId || '').trim();
   if (!id) return null;
+  const params = new URLSearchParams({ studentId: id });
+  if (lessonId) params.set('lessonId', lessonId);
   try {
-    const params = new URLSearchParams({ studentId: id });
-    if (lessonId) params.set('lessonId', lessonId);
-    const res = await fetch(`/api/engagement/resume?${params.toString()}`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data?.ok === false || !data?.resume) return null;
-    return data.resume;
+    return (
+      (await readResume('/api/game/resume', params)) ||
+      (await readResume('/api/engagement/resume', params))
+    );
   } catch {
     return null;
   }

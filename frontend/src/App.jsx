@@ -69,6 +69,7 @@ import {
   hasFarmRun,
   loadFarmRun,
   mergeFarmRun,
+  saveFarmRun,
   answeredFromRun,
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
@@ -84,6 +85,7 @@ import {
   returnToLearningPath,
 } from './data/chapterPath.js';
 import { fetchLessonResume } from './data/lessonCheckpoint.js';
+import { mergeRemoteMindMaps } from './avatar/mindMapHistoryStore.js';
 import {
   clearAssessmentSession,
   exportAssessmentSession,
@@ -183,7 +185,47 @@ export default function App() {
     if (!id) return undefined;
     let cancel = false;
     fetchLessonResume(id, getChapterLaunch().lessonId).then((resume) => {
-      if (!cancel) setLessonResume(resume);
+      if (cancel) return;
+      setLessonResume(resume);
+      if (!resume?.levelNumber) return;
+      const levelNumber = Math.max(1, Number(resume.levelNumber) || 1);
+      const answered = Math.max(0, Number(resume.lastCompletedQuestionIndex) || 0);
+      saveFarmProgress({
+        currentLevelId: levelNumber,
+        highestCompletedLevel: Math.max(0, levelNumber - 1),
+        levelSource: 'engagement',
+      });
+      if (resume.farmSnapshot) {
+        saveFarmRun(
+          {
+            ...resume.farmSnapshot,
+            levelId: levelNumber,
+          },
+          { remote: false },
+        );
+      }
+      if (Array.isArray(resume.questionHistory) && resume.questionHistory.length) {
+        mergeRemoteMindMaps(resume.questionHistory);
+      }
+      const snapCash = Number(resume.farmSnapshot?.currentMoney);
+      setFarm((prev) => ({
+        ...prev,
+        levelId: levelNumber,
+        questionsAnswered: Math.max(prev.questionsAnswered || 0, answered),
+        earnings: Math.max(
+          prev.earnings || 0,
+          Number(resume.pointsEarned) || 0,
+          Number.isFinite(snapCash) ? snapCash : 0,
+        ),
+      }));
+      setLobbyProgress((prev) => ({
+        ...(prev || {}),
+        phase: prev?.phase === 'needs_aptitude' ? prev.phase : 'returning',
+        levelId: levelNumber,
+        currentLevelNumber: levelNumber,
+        progressCountLabel:
+          answered > 0 ? `${answered} questions saved` : `Level ${levelNumber}`,
+      }));
     });
     return () => {
       cancel = true;
@@ -756,6 +798,13 @@ export default function App() {
     // Map positions only emit from GameScene → treat as "in farm"
     setInFarm(true);
     playerMapRef.current = { x, y };
+    if (payload.quizOpen) {
+      if (playerMapRaf.current) {
+        window.cancelAnimationFrame(playerMapRaf.current);
+        playerMapRaf.current = 0;
+      }
+      return;
+    }
     if (playerMapRaf.current) return;
     playerMapRaf.current = window.requestAnimationFrame(() => {
       playerMapRaf.current = 0;

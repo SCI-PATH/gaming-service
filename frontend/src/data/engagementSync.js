@@ -1,7 +1,9 @@
 /**
  * Fire-and-forget sync from the farm game → Neon via backend APIs.
- * localStorage remains source of offline truth; DB is research mirror.
+ * Postgres is the resume source. The browser copy is only a local cache.
  */
+
+import { getChapterLaunch } from './chapterPath.js';
 
 const SESSION_KEY = 'scipath_engagement_session_id';
 const STUDENT_KEY = 'scipath_engagement_student_id';
@@ -116,6 +118,11 @@ export async function syncStudentLogin(student, options = {}) {
   const sessionId =
     String(options.sessionId || '').trim() || newId('sess');
   rememberSession(sessionId);
+  const launch = getChapterLaunch();
+  const lessonId = String(options.lessonId || student.lessonId || launch.lessonId || '').trim();
+  const chapterTitle = String(
+    options.chapterTitle || student.chapterTitle || launch.chapterTitle || '',
+  ).trim();
 
   await post('/api/engagement/student', {
     studentId: student.id,
@@ -133,6 +140,8 @@ export async function syncStudentLogin(student, options = {}) {
     studentName: student.displayName || student.id,
     displayName: student.displayName || student.id,
     startLevel: Math.max(1, Number(options.startLevel) || 1),
+    lessonId,
+    chapterTitle,
     clientVersion: 'gaming-service-web',
     deviceInfo: {
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,

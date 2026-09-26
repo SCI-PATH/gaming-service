@@ -22,6 +22,23 @@ const TYPE_LABELS = {
   MultiBlank: 'Fill in the blanks',
 };
 
+function persistAnswerCheckpoint(questionData, isCorrect) {
+  const player = getCurrentStudent();
+  if (!player?.id || !questionData?.id) return;
+  const rawIndex = Number(questionData.questionIndex ?? questionData.index);
+  void saveLessonCheckpoint({
+    studentId: player.id,
+    sessionId: player.sessionId,
+    lessonId: getChapterLaunch().lessonId,
+    questionId: questionData.id,
+    isCorrect: Boolean(isCorrect),
+    lastCompletedQuestionIndex:
+      Number.isFinite(rawIndex) && rawIndex > 0 ? rawIndex : undefined,
+    pointsDelta: isCorrect ? Number(questionData.rp) || 1 : 0,
+    levelNumber: 1,
+  });
+}
+
 function resolveQuestionType(questionData) {
   const typed =
     asQuestionType(questionData?.questionType) ||
@@ -354,20 +371,7 @@ export default function ScienceQuizModal({
           return;
         }
         isCorrect = Boolean(graded?.ok && graded?.isCorrect);
-        const player = getCurrentStudent();
-        if (player?.id) {
-          void saveLessonCheckpoint({
-            studentId: player.id,
-            sessionId: player.sessionId,
-            lessonId: getChapterLaunch().lessonId,
-            questionId: questionData.id,
-            isCorrect,
-            lastCompletedQuestionIndex: Number(questionData.questionIndex || questionData.index) || 1,
-            pointsDelta: isCorrect ? Number(questionData.rp) || 1 : 0,
-            quizCorrect: isCorrect ? 1 : 0,
-            quizIncorrect: isCorrect ? 0 : 1,
-          });
-        }
+        persistAnswerCheckpoint(questionData, isCorrect);
         const gradePayload =
           graded?.data?.grade && typeof graded.data.grade === 'object'
             ? graded.data.grade
@@ -508,6 +512,7 @@ export default function ScienceQuizModal({
       timedOut: Boolean(timedOut),
       correctAnswer: fallbackCorrect,
     });
+    persistAnswerCheckpoint(questionData, isCorrect);
     setResult({
       isCorrect,
       selectedIndex,

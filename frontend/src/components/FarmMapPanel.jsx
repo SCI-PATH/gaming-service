@@ -32,6 +32,8 @@ export default function FarmMapPanel({
   const { width, height } = FARM_MAP_TILES;
   const pinRef = useRef(null);
   const guideRef = useRef(null);
+  const quizOpenRef = useRef(false);
+  const heldAlertsRef = useRef(customerAlerts);
   const [pos, setPos] = useState({
     x: Number.isFinite(playerMapX) ? playerMapX : 48,
     y: Number.isFinite(playerMapY) ? playerMapY : 32,
@@ -41,37 +43,42 @@ export default function FarmMapPanel({
   const [quizOpen, setQuizOpen] = useState(false);
 
   useEffect(() => {
-    const apply = (xRaw, yRaw) => {
+    const apply = (payload = {}) => {
+      const xRaw = Number(payload.playerMapX);
+      const yRaw = Number(payload.playerMapY);
       if (!Number.isFinite(xRaw) || !Number.isFinite(yRaw)) return;
       const x = clamp(xRaw, 0, width - 0.01);
       const y = clamp(yRaw, 0, height - 0.01);
       setPos({ x, y });
+      if (Array.isArray(payload.enemies)) setEnemies(payload.enemies);
+      if (Array.isArray(payload.customers)) setCustomers(payload.customers);
       movePin(pinRef.current, guideRef.current, x, y, width, height);
     };
 
-    const onBridge = (payload = {}) => {
-      apply(Number(payload.playerMapX), Number(payload.playerMapY));
-      if (Array.isArray(payload.enemies)) setEnemies(payload.enemies);
-      if (Array.isArray(payload.customers)) setCustomers(payload.customers);
-      if (payload.quizOpen != null) setQuizOpen(Boolean(payload.quizOpen));
-    };
-    const onWindow = (event) => {
-      const d = event.detail || {};
-      apply(Number(d.playerMapX), Number(d.playerMapY));
-      if (Array.isArray(d.enemies)) setEnemies(d.enemies);
-      if (Array.isArray(d.customers)) setCustomers(d.customers);
-      if (d.quizOpen != null) setQuizOpen(Boolean(d.quizOpen));
+    const onFrame = (payload = {}) => {
+      const nextQuiz = payload.quizOpen != null ? Boolean(payload.quizOpen) : quizOpenRef.current;
+      if (nextQuiz !== quizOpenRef.current) {
+        quizOpenRef.current = nextQuiz;
+        setQuizOpen(nextQuiz);
+        if (!nextQuiz) apply(payload);
+        return;
+      }
+      if (quizOpenRef.current) return;
+      apply(payload);
     };
 
-    ForestGameBridge.on(FARM_EVENTS.PLAYER_MAP_POS, onBridge);
+    const onWindow = (event) => onFrame(event.detail || {});
+
+    ForestGameBridge.on(FARM_EVENTS.PLAYER_MAP_POS, onFrame);
     window.addEventListener('scipath-player-map', onWindow);
     return () => {
-      ForestGameBridge.off(FARM_EVENTS.PLAYER_MAP_POS, onBridge);
+      ForestGameBridge.off(FARM_EVENTS.PLAYER_MAP_POS, onFrame);
       window.removeEventListener('scipath-player-map', onWindow);
     };
   }, [width, height]);
 
   useLayoutEffect(() => {
+    if (quizOpenRef.current) return;
     if (!Number.isFinite(playerMapX) || !Number.isFinite(playerMapY)) return;
     const x = clamp(playerMapX, 0, width - 0.01);
     const y = clamp(playerMapY, 0, height - 0.01);
@@ -84,20 +91,24 @@ export default function FarmMapPanel({
   const tileX = Math.floor(px);
   const tileY = Math.floor(py);
   const nearest = nearestTarget(px, py);
-  const liveAlerts = buildMapAlerts(enemies, customers, customerAlerts);
+  if (!quizOpen) heldAlertsRef.current = customerAlerts;
+  const liveAlerts = buildMapAlerts(
+    enemies,
+    customers,
+    quizOpen ? heldAlertsRef.current : customerAlerts,
+  );
 
   return (
     <aside
-      className={`farm-map-panel${compact ? ' is-compact' : ''}${quizOpen ? ' is-quiz-live' : ''}`}
+      className={`farm-map-panel${compact ? ' is-compact' : ''}${quizOpen ? ' is-focus-mode' : ''}`}
       aria-label="Farm map with plant beds, farm shop, and unlock locations"
     >
       <div className="farm-map-head">
         <strong>Farm Map</strong>
         <span>
-          {quizOpen
-            ? 'Watch alerts — enemies and customers keep moving'
-            : 'Gold = plant · Shop = unload'}
+          {quizOpen ? 'Focus mode — map held while you answer' : 'Gold = plant · Shop = unload'}
         </span>
+        {quizOpen ? <em className="farm-map-focus-badge">Focus Mode</em> : null}
       </div>
 
       <div
@@ -224,7 +235,7 @@ export default function FarmMapPanel({
 
           <div
             ref={pinRef}
-            className="farm-map-you is-blinking"
+            className={`farm-map-you${quizOpen ? '' : ' is-blinking'}`}
             title="You — moves as you run"
           >
             <span className="farm-map-you-ring" />
@@ -276,12 +287,10 @@ export default function FarmMapPanel({
             </li>
           ))}
         </ul>
-      ) : quizOpen ? (
-        <p className="farm-map-alerts-empty">No alerts yet — keep answering.</p>
       ) : null}
 
       <p className="farm-map-location">
-        <span className="farm-map-location-dot is-blinking" />
+        <span className={`farm-map-location-dot${quizOpen ? '' : ' is-blinking'}`} />
         You are here
         <strong>
           col {tileX} · row {tileY}
@@ -290,7 +299,7 @@ export default function FarmMapPanel({
 
       <ul className="farm-map-legend">
         <li>
-          <i className="farm-map-key farm-map-key-you is-blinking" /> You
+          <i className={`farm-map-key farm-map-key-you${quizOpen ? '' : ' is-blinking'}`} /> You
         </li>
         <li>
           <i className="farm-map-key farm-map-key-bed" /> Plant

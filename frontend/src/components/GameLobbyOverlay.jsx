@@ -61,10 +61,11 @@ export default function GameLobbyOverlay({
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onStart]);
-  const levelLabel =
-    progress.phase === 'returning'
-      ? `Level ${progress.levelId ?? farm.levelId}`
-      : `Level ${progress.levelId ?? farm.levelId ?? 1}`;
+  const currentLevelNumber = Math.max(
+    1,
+    Number(progress.currentLevelNumber ?? progress.levelId) || 1,
+  );
+  const levelLabel = `Level ${currentLevelNumber}`;
 
   return (
     <div
@@ -112,8 +113,7 @@ export default function GameLobbyOverlay({
           <h2 className="game-lobby-title">{isGuide ? 'How to Play' : GAME_NAME}</h2>
           {!isGuide && pathLinked && chapterTitle ? (
             <p className="game-lobby-chapter">
-              Chapter farm · <strong>{chapterTitle}</strong> · Level{' '}
-              {progress.levelId ?? farm.levelId ?? 1}
+              Chapter farm · <strong>{chapterTitle}</strong> · Level {currentLevelNumber}
               {unlockedLabels.length ? (
                 <>
                   <br />
@@ -188,9 +188,12 @@ export default function GameLobbyOverlay({
             ) : null}
           </div>
           <p className="game-lobby-enter-hint">
-            Level 1
+            Level {currentLevelNumber}
             {resumeQuestion > 1 ? ` · resume question ${resumeQuestion}` : ''}
-            {progress.progressCountLabel ? ` · ${progress.progressCountLabel}` : ''}
+            {progress.progressCountLabel &&
+            !/^Level /i.test(progress.progressCountLabel)
+              ? ` · ${progress.progressCountLabel}`
+              : ''}
             {' · '}Press Enter to continue
           </p>
         </section>

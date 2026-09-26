@@ -5,7 +5,7 @@
  */
 
 import { markUnlocked, getOwnedUnlockIds, getUnlockItem, getUnlockMeta } from './unlockShop.js';
-import { saveFarmProgress } from './farmProgress.js';
+import { loadFarmProgress, saveFarmProgress } from './farmProgress.js';
 
 const LAUNCH_STORAGE_KEY = 'scipath_chapter_launch';
 const DEFAULT_SCIPATH_APP = 'http://127.0.0.1:3000';
@@ -71,6 +71,36 @@ export function lessonIndexFromLessonId(lessonId) {
  */
 export function farmLevelFromLessonId(lessonId) {
   return lessonIndexFromLessonId(lessonId) ? 1 : null;
+}
+
+/**
+ * Relative farm level for display. A value that is just the lesson ordinal
+ * (Lesson 14 stored as Level 14) is Level 1 until the database says otherwise.
+ */
+export function displayFarmLevel(levelNumber, lessonId = '') {
+  const level = Math.max(1, Number(levelNumber) || 1);
+  const lessonIndex = lessonIndexFromLessonId(lessonId);
+  if (lessonIndex && level === lessonIndex) return 1;
+  return level;
+}
+
+/** Drop a cursor that was saved as "lesson 14 means level 13 complete". */
+export function chapterFarmCursor(prev = {}, startLevel = 1, lessonId = '') {
+  const currentLevelId = displayFarmLevel(startLevel, lessonId);
+  const lessonIndex = lessonIndexFromLessonId(lessonId);
+  const prevCurrent = Math.max(1, Number(prev?.currentLevelId) || 1);
+  const prevHighest = Math.max(0, Number(prev?.highestCompletedLevel) || 0);
+  const inflated =
+    lessonIndex != null &&
+    (prevCurrent === lessonIndex ||
+      prevHighest === lessonIndex - 1 ||
+      prevHighest >= lessonIndex);
+  return {
+    currentLevelId,
+    highestCompletedLevel: inflated
+      ? Math.max(0, currentLevelId - 1)
+      : Math.max(prevHighest, currentLevelId - 1),
+  };
 }
 
 export function chapterRewardItemId(levelId) {

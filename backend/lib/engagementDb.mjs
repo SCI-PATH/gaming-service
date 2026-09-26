@@ -5,6 +5,11 @@
 import { getFileLeaderboard, upsertLeaderboardEntry } from './db.mjs';
 import { isPostgresEnabled } from './pg.mjs';
 import { eq as query } from './engagementSchema.mjs';
+import {
+  initialLevelMetrics,
+  mergeLevelMetrics,
+  resumeView,
+} from './levelProgressSnapshot.mjs';
 
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -91,6 +96,10 @@ export async function startSession(body = {}) {
   await upsertStudent(body);
 
   const sessionId = String(body.sessionId || id('sess'));
+  const lessonId = String(body.lessonId || body.lesson_id || '').trim();
+  const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || 0;
+  let startLevel = Math.max(1, Number(body.startLevel ?? body.start_level) || 1);
+  if (lessonOrdinal && startLevel === lessonOrdinal) startLevel = 1;
   await query(
     `INSERT INTO engagement_gaming.game_sessions (
        session_id, student_id, started_at, start_level, client_version, device_info
@@ -100,12 +109,69 @@ export async function startSession(body = {}) {
     [
       sessionId,
       studentId,
-      body.startLevel ?? body.start_level ?? 1,
+      startLevel,
       body.clientVersion || body.client_version || 'gaming-service',
       JSON.stringify(body.deviceInfo || body.device_info || {}),
     ],
   );
-  return { sessionId, studentId };
+  const levelProgress = await ensureInProgressLevel({
+    ...body,
+    sessionId,
+    levelNumber: 1,
+  });
+  return { sessionId, studentId, levelProgress };
+}
+
+/** Create the relative Level 1 row as soon as a session starts, before any answer. */
+export async function ensureInProgressLevel(body = {}) {
+  const studentId = String(body.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
+  const active = await query(
+    `SELECT level_progress_id
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1
+        AND status = 'in_progress'
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [studentId],
+  );
+  if (active.rows?.[0]) {
+    return { created: false, levelProgressId: active.rows[0].level_progress_id, levelNumber: 1 };
+  }
+  const existingLevel = await query(
+    `SELECT level_progress_id, status
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1 AND level_number = 1
+      LIMIT 1`,
+    [studentId],
+  );
+  if (existingLevel.rows?.[0]) {
+    return {
+      created: false,
+      levelProgressId: existingLevel.rows[0].level_progress_id,
+      levelNumber: 1,
+      status: existingLevel.rows[0].status,
+    };
+  }
+  const metrics = initialLevelMetrics({
+    lessonId: body.lessonId || body.lesson_id || '',
+    chapterTitle: body.chapterTitle || body.chapter_title || '',
+  });
+  const saved = await upsertLevelProgress({
+    studentId,
+    studentName: body.studentName || body.displayName || studentId,
+    displayName: body.displayName || body.studentName || studentId,
+    sessionId: body.sessionId || null,
+    levelNumber: 1,
+    currentLevel: 1,
+    status: 'in_progress',
+    lessonsCompleted: 0,
+    pointsEarned: 0,
+    quizCorrect: 0,
+    quizIncorrect: 0,
+    metricsSnapshot: metrics,
+  });
+  return { created: true, ...saved, levelNumber: 1 };
 }
 
 export async function endSession(body = {}) {
@@ -212,35 +278,51 @@ export async function upsertLevelProgress(body = {}) {
   return { levelProgressId, studentId, levelNumber };
 }
 
-/** Relative level inside the active lesson, plus the question the student can resume. */
+function resumeFromProgressRow(row, lessonId = '') {
+  return resumeView(row, lessonId);
+}
+
+async function questionHistoryForStudent(studentId) {
+  const found = await query(
+    `SELECT attempt_id, question_id, is_correct, raw_payload, answered_at
+       FROM engagement_gaming.quiz_attempts
+      WHERE student_id = $1
+      ORDER BY answered_at DESC
+      LIMIT 20`,
+    [studentId],
+  );
+  return (found.rows || []).map((row) => {
+    const raw = row.raw_payload || {};
+    return {
+      attemptId: row.attempt_id,
+      questionId: row.question_id || null,
+      isCorrect: Boolean(row.is_correct),
+      answeredAt: row.answered_at || null,
+      explanation: raw.explanation || raw.keyExplain || '',
+      mindmap: raw.mindmap || raw.structuredMap || null,
+      mermaid: raw.mermaid || null,
+    };
+  });
+}
+
+/** Active in-progress farm row for this student. Relative level_number wins over the lesson id. */
 export async function getLessonResume(studentId, lessonId = '') {
   const idValue = String(studentId || '').trim();
   if (!idValue) return null;
   const lesson = String(lessonId || '').trim();
   const found = await query(
-    `SELECT level_number, status, points_earned, quiz_correct, quiz_incorrect, metrics_snapshot
+    `SELECT *
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND ($2 = '' OR metrics_snapshot->>'lesson_id' = $2)
+        AND status = 'in_progress'
       ORDER BY updated_at DESC
       LIMIT 1`,
-    [idValue, lesson],
+    [idValue],
   );
-  const row = found.rows?.[0];
-  if (!row) return null;
-  const metrics = row.metrics_snapshot || {};
-  const last = Number(metrics.last_completed_question_index);
-  return {
-    lessonId: metrics.lesson_id || lesson || null,
-    levelNumber: 1,
-    lastCompletedQuestionIndex: Number.isFinite(last) ? last : 0,
-    resumeQuestionIndex: Number.isFinite(last) ? last + 1 : 1,
-    pointsEarned: Number(row.points_earned) || 0,
-    quizCorrect: Number(row.quiz_correct) || 0,
-    quizIncorrect: Number(row.quiz_incorrect) || 0,
-    mindmap: metrics.mindmap || null,
-    status: row.status || 'in_progress',
-  };
+  const resume = resumeFromProgressRow(found.rows?.[0], lesson);
+  if (!resume) return null;
+  resume.questionHistory = await questionHistoryForStudent(idValue);
+  return resume;
 }
 
 /** Write question progress, points, and the mind map without treating the lesson id as the level. */
@@ -248,26 +330,41 @@ export async function saveLessonCheckpoint(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
   const lessonId = String(body.lessonId || body.lesson_id || '').trim();
-  const levelNumber = 1;
-  const lastCompleted = Math.max(
-    0,
-    Number(body.lastCompletedQuestionIndex ?? body.questionIndex) || 0,
+  const lessonOrdinal = Number(String(lessonId).match(/_(\d+)$/)?.[1]) || 0;
+  let levelNumber = Math.max(1, Number(body.levelNumber ?? body.level_number) || 1);
+  if (lessonOrdinal && levelNumber === lessonOrdinal) levelNumber = 1;
+  const existing = await query(
+    `SELECT quiz_correct, quiz_incorrect, points_earned, metrics_snapshot
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1 AND level_number = $2`,
+    [studentId, levelNumber],
   );
-  const metrics = {
-    lesson_id: lessonId,
-    relative_level: levelNumber,
-    last_completed_question_index: lastCompleted,
-    mindmap: body.mindmap || body.mindMap || null,
-  };
+  const prev = existing.rows?.[0] || {};
+  const prevMetrics = prev.metrics_snapshot || {};
+  const answered = Boolean(body.questionId);
+  const quizCorrect =
+    (Number(prev.quiz_correct) || 0) + (answered && body.isCorrect ? 1 : 0);
+  const quizIncorrect =
+    (Number(prev.quiz_incorrect) || 0) + (answered && !body.isCorrect ? 1 : 0);
+  const pointsEarned =
+    (Number(prev.points_earned) || 0) + (Number(body.pointsDelta ?? body.amount) || 0);
+  const metrics = mergeLevelMetrics(prevMetrics, {
+    ...body,
+    lessonId,
+    levelNumber,
+    progressScore: pointsEarned,
+  });
+  const lastCompleted = metrics.last_completed_question_index;
   await upsertLevelProgress({
     ...body,
     studentId,
     levelNumber,
+    currentLevel: levelNumber,
     status: body.status || 'in_progress',
     lessonsCompleted: lastCompleted,
-    quizCorrect: body.quizCorrect,
-    quizIncorrect: body.quizIncorrect,
-    pointsEarned: body.pointsEarned,
+    quizCorrect,
+    quizIncorrect,
+    pointsEarned,
     metricsSnapshot: metrics,
   });
   if (body.questionId) {
@@ -277,7 +374,11 @@ export async function saveLessonCheckpoint(body = {}) {
       levelNumber,
       lessonKey: lessonId || null,
       isCorrect: Boolean(body.isCorrect),
-      rawPayload: { mindmap: metrics.mindmap },
+      rawPayload: {
+        explanation: body.explanation || '',
+        mindmap: body.mindmap || body.mindMap || null,
+        mermaid: body.mermaid || null,
+      },
     });
   }
   const amount = Number(body.pointsDelta ?? body.amount) || 0;
@@ -290,14 +391,61 @@ export async function saveLessonCheckpoint(body = {}) {
       reason: body.reason || 'quiz',
     });
   }
-  await insertGameplayEvent({
+  if (answered) {
+    await insertGameplayEvent({
+      studentId,
+      sessionId: body.sessionId || null,
+      levelNumber,
+      eventType: body.eventType || (body.isCorrect ? 'answer_correct' : 'answer_incorrect'),
+      payload: { lessonId, lastCompletedQuestionIndex: lastCompleted },
+    });
+  }
+  return {
+    studentId,
+    lessonId,
+    levelNumber,
+    lastCompletedQuestionIndex: lastCompleted,
+    currentQuestionIndex: metrics.current_question_index,
+    farmSnapshot: metrics.farm_snapshot,
+  };
+}
+
+/** Attach a generated explanation and mind map to the latest quiz attempt. */
+export async function saveQuizExplanation(body = {}) {
+  const studentId = String(body.studentId || '').trim();
+  if (!studentId) throw new Error('studentId required');
+  const questionId = String(body.questionId || '').trim();
+  const payload = {
+    explanation: String(body.explanation || body.keyExplain || '').trim(),
+    mindmap: body.mindmap || body.structuredMap || null,
+    mermaid: body.mermaid || null,
+  };
+  const updated = await query(
+    `UPDATE engagement_gaming.quiz_attempts
+        SET raw_payload = COALESCE(raw_payload, '{}'::jsonb) || $3::jsonb
+      WHERE attempt_id = (
+        SELECT attempt_id
+          FROM engagement_gaming.quiz_attempts
+         WHERE student_id = $1
+           AND ($2 = '' OR question_id = $2)
+         ORDER BY answered_at DESC
+         LIMIT 1
+      )
+      RETURNING attempt_id`,
+    [studentId, questionId, JSON.stringify(payload)],
+  );
+  const attemptId = updated.rows?.[0]?.attempt_id;
+  if (attemptId) return { attemptId, updated: true };
+  const inserted = await insertQuizAttempt({
     studentId,
     sessionId: body.sessionId || null,
-    levelNumber,
-    eventType: body.eventType || (body.isCorrect ? 'answer_correct' : 'answer_incorrect'),
-    payload: { lessonId, lastCompletedQuestionIndex: lastCompleted },
+    levelNumber: 1,
+    lessonKey: body.lessonId || body.lesson_id || null,
+    questionId: questionId || null,
+    isCorrect: false,
+    rawPayload: payload,
   });
-  return { studentId, lessonId, levelNumber, lastCompletedQuestionIndex: lastCompleted };
+  return { ...inserted, updated: false };
 }
 
 export async function insertLessonCompletion(body = {}) {
@@ -746,14 +894,31 @@ export async function getStudentProgress(studentId) {
     Number(row.highest_completed_level) || 0,
   );
   const storedLevel = Math.max(1, Number(row.current_level) || 1);
-  const currentLevel = Math.max(storedLevel, highestCompletedLevel + 1);
+  const active = await query(
+    `SELECT *
+       FROM engagement_gaming.level_progress
+      WHERE student_id = $1
+        AND status = 'in_progress'
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [id],
+  );
+  const activeResume = resumeFromProgressRow(active.rows?.[0]);
+  const currentLevel = activeResume
+    ? activeResume.levelNumber
+    : Math.max(storedLevel, highestCompletedLevel + 1);
 
   return {
     found: true,
     studentId: row.student_id,
     displayName: row.display_name || null,
     currentLevel,
-    highestCompletedLevel,
+    highestCompletedLevel: activeResume
+      ? Math.max(0, activeResume.levelNumber - 1)
+      : highestCompletedLevel,
+    authoritative: Boolean(activeResume),
+    currentQuestionIndex: activeResume?.currentQuestionIndex ?? null,
+    progressScore: activeResume?.progressScore ?? null,
     cash: Math.max(0, Number(row.wallet_balance) || 0),
     lessonsCompleted: Number(row.lessons_completed) || 0,
     frustrationScore:
@@ -762,7 +927,8 @@ export async function getStudentProgress(studentId) {
         : null,
     frustrationLevel: row.latest_frustration_level || null,
     lastSeenAt: row.last_seen_at || null,
-    isReturning: currentLevel > 1 || highestCompletedLevel > 0,
+    isReturning:
+      Boolean(activeResume) || currentLevel > 1 || highestCompletedLevel > 0,
   };
 }
 

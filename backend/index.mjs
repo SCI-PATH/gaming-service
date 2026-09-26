@@ -146,7 +146,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/engagement/resume') {
+  if (
+    req.method === 'GET' &&
+    (url.pathname === '/api/engagement/resume' || url.pathname === '/api/game/resume')
+  ) {
     try {
       const eng = await import('./lib/engagementDb.mjs');
       if (!eng.engagementAvailable()) {
@@ -285,6 +288,9 @@ const server = http.createServer(async (req, res) => {
           break;
         case 'checkpoint':
           result = await eng.saveLessonCheckpoint(body);
+          break;
+        case 'quiz-explanation':
+          result = await eng.saveQuizExplanation(body);
           break;
         case 'lesson':
           result = await eng.insertLessonCompletion(body);

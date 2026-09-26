@@ -20,6 +20,8 @@ import { getFarmLevel } from './farmLevels.js';
 import { getAptitudePerformance } from '../storyline/aptitude/AptitudePerformanceProvider.js';
 import { hasSavedFarmProgress, loadFarmProgress, saveFarmProgress, applyRemoteFarmProgress } from './farmProgress.js';
 import { fetchEngagementStudent } from './engagementSync.js';
+import { displayFarmLevel, getChapterLaunch, isLearningPathLinked } from './chapterPath.js';
+import { fetchLessonResume } from './lessonCheckpoint.js';
 
 const APTITUDE_BASE_KEY = 'scipath_aptitude_result';
 
@@ -217,12 +219,24 @@ export function hasFarmLevelHistory() {
 }
 
 export function resolveCurrentLevelId() {
+  const saved = loadFarmProgress();
+  const fromSaved = Math.max(1, Number(saved?.currentLevelId) || 1);
+  if (isLearningPathLinked()) {
+    if (saved.levelSource === 'engagement') return fromSaved;
+    const level = displayFarmLevel(fromSaved, getChapterLaunch().lessonId);
+    if (level !== fromSaved) {
+      saveFarmProgress({
+        currentLevelId: level,
+        highestCompletedLevel: Math.max(0, level - 1),
+        levelSource: 'lesson',
+      });
+    }
+    return level;
+  }
   const records = getAllMasteryLevelRecords();
   const fromMastery = records.length
     ? Math.max(...records.map((r) => Number(r.levelId) || 1)) + 1
     : 1;
-  const saved = loadFarmProgress();
-  const fromSaved = Math.max(1, Number(saved?.currentLevelId) || 1);
   return Math.max(1, fromMastery, fromSaved);
 }
 
@@ -235,6 +249,7 @@ export async function hydrateFarmProgressFromEngagement(studentId) {
 
 /** If older sessions only have mastery records, write the farm cursor now. */
 function backfillFarmProgressCursor() {
+  if (isLearningPathLinked()) return;
   const records = getAllMasteryLevelRecords();
   if (!records.length) return;
   const highest = Math.max(...records.map((r) => Number(r.levelId) || 1));
@@ -351,7 +366,6 @@ export function resolveLobbyProgress(student, farm = {}) {
     ensureAptitudeBaselineApplied(student);
   }
 
-  const levelRecords = getAllMasteryLevelRecords();
   const hasHistory = hasFarmLevelHistory();
   const levelId = hasHistory
     ? resolveCurrentLevelId()
@@ -386,6 +400,7 @@ export function resolveLobbyProgress(student, farm = {}) {
       gameplayLabel: PERFORMANCE_LABELS[prior.band] || PERFORMANCE_LABELS.medium,
       prior,
       levelId,
+      currentLevelNumber: levelId,
     };
   }
 
@@ -403,6 +418,7 @@ export function resolveLobbyProgress(student, farm = {}) {
       gameplayLabel: PERFORMANCE_LABELS[prior.band] || PERFORMANCE_LABELS.medium,
       prior,
       levelId,
+      currentLevelNumber: levelId,
     };
   }
 
@@ -412,20 +428,12 @@ export function resolveLobbyProgress(student, farm = {}) {
     ? Math.min(100, Math.round((answered / maxQuestions) * 100))
     : 0;
 
-  const highestCompleted = Math.max(
-    levelRecords.length > 0
-      ? Math.max(...levelRecords.map((r) => Number(r.levelId) || 1))
-      : 0,
-    Number(loadFarmProgress().highestCompletedLevel) || 0,
-  );
-
   return {
     phase,
     steps: buildSteps(phase),
     progressPct,
-    progressCountLabel: highestCompleted
-      ? `Level ${highestCompleted} complete · continue Level ${levelId}`
-      : `${answered} / ${maxQuestions} questions`,
+    progressCountLabel:
+      answered > 0 ? `${answered} / ${maxQuestions} questions` : `Level ${levelId}`,
     masteryLabel: bandLabelFromPrior(prior),
     targetLabel,
     targetSource: prior.fromLevelId ? 'previous_level' : 'initial',
@@ -434,7 +442,7 @@ export function resolveLobbyProgress(student, farm = {}) {
     gameplayLabel: PERFORMANCE_LABELS[prior.band] || PERFORMANCE_LABELS.medium,
     prior,
     levelId,
-    highestCompletedLevel: highestCompleted,
+    currentLevelNumber: levelId,
   };
 }
 
@@ -506,6 +514,14 @@ export async function bootstrapStudentProgress(student) {
   }
 
   await hydrateFarmProgressFromEngagement(student.id);
+  const resume = await fetchLessonResume(student.id, getChapterLaunch().lessonId);
+  if (resume?.levelNumber >= 1) {
+    saveFarmProgress({
+      currentLevelId: Math.max(1, Number(resume.levelNumber) || 1),
+      highestCompletedLevel: Math.max(0, Number(resume.levelNumber) - 1 || 0),
+      levelSource: 'engagement',
+    });
+  }
   backfillFarmProgressCursor();
   const levelId = resolveCurrentLevelId();
   const prior = getMasteryForLevelStart(levelId);

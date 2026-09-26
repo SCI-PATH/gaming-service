@@ -18,6 +18,7 @@ function emptyProgress() {
     highestCompletedLevel: 0,
     cash: 0,
     updatedAt: 0,
+    levelSource: '',
   };
 }
 
@@ -31,6 +32,7 @@ export function loadFarmProgress() {
       highestCompletedLevel: Math.max(0, Number(data?.highestCompletedLevel) || 0),
       cash: Math.max(0, Number(data?.cash) || 0),
       updatedAt: Number(data?.updatedAt) || 0,
+      levelSource: String(data?.levelSource || ''),
     };
   } catch {
     return emptyProgress();
@@ -52,6 +54,8 @@ export function saveFarmProgress(patch = {}) {
       patch.cash != null
         ? Math.max(0, Number(patch.cash) || 0)
         : prev.cash,
+    levelSource:
+      patch.levelSource != null ? String(patch.levelSource) : prev.levelSource || '',
     updatedAt: Date.now(),
   };
   try {
@@ -81,6 +85,20 @@ export function hasSavedFarmProgress() {
 /** Merge a launch/API cursor into local progress without going backwards. */
 export function applyRemoteFarmProgress(remote = {}) {
   const local = loadFarmProgress();
+  if (remote.authoritative) {
+    return saveFarmProgress({
+      currentLevelId: Math.max(1, Number(remote.currentLevel ?? remote.currentLevelId) || 1),
+      highestCompletedLevel: Math.max(0, Number(remote.highestCompletedLevel) || 0),
+      cash:
+        remote.cash != null
+          ? Math.max(local.cash, Math.max(0, Number(remote.cash) || 0))
+          : local.cash,
+      levelSource: 'engagement',
+    });
+  }
+  if (local.levelSource === 'engagement' || local.levelSource === 'lesson') {
+    return local;
+  }
   const currentLevelId = Math.max(
     local.currentLevelId,
     Math.max(1, Number(remote.currentLevel ?? remote.currentLevelId) || 1),
@@ -103,13 +121,31 @@ export function applyRemoteFarmProgress(remote = {}) {
   return saveFarmProgress({ currentLevelId, highestCompletedLevel, cash });
 }
 
-/** Learning Path launch: play this chapter's farm level, even if local cursor is ahead. */
-export function applyChapterFarmLevel(levelId, cash = null) {
-  const currentLevelId = Math.max(1, Number(levelId) || 1);
+function lessonOrdinal(lessonId) {
+  const match = String(lessonId || '')
+    .trim()
+    .match(/^g\d+_sci_(\d+)$/i);
+  return match ? Math.max(1, Number(match[1]) || 1) : null;
+}
+
+/** Learning Path launch: play this chapter's relative farm level, not the lesson ordinal. */
+export function applyChapterFarmLevel(levelId, cash = null, lessonId = '') {
   const prev = loadFarmProgress();
+  const lessonIndex = lessonOrdinal(lessonId);
+  const requested = Math.max(1, Number(levelId) || 1);
+  const currentLevelId =
+    lessonIndex && requested === lessonIndex ? 1 : requested;
+  const inflated =
+    lessonIndex != null &&
+    (prev.currentLevelId === lessonIndex ||
+      prev.highestCompletedLevel === lessonIndex - 1 ||
+      prev.highestCompletedLevel >= lessonIndex);
   return saveFarmProgress({
     currentLevelId,
-    highestCompletedLevel: Math.max(0, prev.highestCompletedLevel, currentLevelId - 1),
+    highestCompletedLevel: inflated
+      ? Math.max(0, currentLevelId - 1)
+      : Math.max(0, prev.highestCompletedLevel, currentLevelId - 1),
     cash: cash != null ? cash : prev.cash,
+    levelSource: 'lesson',
   });
 }

@@ -1,5 +1,8 @@
-import { studentStorageKey } from './mockStudents.js';
+import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { DDA_CONFIG } from './dda.js';
+import { getChapterLaunch } from './chapterPath.js';
+import { getEngagementSessionId } from './engagementSync.js';
+import { saveLessonCheckpoint } from './lessonCheckpoint.js';
 
 const BASE_KEY = 'scipath_farm_run';
 const VERSION = 1;
@@ -27,7 +30,21 @@ export function hasFarmRun() {
   return Boolean(loadFarmRun());
 }
 
-export function saveFarmRun(snapshot) {
+function pushFarmSnapshot(record) {
+  const student = getCurrentStudent();
+  if (!student?.id || typeof fetch === 'undefined') return;
+  const launch = getChapterLaunch();
+  void saveLessonCheckpoint({
+    studentId: student.id,
+    sessionId: student.sessionId || getEngagementSessionId(),
+    lessonId: launch.lessonId,
+    chapterTitle: launch.chapterTitle,
+    farmSnapshot: record,
+    eventType: 'farm_snapshot',
+  });
+}
+
+export function saveFarmRun(snapshot, options = {}) {
   if (!snapshot || !Number(snapshot.levelId)) return null;
   const record = {
     ...snapshot,
@@ -39,6 +56,7 @@ export function saveFarmRun(snapshot) {
   } catch {
     /* quota */
   }
+  if (options.remote !== false) pushFarmSnapshot(record);
   return record;
 }
 

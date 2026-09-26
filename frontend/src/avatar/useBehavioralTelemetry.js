@@ -260,6 +260,8 @@ export function useBehavioralTelemetry({
           lessonTopic: topic,
           structuredMap: mindMap,
           studentWrongAnswer: selectedText || null,
+          questionId: questionData?.id || null,
+          explanation: mindMap?.keyExplain || mindMap?.branches?.[0]?.keyExplain || '',
           timestamp: Date.now(),
         });
       }

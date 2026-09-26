@@ -129,7 +129,7 @@ export function resolvePlatformLaunch() {
       : launch.startLevel;
 
   if (student && startLevel != null) {
-    applyChapterFarmLevel(startLevel, launch.cash);
+    applyChapterFarmLevel(startLevel, launch.cash, chapter.lessonId);
     if (chapter.rewardItem || chapter.lessonId) {
       grantLearningPathReward(startLevel, chapter.rewardItem);
     }
