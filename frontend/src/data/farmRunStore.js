@@ -30,18 +30,49 @@ export function hasFarmRun() {
   return Boolean(loadFarmRun());
 }
 
-function pushFarmSnapshot(record) {
-  const student = getCurrentStudent();
-  if (!student?.id || typeof fetch === 'undefined') return;
+function checkpointBody(record, student, extra = {}) {
   const launch = getChapterLaunch();
-  void saveLessonCheckpoint({
+  const answered = answeredFromRun(record);
+  return {
     studentId: student.id,
     sessionId: student.sessionId || getEngagementSessionId(),
     lessonId: launch.lessonId,
     chapterTitle: launch.chapterTitle,
+    status: 'in_progress',
     farmSnapshot: record,
+    lastCompletedQuestionIndex: answered,
     eventType: 'farm_snapshot',
-  });
+    ...extra,
+  };
+}
+
+function pushFarmSnapshot(record) {
+  const student = getCurrentStudent();
+  if (!student?.id || typeof fetch === 'undefined') return;
+  void saveLessonCheckpoint(checkpointBody(record, student));
+}
+
+/** Wait until the active farm, cash, and question index are stored as in_progress. */
+export async function flushFarmProgress(snapshot, student = getCurrentStudent()) {
+  if (!snapshot || !student?.id) return { ok: false };
+  const record = {
+    ...snapshot,
+    version: VERSION,
+    levelId: Math.max(1, Number(snapshot.levelId) || 1),
+    savedAt: Date.now(),
+  };
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify(record));
+  } catch {
+    /* quota */
+  }
+  return saveLessonCheckpoint(
+    checkpointBody(record, student, {
+      isFinalSave: true,
+      syncQuestionIndex: true,
+      eventType: 'logout_snapshot',
+    }),
+  );
 }
 
 export function saveFarmRun(snapshot, options = {}) {

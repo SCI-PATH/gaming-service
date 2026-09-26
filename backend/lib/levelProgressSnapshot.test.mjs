@@ -53,6 +53,31 @@ describe('level progress snapshot', () => {
     assert.equal(next.current_question_index, 3);
   });
 
+  it('stores the question index on a logout save without counting a new answer', () => {
+    const prev = mergeLevelMetrics(initialLevelMetrics({ lessonId: 'g7_sci_14' }), {
+      questionId: 'q1',
+      lastCompletedQuestionIndex: 1,
+      farmSnapshot: { levelId: 1, currentMoney: 20 },
+    });
+    const next = mergeLevelMetrics(prev, {
+      lessonId: 'g7_sci_14',
+      isFinalSave: true,
+      syncQuestionIndex: true,
+      lastCompletedQuestionIndex: 4,
+      farmSnapshot: {
+        levelId: 1,
+        currentMoney: 55,
+        playerTileX: 12,
+        plantedCrops: [{ cropType: 'corn' }],
+      },
+    });
+    assert.equal(next.last_completed_question_index, 4);
+    assert.equal(next.current_question_index, 5);
+    assert.equal(next.farm_snapshot.currentMoney, 55);
+    assert.equal(next.farm_snapshot.playerTileX, 12);
+    assert.equal(next.relative_level, 1);
+  });
+
   it('returns the farm snapshot with the relative level', () => {
     const view = resumeView({
       level_number: 1,

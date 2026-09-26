@@ -67,6 +67,7 @@ import { collectCustomerAlerts } from './data/customerMood.js';
 import {
   clearFarmRun,
   farmRunSummary,
+  flushFarmProgress,
   hasFarmRun,
   loadFarmRun,
   mergeFarmRun,
@@ -207,13 +208,18 @@ export default function App() {
         levelSource: 'engagement',
       });
       if (resume.farmSnapshot) {
-        saveFarmRun(
+        const restored = saveFarmRun(
           {
             ...resume.farmSnapshot,
             levelId: levelNumber,
+            questionsAnswered: Math.max(
+              answered,
+              Number(resume.farmSnapshot.questionsAnswered) || 0,
+            ),
           },
           { remote: false },
         );
+        setSavedRun(farmRunSummary(restored));
       }
       if (Array.isArray(resume.questionHistory) && resume.questionHistory.length) {
         mergeRemoteMindMaps(resume.questionHistory);
@@ -745,13 +751,28 @@ export default function App() {
         });
       }
       if (inFarm) emitSaveFarmRun();
-      persistLeaveProgress();
-      syncStudentLogout({
+      const run = loadFarmRun();
+      if (student?.id && run) {
+        await flushFarmProgress(
+          {
+            ...run,
+            levelId: run.levelId || farm.levelId || 1,
+            currentMoney: run.currentMoney ?? farm.earnings ?? farm.currentMoney,
+            questionsAnswered: Math.max(
+              Number(run.questionsAnswered) || 0,
+              Number(farm.questionsAnswered) || 0,
+            ),
+          },
+          student,
+        );
+      }
+      await syncStudentLogout({
         endLevel: farm.levelId,
         quizCorrect: farm.questionsAnswered || 0,
+        quizIncorrect: run?.quizIncorrect,
       });
-    } catch {
-      /* still sign out */
+    } catch (error) {
+      console.error('Error saving state during logout:', error);
     }
     logoutStudent();
     const leaveToUserManagement = Boolean(

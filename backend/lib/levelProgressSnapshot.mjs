@@ -40,15 +40,18 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
   const incomingIndex = Number(body.lastCompletedQuestionIndex ?? body.questionIndex);
   const prevLast = Number(prev.last_completed_question_index) || 0;
   const answered = Boolean(body.questionId);
-  const lastCompleted = answered
+  const syncIndex = body.syncQuestionIndex === true || body.isFinalSave === true;
+  const lastCompleted = answered || syncIndex
     ? Math.max(
         prevLast,
-        Number.isFinite(incomingIndex) && incomingIndex > 0 ? incomingIndex : prevLast,
+        Number.isFinite(incomingIndex) && incomingIndex >= 0 ? incomingIndex : prevLast,
       )
     : prevLast;
   const prevCurrent = Number(prev.current_question_index);
-  const currentQuestionIndex = answered
-    ? lastCompleted + 1
+  const currentQuestionIndex = answered || syncIndex
+    ? lastCompleted > 0
+      ? lastCompleted + 1
+      : 0
     : Number.isFinite(prevCurrent)
       ? prevCurrent
       : 0;

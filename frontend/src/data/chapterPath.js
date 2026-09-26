@@ -296,7 +296,10 @@ export function getScipathLogoutUrl() {
   return `${String(origin).replace(/\/+$/, '')}/logout`;
 }
 
-/** Same outcome as SCI-PATH / User Management Log out: revoke JWT and show login. */
+/**
+ * SCI-PATH /logout revokes the login token, then sends the browser to `/`.
+ * The farm save must finish before this navigation.
+ */
 export function openScipathLogout() {
   const href = getScipathLogoutUrl();
   if (typeof window !== 'undefined') {
