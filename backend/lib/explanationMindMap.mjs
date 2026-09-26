@@ -5,6 +5,7 @@
  */
 import { grokJson } from './grokMindMap.mjs';
 import {
+  ensureAnswerBranch,
   normalizeMindMapTree,
   parseExplanationToTree,
   renderMindMapSvg,
@@ -12,8 +13,10 @@ import {
 } from './explanationMindMapFormat.mjs';
 
 const SYSTEM = `You turn one finished science explanation into a mind map.
-Use only ideas that are already in the explanation or the question.
-Do not add facts, do not rewrite the lesson, and do not mention that you are an AI.
+Use the validated explanation and the explicit correct answer.
+Use only ideas that are already in the explanation, the question, or the correct answer.
+At least one primary branch MUST represent the correct scientific concept from the correct answer.
+Do not add unrelated facts, do not rewrite the lesson, and do not mention that you are an AI.
 Return JSON only:
 {
   "root": "core concept in 2 to 5 words",
@@ -72,6 +75,7 @@ export async function generate_mindmap_data(
   const explanation = clip(explanation_text);
   const question = clip(question_text, 400);
   const concept = clip(correct_concept, 80);
+  const correctAnswer = clip(deps.correctAnswer || deps.correct_answer || concept, 160);
   if (!explanation) {
     const err = new Error('An explanation is required before a mind map can be built.');
     err.statusCode = 400;
@@ -83,23 +87,26 @@ export async function generate_mindmap_data(
     const result = await complete({
       system: SYSTEM,
       user: [
-        concept ? `Correct concept: ${concept}` : '',
-        question ? `Original question: ${question}` : '',
-        `Explanation:\n${explanation}`,
+        correctAnswer ? `Correct answer:\n${correctAnswer}` : '',
+        question ? `Original question:\n${question}` : '',
+        `Validated explanation:\n${explanation}`,
       ]
         .filter(Boolean)
         .join('\n\n'),
       temperature: 0.1,
       maxTokens: 700,
     });
-    const tree = normalizeMindMapTree(readJsonContent(result?.content), concept);
+    const tree = ensureAnswerBranch(
+      normalizeMindMapTree(readJsonContent(result?.content), concept),
+      correctAnswer,
+    );
     if (tree) return pack(tree, result?.provider || 'grok', explanation, question, concept);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[explanation-mindmap] hierarchy model skipped: ${message}`);
   }
 
-  const tree = parseExplanationToTree(explanation, question, concept);
+  const tree = parseExplanationToTree(explanation, question, concept, correctAnswer);
   return pack(tree, 'parsed', explanation, question, concept);
 }
 
@@ -122,7 +129,11 @@ export async function generateExplanationMindMaps(body = {}, deps = {}) {
         explanation,
         item.question || item.question_text || '',
         item.concept || item.correct_concept || item.topic || '',
-        deps,
+        {
+          ...deps,
+          correctAnswer:
+            item.correct_answer || item.correctAnswer || item.concept || item.topic || '',
+        },
       ),
     );
   }

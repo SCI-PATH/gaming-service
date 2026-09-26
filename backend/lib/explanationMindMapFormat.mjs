@@ -2,6 +2,7 @@
  * Turn an already-written explanation into a mind-map tree, Mermaid, and a
  * downloadable page. This file does not call a model or read textbooks.
  */
+import { validateExplanation } from './scienceMindMapPrompt.mjs';
 
 function clean(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -30,7 +31,26 @@ function node(label, children = []) {
  * Local hierarchy when the model is not used.
  * Root is the correct concept. Each explanation sentence becomes a branch.
  */
-export function parseExplanationToTree(explanationText, questionText = '', correctConcept = '') {
+export function ensureAnswerBranch(tree, correctAnswer = '') {
+  if (!tree?.children?.length) return tree;
+  const concept = clean(correctAnswer);
+  if (!concept) return tree;
+  const blob = tree.children
+    .map((child) => {
+      const nested = (child.children || []).map((item) => item.label).join(' ');
+      return `${child.label} ${nested}`;
+    })
+    .join(' ');
+  if (validateExplanation(blob, concept).ok) return tree;
+  const label = mindMapLabel(concept, 6);
+  if (!label || label === 'Science idea') return tree;
+  return {
+    ...tree,
+    children: [{ label, children: [] }, ...tree.children].slice(0, 5),
+  };
+}
+
+export function parseExplanationToTree(explanationText, questionText = '', correctConcept = '', correctAnswer = '') {
   const explanation = clean(explanationText);
   const question = clean(questionText);
   const concept = clean(correctConcept);
@@ -66,7 +86,7 @@ export function parseExplanationToTree(explanationText, questionText = '', corre
   if (!children.length) {
     children.push(node(explanation || 'Key idea'));
   }
-  return { label: root, children };
+  return ensureAnswerBranch({ label: root, children }, correctAnswer || correctConcept);
 }
 
 function firstWords(text, count) {

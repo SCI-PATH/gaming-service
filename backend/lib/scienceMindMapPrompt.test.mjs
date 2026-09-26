@@ -4,12 +4,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  ensureExplanationTeachesAnswer,
   formatContext,
   isNonExplanation,
   plainParagraph,
   presentationBand,
   systemPrompt,
   userPrompt,
+  validateExplanation,
 } from './scienceMindMapPrompt.mjs';
 
 describe('presentationBand', () => {
@@ -30,6 +32,10 @@ describe('prompts', () => {
     assert.match(system, /encouraging, supportive, and educational/i);
     assert.match(system, /why their answer was incorrect/i);
     assert.match(system, /correct concept/i);
+    assert.match(system, /MUST explicitly mention the key terms/i);
+    const correctFirst = system.toLowerCase().indexOf('sentence 1 must state the correct answer');
+    const wrongSecond = system.toLowerCase().indexOf('why their answer was incorrect');
+    assert.ok(correctFirst >= 0 && wrongSecond > correctFirst);
     assert.match(system, /ONLY the provided textbook context/i);
     assert.match(system, /plain text/i);
     assert.match(system, /presentation/i);
@@ -74,6 +80,27 @@ describe('prompts', () => {
       plainParagraph('**Sure, here is the idea:** Green plants make food using sunlight.'),
       'Green plants make food using sunlight.',
     );
+  });
+
+  it('accepts an explanation that teaches the correct answer and repairs one that does not', () => {
+    assert.equal(
+      validateExplanation(
+        'A magnet has a north pole and a south pole.',
+        'north and south',
+      ).ok,
+      true,
+    );
+    assert.equal(
+      validateExplanation('Magnets are useful on a hike.', 'north and south').ok,
+      false,
+    );
+    const repaired = ensureExplanationTeachesAnswer(
+      'Magnets are useful on a hike.',
+      'north and south',
+      'each end of a magnet is a pole',
+    );
+    assert.equal(repaired.repaired, true);
+    assert.match(repaired.paragraph, /The correct answer is north and south because each end of a magnet is a pole/i);
   });
 
   it('formats RAG chunks with citations the model may reuse', () => {

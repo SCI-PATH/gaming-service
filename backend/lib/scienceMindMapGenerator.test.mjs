@@ -120,6 +120,22 @@ describe('generateScienceMindMap', () => {
     assert.equal(/\[_____\]/.test(map.paragraph), false);
   });
 
+  it('prefers a textbook sentence that contains the correct answer', () => {
+    const map = mindMapFromChunks({
+      question: 'What are the poles of a magnet?',
+      correctAnswer: 'north and south',
+      chunks: [
+        {
+          chunk_id: 'hike',
+          textbook: 'Grade 6 Science',
+          chapter: 'Magnets',
+          text: 'A magnet can be used to find direction on a long hike. A magnet has a north pole and a south pole.',
+        },
+      ],
+    });
+    assert.match(map.paragraph, /^A magnet has a north pole and a south pole/i);
+  });
+
   it('extracts clean textbook facts from messy PDF chunks', () => {
     const map = mindMapFromChunks({
       question: 'Plant leaves come in various shapes. Photosynthesis occurs in the leaves.',
@@ -138,6 +154,49 @@ describe('generateScienceMindMap', () => {
     assert.equal(/science \|/i.test(blob), false);
     assert.match(map.paragraph, /photosynthesis/i);
     assert.equal(map.branches.length, 0);
+  });
+
+  it('adds the correct answer when the model paragraph never teaches it', async () => {
+    const result = await generateScienceMindMap(
+      {
+        grade: 6,
+        question: 'What are the poles of a magnet?',
+        studentAnswer: 'east and west',
+        correctAnswer: 'north and south',
+        studentId: 'maya',
+      },
+      {
+        queryChunks: async (body) => {
+          assert.equal(body.correct_answer, 'north and south');
+          return {
+            original_question: 'What are the poles of a magnet?',
+            retrieval_query: 'poles magnet',
+            chunks: [CHUNK],
+            enough: true,
+            confidence: 0.2,
+            used_cross_grade: false,
+            collection_count: 4,
+          };
+        },
+        readExistingFrustration: async () => ({
+          frustrationScore: 90,
+          frustrationLevel: 'VERY_HIGH',
+          missing: false,
+        }),
+        grokJson: async () => ({
+          content: grokPayload({
+            title: 'Magnet poles',
+            central_concept: 'Magnet poles',
+            paragraph: 'You picked east and west, but those directions describe sunrise, not a magnet.',
+          }),
+          provider: 'xai',
+          model: 'grok-test',
+        }),
+      },
+    );
+    assert.equal(result.status, 'success');
+    assert.match(result.mind_map.paragraph, /north and south/i);
+    assert.match(result.mind_map.paragraph, /The correct answer is north and south/i);
   });
 
   it('builds a textbook map from Chroma chunks when Grok fails', async () => {

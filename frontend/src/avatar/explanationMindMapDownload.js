@@ -33,7 +33,10 @@ function localMaps(branches) {
       if (!explanation) return null;
       const question = String(branch.question || branch.prompt || '').trim();
       const concept = String(branch.topic || branch.label || '').trim();
-      const tree = parseExplanationToTree(explanation, question, concept);
+      const correctAnswer = String(
+        branch.correctAnswer || branch.correct_answer || concept,
+      ).trim();
+      const tree = parseExplanationToTree(explanation, question, concept, correctAnswer);
       return {
         explanation,
         question,
@@ -82,6 +85,7 @@ export async function downloadExplanationMindMap(branches = []) {
     explanation: branch.keyExplain || branch.key_concept_explain,
     question: branch.question || branch.prompt || '',
     concept: branch.topic || branch.label || '',
+    correct_answer: branch.correctAnswer || branch.correct_answer || '',
   }));
   let maps = null;
   try {

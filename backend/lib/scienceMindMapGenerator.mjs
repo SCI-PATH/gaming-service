@@ -6,12 +6,15 @@ import { queryChunks } from './chromaService.mjs';
 import { resolveChapter } from './curriculumChapters.mjs';
 import { grokJson } from './grokMindMap.mjs';
 import {
+  answerKeywords,
+  ensureExplanationTeachesAnswer,
   formatContext,
   isNonExplanation,
   plainParagraph,
   presentationBand,
   systemPrompt,
   userPrompt,
+  validateExplanation,
 } from './scienceMindMapPrompt.mjs';
 import { validateMindMap } from './scienceMindMapValidator.mjs';
 
@@ -92,11 +95,59 @@ function paragraphLimit(band) {
   return 480;
 }
 
-function applyPresentationCap(mindMap, band) {
+function conceptSummaryFor(correctAnswer, chunks = [], concept = '') {
+  const keywords = answerKeywords(correctAnswer);
+  for (const chunk of chunks) {
+    const sentences = String(chunk?.text || '').split(/(?<=[.!?])\s+/);
+    for (const sentence of sentences) {
+      const clean = sentence.replace(/\s+/g, ' ').trim();
+      if (clean.length < 24) continue;
+      if (keywords.some((token) => clean.toLowerCase().includes(token))) {
+        return clipSentence(clean, 90).replace(/[.!?]+$/, '');
+      }
+    }
+  }
+  const title = String(concept || '').replace(/\s+/g, ' ').trim();
+  if (title && !/^science$/i.test(title) && title.toLowerCase() !== String(correctAnswer || '').toLowerCase()) {
+    return title;
+  }
+  return '';
+}
+
+/** Keep the sentence that teaches the answer when the frustration cap is short. */
+function clipPreferringAnswer(text, limit, correctAnswer) {
+  const sentences = String(text || '')
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  if (!sentences.length) return '';
+  const teaches = (sentence) => validateExplanation(sentence, correctAnswer).ok;
+  const ordered = [
+    ...sentences.filter(teaches),
+    ...sentences.filter((sentence) => !teaches(sentence)),
+  ];
+  let out = '';
+  for (const sentence of ordered) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length <= limit) out = next;
+    else break;
+  }
+  if (out) return out;
+  return clipSentence(ordered[0], limit);
+}
+
+function applyPresentationCap(mindMap, band, { correctAnswer = '', chunks = [] } = {}) {
   if (!mindMap || mindMap.status !== 'success') return mindMap;
-  const paragraph = clipSentence(
-    plainParagraph(mindMap.paragraph || mindMap.summary),
+  const raw = plainParagraph(mindMap.paragraph || mindMap.summary);
+  const taught = ensureExplanationTeachesAnswer(
+    raw,
+    correctAnswer,
+    conceptSummaryFor(correctAnswer, chunks, mindMap.central_concept || mindMap.title),
+  );
+  const paragraph = clipPreferringAnswer(
+    taught.paragraph,
     paragraphLimit(band),
+    correctAnswer,
   );
   return {
     ...mindMap,
@@ -104,6 +155,7 @@ function applyPresentationCap(mindMap, band) {
     summary: paragraph,
     one_sentence_summary: clipSentence(mindMap.one_sentence_summary || paragraph, 180),
     branches: [],
+    explanation_repaired: taught.repaired,
   };
 }
 
@@ -133,10 +185,11 @@ function keywords(text) {
 }
 
 /** Build a textbook paragraph from Chroma hits when Grok cannot finish. */
-export function mindMapFromChunks({ question, chunks = [] } = {}) {
+export function mindMapFromChunks({ question, chunks = [], correctAnswer = '' } = {}) {
   const pool = (chunks || []).filter((chunk) => String(chunk.text || '').trim());
   if (!pool.length) return null;
   const qTerms = new Set(keywords(question));
+  const answerTerms = new Set(answerKeywords(correctAnswer));
   const scored = [];
   for (const chunk of pool.slice(0, 8)) {
     const sentences = String(chunk.text)
@@ -146,11 +199,17 @@ export function mindMapFromChunks({ question, chunks = [] } = {}) {
       .filter(isUsableSentence);
     for (const sentence of sentences) {
       const terms = keywords(sentence);
-      const overlap = terms.reduce((n, term) => n + (qTerms.has(term) ? 1 : 0), 0);
-      scored.push({ sentence, chunk, overlap });
+      let answerHits = 0;
+      let questionHits = 0;
+      for (const term of terms) {
+        if (answerTerms.has(term)) answerHits += 1;
+        else if (qTerms.has(term)) questionHits += 1;
+      }
+      const overlap = answerHits * 3 + questionHits;
+      scored.push({ sentence, chunk, overlap, answerHits });
     }
   }
-  scored.sort((a, b) => b.overlap - a.overlap || a.sentence.length - b.sentence.length);
+  scored.sort((a, b) => b.answerHits - a.answerHits || b.overlap - a.overlap || a.sentence.length - b.sentence.length);
   const seen = new Set();
   const picked = [];
   for (const row of scored) {
@@ -221,6 +280,7 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     retrieval = await query({
       grade,
       question: retrievalQuestion,
+      ...(correctAnswer ? { correct_answer: correctAnswer } : {}),
       top_k: Math.max(4, Math.min(12, Number(body.top_k) || 8)),
       ...(chapterId ? { chapter_id: chapterId } : {}),
       ...(topicId ? { topic_id: topicId } : {}),
@@ -246,7 +306,10 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     ok: true,
     status: 'success',
     message: null,
-    mind_map: applyPresentationCap(mindMap, frustration.frustrationLevel),
+    mind_map: applyPresentationCap(mindMap, frustration.frustrationLevel, {
+      correctAnswer,
+      chunks: retrieval.chunks,
+    }),
     sources: sourcesFromChunks(retrieval.chunks),
     grade,
     question,
@@ -264,7 +327,11 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
   });
 
   const fromChunks = () => {
-    const extracted = mindMapFromChunks({ question, chunks: retrieval.chunks });
+    const extracted = mindMapFromChunks({
+      question,
+      chunks: retrieval.chunks,
+      correctAnswer,
+    });
     return extracted ? successFrom(extracted, { provider: 'chroma-extractive', model: 'chunks' }) : null;
   };
 
@@ -285,8 +352,18 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     });
     raw = await complete({ system, user, temperature: 0.2, maxTokens: 400 });
     parsed = validateMindMap(raw.content);
-    if (isNonExplanation(parsed?.paragraph, { question, correctAnswer })) {
-      throw new Error('model repeated the question or the answer key');
+    const taught = ensureExplanationTeachesAnswer(
+      parsed?.paragraph,
+      correctAnswer,
+      conceptSummaryFor(correctAnswer, retrieval.chunks, parsed?.central_concept),
+    );
+    parsed = {
+      ...parsed,
+      paragraph: taught.paragraph,
+      summary: taught.paragraph,
+    };
+    if (isNonExplanation(parsed.paragraph, { question, correctAnswer })) {
+      throw new Error('model repeated the question');
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

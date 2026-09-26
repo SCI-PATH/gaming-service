@@ -49,6 +49,32 @@ describe('generate_mindmap_data', () => {
     assert.match(map.svg, /Temperature/);
   });
 
+  it('adds a primary branch when the model omits the correct answer', async () => {
+    const map = await generate_mindmap_data(
+      EXPLANATION,
+      'What are the poles of a magnet?',
+      'Magnets',
+      {
+        correctAnswer: 'north and south',
+        grokJson: async (payload) => {
+          assert.match(payload.system, /primary branch MUST represent the correct scientific concept/i);
+          assert.match(payload.user, /Correct answer:\nnorth and south/);
+          return {
+            provider: 'groq',
+            content: JSON.stringify({
+              root: 'Magnets',
+              nodes: [
+                { label: 'Heat removed', children: [{ label: 'Temperature decreases' }] },
+              ],
+            }),
+          };
+        },
+      },
+    );
+    assert.match(map.mermaid, /north and south/i);
+    assert.match(map.mermaid, /Heat removed/);
+  });
+
   it('builds mermaid from the explanation when the model is unavailable', async () => {
     const map = await generate_mindmap_data(
       EXPLANATION,

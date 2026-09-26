@@ -540,8 +540,45 @@ def _where(
     return {"$and": clauses}
 
 
+def _answer_terms(correct_answer: str) -> list[str]:
+    tokens = re.findall(r"[a-z0-9]+", (correct_answer or "").lower())
+    kept = []
+    for token in tokens:
+        if token in ("true", "false") or (len(token) > 2 and token not in STOP):
+            if token not in kept:
+                kept.append(token)
+    return kept
+
+
+def prefer_answer_chunks(hits: list[dict], answer_terms: list[str]) -> list[dict]:
+    """Re-rank retrieved chunks so correct-answer terms outweigh the question wording."""
+    if not answer_terms:
+        return list(hits or [])
+    query = " ".join(answer_terms)
+    ranked = []
+    seen = set()
+    for hit in hits or []:
+        chunk_id = hit.get("chunk_id")
+        if not hit.get("text") or chunk_id in seen:
+            continue
+        seen.add(chunk_id)
+        coverage = _keyword_score(query, hit["text"])
+        if coverage <= 0:
+            continue
+        hybrid = float(hit.get("hybrid_score") or 0)
+        ranked.append({
+            **hit,
+            "answer_keyword_score": coverage,
+            "hybrid_score": min(1.0, 0.40 * hybrid + 0.60 * coverage),
+        })
+    ranked.sort(key=lambda row: (row["answer_keyword_score"], row["hybrid_score"]), reverse=True)
+    return ranked
+
+
 def query_chunks(payload: dict) -> dict:
     processed = process_question(payload.get("question") or "")
+    correct_answer = str(payload.get("correct_answer") or payload.get("correctAnswer") or "").strip()
+    answer_terms = _answer_terms(correct_answer)
     grade = int(payload["grade"])
     top_k = int(payload.get("top_k") or 8)
     threshold = float(payload.get("min_relevance") if payload.get("min_relevance") is not None else RAG_MIN_RELEVANCE)
@@ -562,9 +599,10 @@ def query_chunks(payload: dict) -> dict:
             "topic_id": topic_id,
         }
 
-    def search(where, n, role):
+    def search(where, n, role, query_text=None):
+        query_text = query_text or processed["retrieval_query"]
         kwargs = {
-            "query_texts": [processed["retrieval_query"]],
+            "query_texts": [query_text],
             "n_results": max(1, n),
             "include": ["documents", "metadatas", "distances"],
         }
@@ -590,7 +628,7 @@ def query_chunks(payload: dict) -> dict:
             similarity = max(0.0, min(1.0, 1.0 - float(distance))) if isinstance(distance, (int, float)) else 0.0
             if _is_exercise(text):
                 continue
-            keyword = _keyword_score(processed["retrieval_query"], text)
+            keyword = _keyword_score(query_text, text)
             hybrid = 0.72 * similarity + 0.28 * keyword
             hits.append(
                 {
@@ -647,8 +685,34 @@ def query_chunks(payload: dict) -> dict:
             and (h.get("chapter_id") or h.get("topic_id"))
         ]
     confidence = selected[0]["hybrid_score"] if selected else 0.0
+    answer_weighted = False
+    if answer_terms and (not selected or confidence < threshold):
+        answer_query = " ".join(
+            answer_terms + [term for term in processed["keywords"] if term not in answer_terms][:6]
+        )
+        answer_hits = search(
+            _where(grade, "Science", chapter_id, topic_id),
+            fetch_n,
+            "answer",
+            answer_query,
+        )
+        preferred = prefer_answer_chunks(answer_hits + primary + supporting, answer_terms)
+        if scoped:
+            preferred = [
+                hit
+                for hit in preferred
+                if (not chapter_id or not hit.get("chapter_id") or hit.get("chapter_id") == chapter_id)
+                and (not topic_id or not hit.get("topic_id") or hit.get("topic_id") == topic_id)
+                and (hit.get("chapter_id") or hit.get("topic_id"))
+            ]
+        if preferred:
+            selected = preferred[:top_k]
+            confidence = selected[0]["hybrid_score"]
+            answer_weighted = True
     return {
         **processed,
+        "correct_answer": correct_answer,
+        "answer_weighted": answer_weighted,
         "chunks": selected,
         "confidence": confidence,
         "enough": bool(selected) and confidence >= threshold,
