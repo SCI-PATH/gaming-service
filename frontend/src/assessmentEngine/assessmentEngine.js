@@ -22,7 +22,7 @@ function envBase(key) {
 export const ASSESSMENT_ENGINE = Object.freeze({
   SAME_ORIGIN_BASE: '/assessment-api',
   DEPLOYED_BASE_URL:
-    envBase('VITE_ASSESSMENT_DEPLOYED_BASE') || 'http://43.204.6.115:8004',
+    envBase('VITE_ASSESSMENT_DEPLOYED_BASE') || 'http://3.104.28.68:8004',
   LOCAL_BASE_URL:
     envBase('VITE_ASSESSMENT_LOCAL_BASE') || 'http://localhost:8004',
   API_PREFIX: '/api/v1/assessment-engine',

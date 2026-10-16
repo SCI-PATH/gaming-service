@@ -89,6 +89,8 @@ export async function query(text, params = []) {
     throw err;
   }
 
+  lastError = null;
+
   // Array-mode rows → objects when fields present
   if (data?.fields && Array.isArray(data.rows)) {
     const names = data.fields.map((f) => f.name);

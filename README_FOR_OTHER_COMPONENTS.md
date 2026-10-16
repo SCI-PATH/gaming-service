@@ -36,7 +36,7 @@ Your component GETs frustration by studentId
 
 ## 2. Deploy the frontend on Render
 
-The farm UI is a Vite static build. Sage / leaderboard / mind maps still run on the **gaming backend** (`http://3.6.20.31:8002` today). Render rewrites `/api/*` to that host so the HTTPS site can talk to it.
+The farm UI is a Vite static build. Sage / leaderboard / mind maps still run on the **gaming backend** (`http://54.253.38.67:8002` today). Render rewrites `/api/*` to that host so the HTTPS site can talk to it.
 
 ### Blueprint (this repo)
 
@@ -58,11 +58,11 @@ The farm UI is a Vite static build. Sage / leaderboard / mind maps still run on 
 
 | Source | Destination | Action |
 | --- | --- | --- |
-| `/api/*` | `http://3.6.20.31:8002/api/*` | Rewrite |
-| `/assessment-api/*` | `http://43.204.6.115:8004/*` | Rewrite |
+| `/api/*` | `http://54.253.38.67:8002/api/*` | Rewrite |
+| `/assessment-api/*` | `http://3.104.28.68:8004/*` | Rewrite |
 | `/*` | `/index.html` | Rewrite |
 
-If Sage chat streams fail through the static rewrite, create a **Web Service** instead: same build command, start command `npm run preview -- --host 0.0.0.0 --port $PORT`, and set `GAMING_API_PROXY_TARGET=http://3.6.20.31:8002`.
+If Sage chat streams fail through the static rewrite, create a **Web Service** instead: same build command, start command `npm run preview -- --host 0.0.0.0 --port $PORT`, and set `GAMING_API_PROXY_TARGET=http://54.253.38.67:8002`.
 
 Point your platform’s “Launch Game” URL at the Render host:
 

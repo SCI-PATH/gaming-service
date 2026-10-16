@@ -16,10 +16,10 @@ services:
     routes:
       - type: rewrite
         source: /api/*
-        destination: http://3.6.20.31:8002/api/*
+        destination: http://54.253.38.67:8002/api/*
       - type: rewrite
         source: /assessment-api/*
-        destination: http://43.204.6.115:8004/*
+        destination: http://3.104.28.68:8004/*
       - type: rewrite
         source: /*
         destination: /index.html

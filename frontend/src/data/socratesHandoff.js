@@ -14,7 +14,7 @@ import {
   syncFrustration,
 } from './engagementSync.js';
 
-const DEFAULT_ANALYTICS_API = 'http://52.66.167.213:8003';
+const DEFAULT_ANALYTICS_API = 'http://54.253.36.7:8003';
 const DEFAULT_SCIPATH_APP = 'http://127.0.0.1:3000';
 
 function envUrl(key, fallback) {

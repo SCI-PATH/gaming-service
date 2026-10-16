@@ -12,13 +12,13 @@ export default defineConfig(({ mode }) => {
   const assessmentTarget = (
     env.ASSESSMENT_API_PROXY_TARGET ||
     env.VITE_ASSESSMENT_DEPLOYED_BASE ||
-    'http://43.204.6.115:8004'
+    'http://3.104.28.68:8004'
   ).replace(/\/+$/, '');
 
   const gamingTarget = (
     env.GAMING_API_PROXY_TARGET ||
     env.VITE_GAMING_API_BASE ||
-    'http://3.6.20.31:8002'
+    'http://54.253.38.67:8002'
   ).replace(/\/+$/, '');
 
   const proxy = {

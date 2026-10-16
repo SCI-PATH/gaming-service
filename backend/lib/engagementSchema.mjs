@@ -96,6 +96,17 @@ async function tryCreateSchema(schema) {
   await query(`CREATE SCHEMA IF NOT EXISTS ${ident(schema)}`);
 }
 
+/** CREATE TABLE IF NOT EXISTS still needs CREATE even when the table exists. */
+async function canCreateInSchema(schema, prefixedPublic = false) {
+  const name = prefixedPublic ? 'public' : schema;
+  const result = await query(
+    `SELECT has_schema_privilege(current_user, $1, 'CREATE') AS ok`,
+    [name],
+  );
+  const ok = result.rows?.[0]?.ok;
+  return ok === true || ok === 't';
+}
+
 async function tryGrantPreferred() {
   const s = ident(PREFERRED);
   const statements = [
@@ -337,8 +348,10 @@ async function adoptSchema(schema, prefixedPublic = false) {
       if (!exists && isPermissionDenied(err)) return false;
     }
   }
+  let tablesReady = false;
   try {
     await tryProbe(schema, prefixedPublic);
+    tablesReady = true;
   } catch (err) {
     lastSchemaError = err instanceof Error ? err.message : String(err);
     const canBoot =
@@ -347,17 +360,25 @@ async function adoptSchema(schema, prefixedPublic = false) {
     try {
       await bootstrapCoreTables(schema, prefixedPublic);
       await tryProbe(schema, prefixedPublic);
+      tablesReady = true;
     } catch (bootErr) {
       lastSchemaError =
         bootErr instanceof Error ? bootErr.message : String(bootErr);
       return false;
     }
   }
-  try {
-    await bootstrapCoreTables(schema, prefixedPublic);
-  } catch (err) {
-    lastSchemaError = err instanceof Error ? err.message : String(err);
-    /* keep schema if core tables already work; extra CREATE may be denied */
+  if (tablesReady) {
+    const creatable = await canCreateInSchema(schema, prefixedPublic).catch(
+      () => false,
+    );
+    if (creatable) {
+      try {
+        await bootstrapCoreTables(schema, prefixedPublic);
+      } catch (err) {
+        lastSchemaError = err instanceof Error ? err.message : String(err);
+        /* keep schema if core tables already work; extra CREATE may be denied */
+      }
+    }
   }
   resolved = schema;
   usePublicPrefix = prefixedPublic;
