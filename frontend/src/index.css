@@ -2060,6 +2060,24 @@ body {
   aspect-ratio: 100 / 75;
 }
 
+button.farm-map-bed {
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.farm-map-bed.is-active {
+  outline: 2px solid #fff8e0;
+}
+
+.farm-map-bed.is-completed {
+  opacity: 0.55;
+}
+
+.farm-map-bed.is-selected {
+  outline: 2px solid #1a1208;
+}
+
 .farm-map-bed {
   position: absolute;
   display: grid;

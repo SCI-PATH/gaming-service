@@ -37,6 +37,10 @@ export function saveLessonCheckpoint(body = {}) {
       levelNumber: 1,
     }),
   })
-    .then((res) => res.json().catch(() => ({})))
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) return { ok: false, ...data };
+      return { ok: true, ...data };
+    })
     .catch(() => ({ ok: false }));
 }

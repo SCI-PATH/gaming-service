@@ -223,6 +223,7 @@ export function createCustomerFromPool(itemIds, difficulty, unitValue = 10) {
     createdAt: Date.now(),
     patienceAtStart: maxPatience,
     patienceAtEnd: null,
+    patienceDrainPerTick: difficulty?.patienceDrainPerTick || 2,
     speech: '🙂 I am waiting for my order.',
     queueIndex: 0,
   };
@@ -400,10 +401,18 @@ export function syncWorldShopSellableIds(shop, sellableItemIds = []) {
 export function adaptWorldShopFrustration(shop, frustrationScore, frustrationLevel = null) {
   if (!shop || shop.closed) return shop;
   const score = clamp(Math.round(Number(frustrationScore) || 0), 0, 100);
+  const previous = Number(shop.frustrationScore) || 0;
   const nextDiff = getShopDifficulty(score, frustrationLevel);
-  const prevMax = shop.difficulty.maxCustomers;
   shop.frustrationScore = score;
   shop.difficulty = nextDiff;
+  if (score > previous) {
+    for (const customer of livingCustomers(shop)) {
+      customer.patience = Math.min(
+        customer.maxPatience || 100,
+        customer.patience + 8,
+      );
+    }
+  }
 
   // Trim excess waiters gently when frustration rises (supportive)
   let living = livingCustomers(shop);
@@ -646,7 +655,7 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
   }
   shop.lastTickAt = now;
 
-  const drain = shop.difficulty.patienceDrainPerTick || 2;
+  const fallbackDrain = shop.difficulty.patienceDrainPerTick || 2;
   const events = [];
   const left = [];
 
@@ -658,6 +667,7 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
       continue;
     }
     const before = c.patience;
+    const drain = Number(c.patienceDrainPerTick) > 0 ? c.patienceDrainPerTick : fallbackDrain;
     c.patience = Math.max(0, c.patience - drain);
     if (c.patience !== before) {
       events.push(

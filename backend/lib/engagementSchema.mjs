@@ -336,6 +336,10 @@ async function bootstrapCoreTables(schema, prefixedPublic = false) {
       payload JSONB NOT NULL DEFAULT '{}'::jsonb
     )
   `);
+  const quiz = t('quiz_attempts');
+  await query(`ALTER TABLE ${quiz} ADD COLUMN IF NOT EXISTS frustration_score NUMERIC(5,2)`);
+  await query(`ALTER TABLE ${quiz} ADD COLUMN IF NOT EXISTS frustration_level TEXT`);
+  await query(`ALTER TABLE ${quiz} ADD COLUMN IF NOT EXISTS attempt_number INTEGER`);
 }
 
 async function adoptSchema(schema, prefixedPublic = false) {

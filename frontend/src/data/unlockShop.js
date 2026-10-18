@@ -10,6 +10,8 @@ import { DDA_BANDS, DDA_CONFIG, classifyPerformance } from './dda.js';
 import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { normalizePerformanceCategory, PERFORMANCE_CATEGORIES } from './performanceCategories.js';
 import { FRUSTRATION_LEVELS, frustrationShopPriceFactor, buildFrustrationAdaptation } from './frustrationModel.js';
+import { readShopOffer } from './questionFrustration.js';
+import { priceFromAverageFrustration, averageLevelFrustration } from './shopPricePolicy.js';
 import { syncUnlock } from './engagementSync.js';
 import { shouldPlaceOwnedUnlock } from './unlockPlacement.js';
 
@@ -596,6 +598,16 @@ export function frustrationPriceLabel(perf = {}) {
 /**
  * Build priced catalog for the shop UI.
  */
+export function revokeUnlock(itemId) {
+  const id = String(itemId || '').trim();
+  if (!id) return readOwned();
+  const store = readStore();
+  store.owned = store.owned.filter((ownedId) => ownedId !== id);
+  if (store.meta) delete store.meta[id];
+  writeStore(store);
+  return store.owned;
+}
+
 export function buildShopCatalog(perf = {}, ownedIds = null) {
   const owned = ownedIds ?? getOwnedUnlockIds();
   const band = shopBandFromPerformance(perf);
@@ -604,11 +616,21 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
     Number(perf.frustrationScore),
     perf.frustrationLevel,
   );
+  const frozen =
+    perf.frozenPrices ||
+    readShopOffer(perf.levelId, perf.sessionId)?.prices ||
+    null;
+  const avg = averageLevelFrustration(perf.questionFrustrationScores);
 
   const items = UNLOCK_ITEMS.filter((item) => !item.shopHidden)
     .map((item) => ({
       ...item,
-      price: priceForItem(item, perf),
+      price:
+        frozen?.[item.id] ??
+        (avg != null
+          ? priceFromAverageFrustration(item.basePrice, avg)
+          : priceForItem(item, perf)),
+      basePrice: item.basePrice,
       owned: owned.includes(item.id),
     }))
     .sort((a, b) => {

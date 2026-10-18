@@ -109,6 +109,15 @@ export async function startSession(body = {}) {
   const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || 0;
   let startLevel = Math.max(1, Number(body.startLevel ?? body.start_level) || 1);
   if (lessonOrdinal && startLevel === lessonOrdinal) startLevel = 1;
+  if (body.freshSession === true) startLevel = 1;
+  if (body.freshSession === true) {
+    await query(
+      `UPDATE engagement_gaming.students
+          SET current_level = 1, updated_at = NOW()
+        WHERE student_id = $1`,
+      [studentId],
+    );
+  }
   await query(
     `INSERT INTO engagement_gaming.game_sessions (
        session_id, student_id, started_at, start_level, client_version, device_info
@@ -889,7 +898,50 @@ export async function insertLessonCompletion(body = {}) {
 export async function insertQuizAttempt(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
+  const { normalizeResponseMs, scoreServerFrustration } = await import('./quizAttemptGuard.mjs');
+  const timing = normalizeResponseMs(body.responseMs ?? body.response_ms);
+  if (!timing.ok) throw new Error(timing.error);
+  const questionId = body.questionId || null;
+  const retryIndex = Math.max(0, Number(body.retryIndex) || 0);
+  const sessionId = body.sessionId || null;
+  if (questionId && sessionId) {
+    const existing = await query(
+      `SELECT attempt_id, response_ms, raw_payload
+         FROM engagement_gaming.quiz_attempts
+        WHERE student_id = $1 AND session_id = $2 AND question_id = $3 AND retry_index = $4
+        LIMIT 1`,
+      [studentId, sessionId, String(questionId), retryIndex],
+    );
+    const prior = existing.rows?.[0];
+    if (prior) {
+      const payload = prior.raw_payload || {};
+      return {
+        attemptId: prior.attempt_id,
+        duplicate: true,
+        responseMs: prior.response_ms,
+        frustrationScore: payload.frustrationScore ?? null,
+        frustrationLevel: payload.frustrationLevel ?? null,
+      };
+    }
+  }
+  const scored = scoreServerFrustration(body, timing.responseMs);
   const attemptId = String(body.attemptId || id('qa'));
+  const rawPayload = {
+    ...(body.rawPayload && typeof body.rawPayload === 'object' ? body.rawPayload : {}),
+    responseTimeMs: timing.responseMs,
+    frustrationScore: scored.score,
+    frustrationLevel: scored.level,
+    frustrationAudit: {
+      parts: scored.parts,
+      signals: scored.signals,
+      dominant: scored.dominant,
+      metrics: scored.metrics,
+    },
+    questionId,
+    levelNumber: body.levelNumber ?? null,
+    attemptNumber: body.attemptNumber ?? null,
+    retryIndex,
+  };
   await query(
     `INSERT INTO engagement_gaming.quiz_attempts (
        attempt_id, student_id, session_id, level_number, lesson_key,
@@ -915,14 +967,28 @@ export async function insertQuizAttempt(body = {}) {
       Boolean(body.isCorrect),
       body.selectedOption ?? null,
       body.correctOption ?? null,
-      body.responseMs ?? null,
+      timing.responseMs,
       Boolean(body.hintUsed),
-      body.retryIndex ?? 0,
+      retryIndex,
       body.pointsDelta ?? 0,
-      JSON.stringify(body.rawPayload || body),
+      JSON.stringify(rawPayload),
     ],
   );
-  return { attemptId };
+  await upsertStudent({
+    studentId,
+    studentName: body.studentName || body.displayName || studentId,
+    displayName: body.displayName || body.studentName || studentId,
+    frustrationScore: scored.score,
+    frustrationLevel: scored.level,
+  }).catch(() => {});
+  return {
+    attemptId,
+    duplicate: false,
+    responseMs: timing.responseMs,
+    frustrationScore: scored.score,
+    frustrationLevel: scored.level,
+    frustrationAudit: rawPayload.frustrationAudit,
+  };
 }
 
 function catalogCategory(raw) {
@@ -988,6 +1054,15 @@ export async function insertStudentUnlock(body = {}) {
     [studentId, itemId],
   );
   const isNew = !existing.rows?.[0];
+  if (!isNew) {
+    return {
+      ok: true,
+      duplicate: true,
+      itemId,
+      studentUnlockId: existing.rows[0].student_unlock_id,
+      pricePaid: 0,
+    };
+  }
   const chapterOrdinal = Number(
     body.purchaseChapterOrdinal ?? body.placement?.purchaseChapterOrdinal,
   );
@@ -1008,7 +1083,8 @@ export async function insertStudentUnlock(body = {}) {
   }
 
   const studentUnlockId = String(body.studentUnlockId || rowUuid());
-  const pricePaid = Math.max(0, Number(body.pricePaid) || 0);
+  const charged = await quoteShopPrice(studentId, itemId, body.purchasedAtLevel);
+  const pricePaid = charged.price;
   const insertSql = `INSERT INTO engagement_gaming.student_unlocks (
        student_unlock_id, student_id, item_id, session_id,
        purchased_at_level, price_paid, is_equipped, placement
@@ -1048,8 +1124,16 @@ export async function insertStudentUnlock(body = {}) {
     [studentId],
   );
 
-  if (isNew && pricePaid > 0) {
-    const balance = await applyReportedFarmCash(studentId, body.walletBalance ?? body.currentMoney);
+  if (pricePaid > 0) {
+    const balance = await deductStoredCash(studentId, pricePaid);
+    if (balance == null) {
+      await query(
+        `DELETE FROM engagement_gaming.student_unlocks
+          WHERE student_id = $1 AND item_id = $2`,
+        [studentId, itemId],
+      );
+      throw new Error('insufficient_cash');
+    }
     await insertPointsLedger({
       studentId,
       studentName: body.studentName || body.displayName || studentId,
@@ -1067,7 +1151,72 @@ export async function insertStudentUnlock(body = {}) {
     }).catch(() => {});
   }
 
-  return { studentUnlockId, itemId, placement };
+  return { ok: true, studentUnlockId, itemId, placement, pricePaid, duplicate: false };
+}
+
+async function quoteShopPrice(studentId, itemId, levelNumber) {
+  const { basePriceForItem, priceFromAverageFrustration, averageLevelFrustration } =
+    await import('../../frontend/src/data/shopPricePolicy.js');
+  const base = basePriceForItem(itemId);
+  if (base == null) throw new Error('unknown_shop_item');
+  const level = Math.max(1, Number(levelNumber) || 1);
+  const rows = await query(
+    `SELECT raw_payload->>'frustrationScore' AS score
+       FROM engagement_gaming.quiz_attempts
+      WHERE student_id = $1 AND level_number = $2`,
+    [studentId, level],
+  );
+  const avg = averageLevelFrustration((rows.rows || []).map((row) => Number(row.score)));
+  return { price: priceFromAverageFrustration(base, avg), avgFrustration: avg, basePrice: base };
+}
+
+async function deductStoredCash(studentId, price) {
+  const found = await query(
+    `SELECT s.wallet_balance,
+            lp.level_progress_id,
+            lp.metrics_snapshot
+       FROM engagement_gaming.students s
+       LEFT JOIN LATERAL (
+         SELECT level_progress_id, metrics_snapshot
+           FROM engagement_gaming.level_progress
+          WHERE student_id = s.student_id
+          ORDER BY updated_at DESC
+          LIMIT 1
+       ) lp ON TRUE
+      WHERE s.student_id = $1`,
+    [studentId],
+  );
+  const row = found.rows?.[0];
+  if (!row) return null;
+  const farm = row.metrics_snapshot?.farm_snapshot;
+  const farmCash = Number(farm?.currentMoney);
+  const wallet = Number(row.wallet_balance) || 0;
+  const usingFarm = farm && Number.isFinite(farmCash);
+  const available = usingFarm ? farmCash : wallet;
+  if (available < price) return null;
+  const next = available - price;
+  if (usingFarm) {
+    const nextFarm = { ...farm, currentMoney: next, earnings: next };
+    await query(
+      `UPDATE engagement_gaming.level_progress
+          SET metrics_snapshot = jsonb_set(
+                COALESCE(metrics_snapshot, '{}'::jsonb),
+                '{farm_snapshot}',
+                $2::jsonb,
+                true
+              ),
+              updated_at = NOW()
+        WHERE level_progress_id = $1`,
+      [row.level_progress_id, JSON.stringify(nextFarm)],
+    );
+  }
+  await query(
+    `UPDATE engagement_gaming.students
+        SET wallet_balance = $2, updated_at = NOW()
+      WHERE student_id = $1`,
+    [studentId, next],
+  );
+  return next;
 }
 
 /** Store the cash the farm already deducted, without subtracting the price a second time. */

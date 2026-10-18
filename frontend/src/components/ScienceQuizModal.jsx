@@ -14,6 +14,7 @@ import {
 import { getChapterLaunch } from '../data/chapterPath.js';
 import { saveLessonCheckpoint } from '../data/lessonCheckpoint.js';
 import { getCurrentStudent } from '../data/mockStudents.js';
+import { createActiveResponseClock } from '../data/activeResponseClock.js';
 
 const TYPE_LABELS = {
   MCQ: 'Multiple choice',
@@ -219,7 +220,7 @@ export default function ScienceQuizModal({
   onHintUsed = null,
   onOptionSwitch = null,
 }) {
-  const openedAtRef = useRef(Date.now());
+  const clockRef = useRef(null);
   const finishedRef = useRef(false);
   const onCloseRef = useRef(onClose);
   const onAnswerAttemptRef = useRef(onAnswerAttempt);
@@ -227,7 +228,7 @@ export default function ScienceQuizModal({
   const blanksRef = useRef([]);
   const [result, setResult] = useState(null);
   const [gradeError, setGradeError] = useState(null);
-  const [secondsLeft, setSecondsLeft] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [busy, setBusy] = useState(false);
   const [shortText, setShortText] = useState('');
@@ -248,7 +249,6 @@ export default function ScienceQuizModal({
   const isCleanSweep = mode === 'clean_sweep';
 
   const assist = gameplayAssist || {};
-  const answerTimerMs = Number(assist.answerTimerMs) || 0;
   const hintLevel = assist.hintLevel || 'limited';
   const hintText = questionData?.hint || null;
   const blankCount = Math.max(1, Number(questionData?.blanks) || 2);
@@ -272,18 +272,36 @@ export default function ScienceQuizModal({
   }, [questionData?.id, remoteGrade, questionType]);
 
   useEffect(() => {
-    openedAtRef.current = Date.now();
     finishedRef.current = false;
     setResult(null);
     setGradeError(null);
     setBusy(false);
+    setElapsedSec(0);
     setShowHint(hintLevel === 'more' && Boolean(hintText));
     setShortText('');
     shortTextRef.current = '';
     const nextBlanks = Array.from({ length: blankCount }, () => '');
     setBlanks(nextBlanks);
     blanksRef.current = nextBlanks;
+    if (loading || !questionData) {
+      clockRef.current = null;
+      return undefined;
+    }
+    const clock = createActiveResponseClock();
+    clockRef.current = clock;
+    const onVis = () => {
+      if (document.hidden) clock.pause();
+      else clock.resume();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const tick = window.setInterval(() => {
+      if (finishedRef.current) return;
+      setElapsedSec(Math.floor(clock.elapsed() / 1000));
+    }, 500);
     return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.clearInterval(tick);
+      if (!clock.isStopped()) clock.pause();
       if (closeTimerRef.current) {
         window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = 0;
@@ -297,6 +315,7 @@ export default function ScienceQuizModal({
     hintLevel,
     hintText,
     blankCount,
+    loading,
   ]);
 
   useEffect(() => {
@@ -340,8 +359,9 @@ export default function ScienceQuizModal({
     timedOut,
   }) => {
     if (finishedRef.current) return;
+    const responseTimeMs = clockRef.current?.stop();
+    if (responseTimeMs == null || responseTimeMs < 0) return;
     finishedRef.current = true;
-    const responseTimeMs = Math.max(0, Date.now() - openedAtRef.current);
     let isCorrect = Boolean(isCorrectLocal);
 
     if (remoteGrade && questionData?.id) {
@@ -355,7 +375,6 @@ export default function ScienceQuizModal({
         timedOut: Boolean(timedOut),
         pending: true,
       });
-      finish(Boolean(isCorrectLocal), responseTimeMs);
       try {
         const graded = await submitAssessmentAnswer({
           questionId: questionData.id,
@@ -364,6 +383,7 @@ export default function ScienceQuizModal({
         });
         if (!graded?.ok && !timedOut) {
           finishedRef.current = false;
+          clockRef.current?.reopen();
           setBusy(false);
           setGradeError(
             'Could not check that answer. Check the Assessment Engine and try again.',
@@ -460,6 +480,7 @@ export default function ScienceQuizModal({
       } catch {
         if (!timedOut) {
           finishedRef.current = false;
+          clockRef.current?.reopen();
           setBusy(false);
           setGradeError(
             'Could not check that answer. Check the Assessment Engine and try again.',
@@ -529,47 +550,19 @@ export default function ScienceQuizModal({
   gradeAndFinishRef.current = gradeAndFinish;
 
   useEffect(() => {
-    if (loading || !answerTimerMs || !questionData) return undefined;
-
-    setSecondsLeft(Math.ceil(answerTimerMs / 1000));
-    const tick = window.setInterval(() => {
-      if (finishedRef.current) return;
-      const elapsed = Date.now() - openedAtRef.current;
-      const left = Math.max(0, Math.ceil((answerTimerMs - elapsed) / 1000));
-      setSecondsLeft(left);
-      if (elapsed < answerTimerMs) return;
-
-      const typedAnswer =
-        questionType === 'MultiBlank'
-          ? blanksRef.current
-          : questionType === 'ShortAnswer'
-            ? shortTextRef.current
-            : '';
-      void gradeAndFinishRef.current?.({
-        isCorrectLocal: false,
-        selectedIndex: -1,
-        selectedText: serializeStudentAnswer(typedAnswer) || null,
-        studentAnswer: typedAnswer,
-        timedOut: true,
-      });
-    }, 250);
-
-    return () => window.clearInterval(tick);
-  }, [answerTimerMs, questionData, cropId, mode, loading, questionType]);
-
-  useEffect(() => {
     if (loading || !hintText || hintLevel === 'minimal' || hintLevel === 'more') {
       return undefined;
     }
-    if (hintLevel === 'limited' && answerTimerMs > 0) {
+    if (hintLevel === 'limited') {
       const mid = window.setTimeout(() => {
+        if (finishedRef.current) return;
         setShowHint(true);
         onHintUsed?.();
-      }, Math.floor(answerTimerMs * 0.45));
+      }, 12000);
       return () => window.clearTimeout(mid);
     }
     return undefined;
-  }, [hintText, hintLevel, answerTimerMs, questionData?.id, onHintUsed, loading]);
+  }, [hintText, hintLevel, questionData?.id, onHintUsed, loading]);
 
   const cropLabel = String(cropName || '').trim().toLowerCase();
 
@@ -804,13 +797,9 @@ export default function ScienceQuizModal({
           {questionData.rp != null && (
             <p className="escape-quiz-topic">+{questionData.rp} RP</p>
           )}
-          {answerTimerMs > 0 && secondsLeft != null && !result && (
-            <p
-              className={`science-quiz-timer ${
-                secondsLeft <= 5 ? 'is-urgent' : ''
-              }`}
-            >
-              {secondsLeft}s
+          {!result && (
+            <p className="science-quiz-timer" aria-label="Time spent on this question">
+              {elapsedSec}s
             </p>
           )}
           {isLoad && (

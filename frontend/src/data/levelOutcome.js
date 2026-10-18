@@ -22,9 +22,17 @@ export async function submitLevelOutcome(body = {}) {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.ok !== false && data?.outcome) return data;
+    if (res.ok && data?.ok !== false && data?.outcome) {
+      return { ...data, persisted: true };
+    }
+    if (data?.skipped || data?.error === 'DATABASE_URL_not_configured') {
+      return { persisted: false, skipped: true, error: data.error };
+    }
+    if (!res.ok || data?.ok === false) {
+      return { ok: false, persisted: false, error: data?.error || 'save_failed' };
+    }
   } catch {
-    /* fall through to the local matrix */
+    return { ok: false, persisted: false, error: 'save_failed' };
   }
   const local = decideFarmLessonProgression({
     frustrationScore: payload.frustrationScore,
@@ -37,6 +45,7 @@ export async function submitLevelOutcome(body = {}) {
   const levelNumber = Math.max(1, Number(payload.levelNumber) || 1);
   return {
     ok: false,
+    persisted: false,
     offline: true,
     outcome: retryLesson ? 'REMEDIATION_REQUIRED' : 'LEVEL_PASSED',
     retryLesson,

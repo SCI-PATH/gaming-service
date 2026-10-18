@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FARM_SHOP_ZONE, PLANT_PLOTS } from '../data/plantPlots.js';
 import { ANIMAL_PADDOCK } from '../data/animalChallenges.js';
 import { CLEANING_YARD } from '../data/cleaningChallenges.js';
+import { buildLevelMapMarkers } from '../data/levelMapMarkers.js';
 import {
   ForestGameBridge,
   FARM_EVENTS,
@@ -23,6 +24,8 @@ export default function FarmMapPanel({
   cropsHarvestedTotal = 0,
   performanceBand = 'medium',
   cropName = 'crops',
+  levelId = 1,
+  activeCropIndex = 0,
   compact = false,
   questStep = null,
   challenges = [],
@@ -41,6 +44,15 @@ export default function FarmMapPanel({
   const [enemies, setEnemies] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const mapMarkers = buildLevelMapMarkers(levelId, {
+    activeCropIndex,
+    activeCropId: cropName,
+  });
+  const bedById = Object.fromEntries(mapMarkers.beds.map((bed) => [bed.id, bed]));
+  const placeById = Object.fromEntries(mapMarkers.places.map((place) => [place.id, place]));
+  const selected =
+    bedById[selectedId] || placeById[selectedId] || null;
 
   useEffect(() => {
     const apply = (payload = {}) => {
@@ -90,7 +102,7 @@ export default function FarmMapPanel({
   const py = pos.y;
   const tileX = Math.floor(px);
   const tileY = Math.floor(py);
-  const nearest = nearestTarget(px, py);
+  const nearest = nearestTarget(px, py, mapMarkers);
   if (!quizOpen) heldAlertsRef.current = customerAlerts;
   const liveAlerts = buildMapAlerts(
     enemies,
@@ -162,20 +174,43 @@ export default function FarmMapPanel({
           </svg>
 
           {PLANT_PLOTS.map((plot) => {
+            const marker = bedById[plot.id];
+            if (!marker) return null;
             const cx = ((plot.x + plot.w / 2) / width) * 100;
             const cy = ((plot.y + plot.h / 2) / height) * 100;
             const isClosest = nearest?.id === plot.id;
             return (
-              <div
+              <button
                 key={plot.id}
-                className={`farm-map-bed${isClosest ? ' is-closest' : ''}`}
+                type="button"
+                className={`farm-map-bed is-${marker.status}${isClosest ? ' is-closest' : ''}${
+                  selectedId === plot.id ? ' is-selected' : ''
+                }`}
                 style={{ left: `${cx}%`, top: `${cy}%` }}
-                title={`${plot.label} — plant here`}
+                title={`${marker.label}. ${marker.instruction}`}
+                onClick={() => setSelectedId(plot.id)}
               >
-                <span>PLANT</span>
-              </div>
+                <span>{marker.shortLabel}</span>
+              </button>
             );
           })}
+
+          {placeById[ANIMAL_PADDOCK.id] ? (
+            <button
+              type="button"
+              className={`farm-map-bed is-${placeById[ANIMAL_PADDOCK.id].status}${
+                selectedId === ANIMAL_PADDOCK.id ? ' is-selected' : ''
+              }`}
+              style={{
+                left: `${((ANIMAL_PADDOCK.x + ANIMAL_PADDOCK.w / 2) / width) * 100}%`,
+                top: `${((ANIMAL_PADDOCK.y + ANIMAL_PADDOCK.h / 2) / height) * 100}%`,
+              }}
+              title={placeById[ANIMAL_PADDOCK.id].instruction}
+              onClick={() => setSelectedId(ANIMAL_PADDOCK.id)}
+            >
+              <span>{placeById[ANIMAL_PADDOCK.id].shortLabel}</span>
+            </button>
+          ) : null}
 
           <div
             className={`farm-map-shop${
@@ -185,9 +220,10 @@ export default function FarmMapPanel({
               left: `${((FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) / width) * 100}%`,
               top: `${((FARM_SHOP_ZONE.y + FARM_SHOP_ZONE.h / 2) / height) * 100}%`,
             }}
-            title="Farm Shop — press E to unload"
+            title={placeById[FARM_SHOP_ZONE.id]?.instruction || 'Farm Shop'}
+            onClick={() => setSelectedId(FARM_SHOP_ZONE.id)}
           >
-            <span>SHOP</span>
+            <span>{placeById[FARM_SHOP_ZONE.id]?.shortLabel || 'Shop'}</span>
           </div>
 
           <div
@@ -198,9 +234,10 @@ export default function FarmMapPanel({
               left: `${((CLEANING_YARD.x + CLEANING_YARD.w / 2) / width) * 100}%`,
               top: `${((CLEANING_YARD.y + CLEANING_YARD.h / 2) / height) * 100}%`,
             }}
-            title="Cleaning Yard — sweep mess here"
+            title={placeById[CLEANING_YARD.id]?.instruction || 'Cleaning yard'}
+            onClick={() => setSelectedId(CLEANING_YARD.id)}
           >
-            <span>CLEAN</span>
+            <span>{placeById[CLEANING_YARD.id]?.shortLabel || 'Clean'}</span>
           </div>
 
           {challenges
@@ -302,7 +339,7 @@ export default function FarmMapPanel({
           <i className={`farm-map-key farm-map-key-you${quizOpen ? '' : ' is-blinking'}`} /> You
         </li>
         <li>
-          <i className="farm-map-key farm-map-key-bed" /> Plant
+          <i className="farm-map-key farm-map-key-bed" /> This level&apos;s beds
         </li>
         <li>
           <i className="farm-map-key farm-map-key-animal" /> Animals
@@ -323,6 +360,13 @@ export default function FarmMapPanel({
           <i className="farm-map-key farm-map-key-customer" /> Customer
         </li>
       </ul>
+
+      {selected ? (
+        <div className="farm-map-crop-target" aria-live="polite">
+          <strong>{selected.label}</strong>
+          <span>{selected.instruction}</span>
+        </div>
+      ) : null}
 
       <div className="farm-map-crop-target" aria-live="polite">
         <strong>Vegetable challenge</strong>
@@ -410,9 +454,20 @@ function movePin(pinEl, guideEl, x, y, mapW, mapH) {
   }
 }
 
-function nearestTarget(tileX, tileY) {
+function nearestTarget(tileX, tileY, mapMarkers = null) {
+  const beds = mapMarkers?.beds?.length
+    ? mapMarkers.beds
+    : PLANT_PLOTS.map((p) => ({
+        id: p.id,
+        label: p.label,
+        x: p.x,
+        y: p.y,
+        w: p.w,
+        h: p.h,
+      }));
+  const animal = mapMarkers?.places?.find((place) => place.kind === 'animal');
   const targets = [
-    ...PLANT_PLOTS.map((p) => ({
+    ...beds.map((p) => ({
       id: p.id,
       label: p.label,
       cx: p.x + p.w / 2,
@@ -421,7 +476,7 @@ function nearestTarget(tileX, tileY) {
     })),
     {
       id: ANIMAL_PADDOCK.id,
-      label: ANIMAL_PADDOCK.label,
+      label: animal?.label || ANIMAL_PADDOCK.label,
       cx: ANIMAL_PADDOCK.x + ANIMAL_PADDOCK.w / 2,
       cy: ANIMAL_PADDOCK.y + ANIMAL_PADDOCK.h / 2,
       kind: 'animal',

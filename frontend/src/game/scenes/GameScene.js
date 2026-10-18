@@ -65,7 +65,19 @@ import {
   getChallengeProgress,
   shopBandFromPerformance,
   pickUnlockWorldSlot,
+  revokeUnlock,
 } from '../../data/unlockShop.js';
+import { syncQuizAttempt, syncUnlock, getEngagementSessionId } from '../../data/engagementSync.js';
+import {
+  claimAttemptKey,
+  freezeShopOffer,
+  releaseAttemptKey,
+  scoreQuestionAttempt,
+  smoothFrustration,
+  validateResponseMs,
+} from '../../data/questionFrustration.js';
+import { frustrationLevelFromScore } from '../../data/frustrationModel.js';
+import { basePriceForItem } from '../../data/shopPricePolicy.js';
 import {
   buildActiveChallenges,
   getNextChallengeStep,
@@ -216,6 +228,9 @@ export default class GameScene extends Phaser.Scene {
     this._uiOwnedWorldPause = false;
     this.frustrationLevel = 'low';
     this.frustrationScore = 0;
+    this._smoothedFrustration = null;
+    this.questionFrustrationScores = [];
+    this._purchaseInFlight = new Set();
     this.worldShop = null;
     this.farmShopUnloadOpen = false;
     this._farmShopLeftSession = 0;
@@ -251,6 +266,7 @@ export default class GameScene extends Phaser.Scene {
     this.attemptScores = [];
     this.responseTimesMs = [];
     this.levelAttempts = [];
+    this.questionFrustrationScores = this.questionFrustrationScores || [];
     this.answerResults = [];
     this.quizOpenedAt = 0;
     this.retryCount = 0;
@@ -525,6 +541,15 @@ export default class GameScene extends Phaser.Scene {
       maxQuestions: DDA_CONFIG.maxQuestions,
       frustrationScore: this.frustrationScore || 0,
       frustrationLevel: this.frustrationLevel || 'low',
+      smoothedFrustration: this._smoothedFrustration ?? null,
+      questionFrustrationScores: [...(this.questionFrustrationScores || [])],
+      levelAttempts: (this.levelAttempts || []).map((att) => ({
+        wasCorrect: Boolean(att.wasCorrect),
+        responseTimeMs: att.responseTimeMs,
+        questionId: att.questionId || null,
+        retryIndex: att.retryIndex || 0,
+        frustrationScore: att.frustrationScore ?? null,
+      })),
       assessmentSession: exportAssessmentSession(),
       attemptScores: [...(this.attemptScores || [])],
       responseTimesMs: [...(this.responseTimesMs || [])],
@@ -600,6 +625,15 @@ export default class GameScene extends Phaser.Scene {
     this.retryCount = Number(snap.retryCount) || 0;
     this.frustrationScore = Number(snap.frustrationScore) || this.frustrationScore || 0;
     this.frustrationLevel = snap.frustrationLevel || this.frustrationLevel || 'low';
+    this._smoothedFrustration = Number.isFinite(Number(snap.smoothedFrustration))
+      ? Number(snap.smoothedFrustration)
+      : this.frustrationScore;
+    this.questionFrustrationScores = Array.isArray(snap.questionFrustrationScores)
+      ? [...snap.questionFrustrationScores]
+      : [];
+    if (Array.isArray(snap.levelAttempts) && snap.levelAttempts.length) {
+      this.levelAttempts = snap.levelAttempts.map((att) => ({ ...att }));
+    }
     if (snap.assessmentSession) {
       restoreAssessmentSession(snap.assessmentSession);
     }
@@ -750,6 +784,7 @@ export default class GameScene extends Phaser.Scene {
     this.attemptScores = [];
     this.responseTimesMs = [];
     this.levelAttempts = [];
+    this.questionFrustrationScores = [];
     this.answerResults = [];
     this.retryCount = 0;
     this.levelStartedAtMs = Date.now();
@@ -1349,8 +1384,13 @@ export default class GameScene extends Phaser.Scene {
     };
     this._onStudentState = (payload) => {
       if (!this.sys?.isActive()) return;
-      this.frustrationLevel = payload?.frustrationLevel || 'low';
-      this.frustrationScore = Number(payload?.frustrationScore) || 0;
+      const incoming = Number(payload?.frustrationScore) || 0;
+      this._smoothedFrustration = smoothFrustration(this._smoothedFrustration, incoming);
+      this.frustrationScore = this._smoothedFrustration;
+      this.frustrationLevel =
+        frustrationLevelFromScore(this.frustrationScore) ||
+        payload?.frustrationLevel ||
+        'low';
       this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
       if (this.worldShop && !this.worldShop.closed) {
         adaptWorldShopFrustration(
@@ -1848,13 +1888,61 @@ export default class GameScene extends Phaser.Scene {
    * Record this level's quiz attempt (saved for next level's time target).
    * Time target stays fixed from level-start mastery / previous avg.
    */
+  levelMetricsForAttempt(nextAttempt) {
+    const attempts = [...(this.levelAttempts || []), nextAttempt];
+    let correct = 0;
+    let incorrect = 0;
+    let consecutive = 0;
+    for (const att of attempts) {
+      if (att.wasCorrect) {
+        correct += 1;
+        consecutive = 0;
+      } else {
+        incorrect += 1;
+        consecutive += 1;
+      }
+    }
+    const times = attempts
+      .map((att) => Number(att.responseTimeMs) || 0)
+      .filter((ms) => ms > 0);
+    const avgSec = times.length
+      ? times.reduce((sum, ms) => sum + ms, 0) / times.length / 1000
+      : 0;
+    const prior = times.slice(0, -1);
+    const baselineSec = prior.length
+      ? prior.reduce((sum, ms) => sum + ms, 0) / prior.length / 1000
+      : 0;
+    return {
+      correct_answers: correct,
+      incorrect_answers: incorrect,
+      consecutive_fails: consecutive,
+      time_per_question_avg_sec: avgSec,
+      previous_avg_answer_time_sec: baselineSec,
+      hint_count: this.hintCount || 0,
+      enemy_hits: this.enemyHits || 0,
+      retries: this.retryCount || 0,
+      recent_correct_streak: consecutive === 0 ? correct : 0,
+    };
+  }
+
   recordQuizAttempt(wasCorrect, responseTimeMs = 0) {
-    const ms =
-      responseTimeMs > 0
-        ? responseTimeMs
-        : this.quizOpenedAt
-          ? Date.now() - this.quizOpenedAt
-          : DDA_CONFIG.moderateMs;
+    const ms = validateResponseMs(responseTimeMs);
+    if (ms == null) {
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'quiz_attempt_rejected',
+        reason: 'invalid_response_time',
+      });
+      return;
+    }
+    const questionId = this.lastQuestionId || null;
+    const retryIndex = (this.levelAttempts || []).filter(
+      (att) => att.questionId && att.questionId === questionId,
+    ).length;
+    const attemptNumber = (this.levelAttempts?.length || 0) + 1;
+    const attemptKey = questionId
+      ? `${getEngagementSessionId() || 'local'}:${this.levelId}:${questionId}:${retryIndex}`
+      : `${getEngagementSessionId() || 'local'}:${this.levelId}:anon:${attemptNumber}`;
+    if (!claimAttemptKey(attemptKey)) return;
 
     if (wasCorrect) this.quizCorrect += 1;
     else {
@@ -1862,8 +1950,58 @@ export default class GameScene extends Phaser.Scene {
       this.retryCount += 1;
     }
 
-    const attempt = { wasCorrect, responseTimeMs: ms };
+    const attempt = {
+      wasCorrect,
+      responseTimeMs: ms,
+      questionId,
+      retryIndex,
+      attemptNumber,
+      studentId: null,
+      levelId: this.levelId,
+    };
+    const scored = scoreQuestionAttempt({
+      wasCorrect,
+      responseTimeMs: ms,
+      metrics: this.levelMetricsForAttempt(attempt),
+      previousSmoothed: this._smoothedFrustration,
+    });
+    if (!scored.ok) {
+      releaseAttemptKey(attemptKey);
+      if (wasCorrect) this.quizCorrect = Math.max(0, this.quizCorrect - 1);
+      else {
+        this.quizIncorrect = Math.max(0, this.quizIncorrect - 1);
+        this.retryCount = Math.max(0, this.retryCount - 1);
+      }
+      return;
+    }
+    attempt.frustrationScore = scored.score;
+    attempt.frustrationLevel = scored.level;
+    attempt.frustrationAudit = scored.audit;
     this.levelAttempts.push(attempt);
+    this.questionFrustrationScores = this.questionFrustrationScores || [];
+    this.questionFrustrationScores.push(scored.score);
+    this._smoothedFrustration = scored.smoothedScore;
+    this.frustrationScore = scored.smoothedScore;
+    this.frustrationLevel = scored.smoothedLevel;
+    this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
+    if (this.worldShop && !this.worldShop.closed) {
+      adaptWorldShopFrustration(
+        this.worldShop,
+        this.frustrationScore,
+        this.frustrationLevel,
+      );
+    }
+    void syncQuizAttempt({
+      levelNumber: this.levelId,
+      questionId,
+      wasCorrect,
+      responseTimeMs: ms,
+      retryIndex,
+      attemptNumber: attempt.attemptNumber,
+      farmAction: this.pendingQuizMode,
+      metrics: scored.audit.metrics,
+      frustrationAudit: scored.audit,
+    });
     this.answerResults.push({
       wasCorrect: Boolean(wasCorrect),
       responseTimeMs: ms,
@@ -1932,7 +2070,7 @@ export default class GameScene extends Phaser.Scene {
       performanceBand: this.performanceBand,
       avgResponseMs,
     });
-    return {
+    const shop = {
       attemptScores,
       avgResponseMs,
       performanceScore,
@@ -1943,7 +2081,22 @@ export default class GameScene extends Phaser.Scene {
       levelRestarts: this.levelRestarts || 0,
       frustrationScore: this.frustrationScore || 0,
       frustrationLevel: this.frustrationLevel || 'low',
+      questionFrustrationScores: [...(this.questionFrustrationScores || [])],
+      levelId: this.levelId,
+      sessionId: getEngagementSessionId(),
     };
+    const offer = freezeShopOffer({
+      levelId: this.levelId,
+      sessionId: shop.sessionId,
+      scores: shop.questionFrustrationScores,
+    });
+    shop.avgFrustrationScore = offer.avgFrustration;
+    shop.frozenPrices = offer.prices;
+    if (offer.avgFrustration != null) {
+      shop.frustrationScore = offer.avgFrustration;
+      shop.frustrationLevel = frustrationLevelFromScore(offer.avgFrustration);
+    }
+    return shop;
   }
 
   persistFarmResumeCursor() {
@@ -2551,6 +2704,10 @@ export default class GameScene extends Phaser.Scene {
     };
 
     const shopPerf = this.buildShopPerformance();
+    this._shopOffer = {
+      prices: shopPerf.frozenPrices || null,
+      avgFrustration: shopPerf.avgFrustrationScore ?? null,
+    };
     const payload = {
       earnings: this.currentMoney,
       currentMoney: this.currentMoney,
@@ -3804,6 +3961,8 @@ export default class GameScene extends Phaser.Scene {
     const itemId = payload.itemId;
     const item = getUnlockItem(itemId);
     if (!item) return;
+    if (!this._purchaseInFlight) this._purchaseInFlight = new Set();
+    if (this._purchaseInFlight.has(itemId)) return;
 
     if (isUnlocked(itemId)) {
       if (this.shouldShowOwnedUnlock(itemId)) this.placeUnlockSprite(itemId);
@@ -3816,7 +3975,9 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
-    const price = Math.max(0, Number(payload.price) || 0);
+    const base = basePriceForItem(itemId) ?? item.basePrice;
+    const frozen = this._shopOffer?.prices?.[itemId];
+    const price = Math.max(0, Number(frozen ?? payload.price) || 0);
     if (this.currentMoney < price) {
       ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
         type: 'unlock_blocked',
@@ -3828,6 +3989,8 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
+    this._purchaseInFlight.add(itemId);
+    const previousMoney = this.currentMoney;
     this.currentMoney -= price;
     this.syncMoneyAliases();
     const launch = getChapterLaunch();
@@ -3838,18 +4001,48 @@ export default class GameScene extends Phaser.Scene {
       purchaseChapterOrdinal: lessonIndexFromLessonId(launch.lessonId) || 0,
       source: 'shop',
       walletBalance: this.currentMoney,
+      skipSync: true,
     });
-    // Show on the farm starting next level — no unlock-item quests
-    this.audioItem?.play();
-
-    ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-      type: 'unlock_purchased',
+    void syncUnlock(
       itemId,
-      price,
-      earnings: this.currentMoney,
-      currentMoney: this.currentMoney,
+      {
+        itemName: item.name,
+        category: item.category,
+        basePrice: base,
+        pricePaid: price,
+        purchasedAtLevel: this.levelId,
+        purchaseChapterId: launch.lessonId || '',
+        purchaseChapterOrdinal: lessonIndexFromLessonId(launch.lessonId) || 0,
+        source: 'shop',
+        walletBalance: this.currentMoney,
+        avgFrustration: this._shopOffer?.avgFrustration ?? null,
+      },
+    ).then((saved) => {
+      this._purchaseInFlight.delete(itemId);
+      if (saved && saved.ok === false && !saved.skipped && !saved.duplicate) {
+        this.currentMoney = previousMoney;
+        this.syncMoneyAliases();
+        revokeUnlock(itemId);
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'unlock_blocked',
+          reason: saved.error || 'save_failed',
+          itemId,
+          price,
+          cash: this.currentMoney,
+        });
+        this.emitFarmState();
+        return;
+      }
+      this.audioItem?.play();
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'unlock_purchased',
+        itemId,
+        price: saved?.pricePaid ?? price,
+        earnings: this.currentMoney,
+        currentMoney: this.currentMoney,
+      });
+      this.emitFarmState();
     });
-    this.emitFarmState();
   }
 
   focusGameCanvas() {

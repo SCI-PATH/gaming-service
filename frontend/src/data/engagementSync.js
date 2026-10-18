@@ -9,6 +9,22 @@ import { rememberLevelDuration } from '../game/levelClock.js';
 const SESSION_KEY = 'scipath_engagement_session_id';
 const STUDENT_KEY = 'scipath_engagement_student_id';
 
+const pendingWrites = new Set();
+
+function trackPending(promise) {
+  const job = Promise.resolve(promise).finally(() => pendingWrites.delete(job));
+  pendingWrites.add(job);
+  return job;
+}
+
+/** Wait for quiz, frustration, and purchase writes started during this session. */
+export async function flushPendingEngagement() {
+  const jobs = [...pendingWrites];
+  const results = await Promise.all(jobs);
+  const failed = results.filter((row) => row && row.ok === false && !row.skipped);
+  return { ok: failed.length === 0, failed, results };
+}
+
 function newId(prefix) {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -141,6 +157,7 @@ export async function syncStudentLogin(student, options = {}) {
     studentName: student.displayName || student.id,
     displayName: student.displayName || student.id,
     startLevel: Math.max(1, Number(options.startLevel) || 1),
+    freshSession: options.freshSession === true,
     lessonId,
     chapterTitle,
     clientVersion: 'gaming-service-web',
@@ -216,6 +233,56 @@ export async function syncLevelPerformance(levelId, payload = {}, student = null
   }
 
   return level;
+}
+
+export async function syncQuizAttempt(attempt = {}, student = null) {
+  const studentId = student?.id || getEngagementStudentId();
+  if (!studentId) return { ok: false, error: 'student_required' };
+  const sessionId = getEngagementSessionId();
+  const job = post('/api/engagement/quiz', {
+    studentId,
+    sessionId,
+    levelNumber: Number(attempt.levelNumber) || 1,
+    questionId: attempt.questionId || null,
+    conceptTags: attempt.concepts || attempt.conceptTags || [],
+    farmAction: attempt.farmAction || attempt.action || null,
+    isCorrect: Boolean(attempt.wasCorrect ?? attempt.isCorrect),
+    selectedOption: attempt.selected ?? attempt.selectedOption ?? null,
+    correctOption: attempt.correct ?? attempt.correctOption ?? null,
+    responseMs: attempt.responseTimeMs ?? attempt.responseMs ?? null,
+    hintUsed: Boolean(attempt.hintUsed),
+    retryIndex: attempt.retryIndex ?? 0,
+    attemptNumber: attempt.attemptNumber ?? null,
+    metrics: attempt.metrics || attempt.frustrationAudit?.metrics || null,
+    rawPayload: {
+      questionId: attempt.questionId || null,
+      levelId: attempt.levelNumber,
+      wasCorrect: Boolean(attempt.wasCorrect ?? attempt.isCorrect),
+      responseTimeMs: attempt.responseTimeMs ?? null,
+      attemptNumber: attempt.attemptNumber ?? null,
+      retryIndex: attempt.retryIndex ?? 0,
+      sessionId,
+      audit: attempt.frustrationAudit || null,
+    },
+  });
+  const saved = await trackPending(job);
+  if (saved?.ok === false && !saved?.skipped) return saved;
+  const score = saved?.frustrationScore;
+  if (score == null) return saved;
+  await trackPending(
+    syncFrustration(
+      {
+        frustrationScore: score,
+        frustrationLevel: saved.frustrationLevel || 'low',
+        levelNumber: Number(attempt.levelNumber) || 1,
+        signals: saved.frustrationAudit || attempt.frustrationAudit || {},
+        source: 'quiz',
+        snapshotId: saved.attemptId ? `fr_${saved.attemptId}` : undefined,
+      },
+      student,
+    ),
+  );
+  return saved;
 }
 
 export async function syncUnlock(itemId, opts = {}, student = null) {

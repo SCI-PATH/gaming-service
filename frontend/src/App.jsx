@@ -54,7 +54,13 @@ import {
   syncStudentLogout,
   syncFrustration,
   syncGameplayEvent,
+  flushPendingEngagement,
 } from './data/engagementSync.js';
+import {
+  clearStudentLocalGameplay,
+  consumeFreshLogin,
+  markFreshLogin,
+} from './data/sessionReset.js';
 import {
   bootstrapStudentProgress,
   resolveLobbyProgress,
@@ -474,26 +480,6 @@ export default function App() {
     };
   }, [farm.levelId, student]);
 
-  // Keep unlock-shop prices live with the latest frustration score
-  useEffect(() => {
-    setShopPerformance((prev) => {
-      if (!prev) return prev;
-      const nextScore = telemetrySession.frustrationScore || 0;
-      const nextLevel = telemetrySession.frustrationLevel || 'low';
-      if (
-        prev.frustrationScore === nextScore &&
-        prev.frustrationLevel === nextLevel
-      ) {
-        return prev;
-      }
-      return {
-        ...prev,
-        frustrationScore: nextScore,
-        frustrationLevel: nextLevel,
-      };
-    });
-  }, [telemetrySession.frustrationScore, telemetrySession.frustrationLevel]);
-
   // Mirror frustration into Neon (throttled)
   useEffect(() => {
     if (!student?.id) return;
@@ -722,10 +708,21 @@ export default function App() {
       if (boot.farmPatch) {
         setFarm({ ...createInitialFarm(), ...boot.farmPatch });
       }
+      const fresh = consumeFreshLogin(nextStudent.id);
+      if (fresh) {
+        clearFarmRun();
+        saveFarmProgress({
+          currentLevelId: 1,
+          highestCompletedLevel: 0,
+          cash: 0,
+          levelSource: 'fresh',
+        });
+      }
       syncStudentLogin(nextStudent, {
-        startLevel: boot.lobby?.levelId ?? resolveCurrentLevelId(),
+        startLevel: fresh ? 1 : boot.lobby?.levelId ?? resolveCurrentLevelId(),
+        freshSession: fresh,
       });
-      applySavedRunToUi(loadFarmRun());
+      if (!fresh) applySavedRunToUi(loadFarmRun());
     },
     [resetSessionUi, applySavedRunToUi],
   );
@@ -733,6 +730,8 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
     setLoggingOut(true);
+    setQuizPayload(null);
+    const saveFailed = (result) => result && result.ok === false && !result.skipped;
     try {
       if (student?.id) {
         await submitLeaderboardScore({
@@ -751,9 +750,11 @@ export default function App() {
         });
       }
       if (inFarm) emitSaveFarmRun();
+      const pending = await flushPendingEngagement();
       const run = loadFarmRun();
+      let farmSaved = { ok: true };
       if (student?.id && run) {
-        await flushFarmProgress(
+        farmSaved = await flushFarmProgress(
           {
             ...run,
             levelId: run.levelId || farm.levelId || 1,
@@ -766,14 +767,27 @@ export default function App() {
           student,
         );
       }
-      await syncStudentLogout({
+      const sessionSaved = await syncStudentLogout({
         endLevel: farm.levelId,
         quizCorrect: farm.questionsAnswered || 0,
         quizIncorrect: run?.quizIncorrect,
       });
+      if (saveFailed(pending) || saveFailed(farmSaved) || saveFailed(sessionSaved)) {
+        setBanner('Could not save your farm. You are still signed in — try leaving again.');
+        setLoggingOut(false);
+        return;
+      }
     } catch (error) {
       console.error('Error saving state during logout:', error);
+      setBanner('Could not save your farm. You are still signed in — try leaving again.');
+      setLoggingOut(false);
+      return;
     }
+    if (student?.id) {
+      clearStudentLocalGameplay(student.id);
+      markFreshLogin(student.id);
+    }
+    clearFarmRun();
     logoutStudent();
     const leaveToUserManagement = Boolean(
       student?.fromPlatform ||
@@ -1207,16 +1221,31 @@ export default function App() {
         }));
       }
       if (isLearningPathLinked()) {
+        const perf = {
+          attemptScores: payload.attemptScores ?? [],
+          avgResponseMs: payload.avgResponseMs ?? 0,
+          performanceScore: payload.performanceScore,
+          performanceBand: payload.performanceBand,
+          questionsAnswered: payload.questionsAnswered,
+          questionFrustrationScores: payload.questionFrustrationScores ?? [],
+          avgFrustrationScore: payload.avgFrustrationScore ?? null,
+          frozenPrices: payload.frozenPrices ?? null,
+          levelId: payload.levelId ?? farm.levelId ?? 1,
+          sessionId: payload.sessionId ?? null,
+          frustrationScore: payload.avgFrustrationScore ?? frScore,
+          frustrationLevel: payload.frustrationLevel || frLevel,
+        };
+        setShopPerformance(perf);
         setShopOpen(false);
         setMotivationContext({
-          frustrationScore: frScore,
-          frustrationLevel: frLevel,
-          levelId: payload.levelId ?? farm.levelId ?? 1,
-          pendingShop: false,
+          frustrationScore: perf.frustrationScore,
+          frustrationLevel: perf.frustrationLevel,
+          levelId: perf.levelId,
+          pendingShop: true,
           returnToPath: true,
         });
         setMotivationOpen(true);
-        setBanner('Level complete! The next chapter unlocks when you return to your learning path.');
+        setBanner('Level complete! Visit the shop, then return to your learning path.');
         return;
       }
       if (payload.openUnlockShop === true) {
@@ -1226,8 +1255,13 @@ export default function App() {
           performanceScore: payload.performanceScore,
           performanceBand: payload.performanceBand,
           questionsAnswered: payload.questionsAnswered,
-          frustrationScore: frScore,
-          frustrationLevel: frLevel,
+          questionFrustrationScores: payload.questionFrustrationScores ?? [],
+          avgFrustrationScore: payload.avgFrustrationScore ?? null,
+          frozenPrices: payload.frozenPrices ?? null,
+          levelId: payload.levelId ?? farm.levelId ?? 1,
+          sessionId: payload.sessionId ?? null,
+          frustrationScore: payload.avgFrustrationScore ?? frScore,
+          frustrationLevel: payload.frustrationLevel || frLevel,
         };
         setShopPerformance(perf);
         setMotivationContext({
@@ -1272,8 +1306,26 @@ export default function App() {
       mastery: payload.mastery,
       levelEndReason: payload.levelEndReason,
       pointsEarned: payload.earnings ?? payload.currentMoney,
-    }).then((decision) => {
+    }).then(async (decision) => {
       if (outcomeRequestRef.current !== requestId) return;
+      if (student?.id) {
+        const cashSaved = await flushFarmProgress(
+          {
+            levelId: payload.levelId ?? farm.levelId ?? 1,
+            currentMoney: payload.currentMoney ?? payload.earnings ?? farm.earnings ?? 0,
+            questionsAnswered: payload.questionsAnswered ?? farm.questionsAnswered ?? 0,
+          },
+          student,
+        );
+        if (cashSaved?.ok === false && !cashSaved?.skipped) {
+          setBanner('This level could not be saved. Stay here and try finishing again.');
+          return;
+        }
+      }
+      if (decision?.persisted === false && !decision?.skipped) {
+        setBanner('This level could not be saved. Stay here and try finishing again.');
+        return;
+      }
       levelDecisionRef.current = decision;
       if (decision?.retryLesson) {
         setRemediation(decision);
@@ -1299,6 +1351,11 @@ export default function App() {
     setMotivationOpen(false);
     const openShop = motivationContext?.pendingShop === true;
     setMotivationContext(null);
+    if (openShop) {
+      setShopOpen(true);
+      emitUnlockShopOpen();
+      return;
+    }
     if (returnToPath) {
       const decided = levelDecisionRef.current;
       const launch = getChapterLaunch();
@@ -2092,6 +2149,8 @@ export default function App() {
               cropsHarvestedTotal={farm.cropsHarvestedTotal ?? 0}
               performanceBand={farm.performanceBand}
               cropName={farm.cropName || 'crops'}
+              levelId={farm.levelId || 1}
+              activeCropIndex={farm.levelCropSlot || 0}
               challenges={challenges}
               questStep={wizardStep?.pin || null}
               customerAlerts={customerAlerts}

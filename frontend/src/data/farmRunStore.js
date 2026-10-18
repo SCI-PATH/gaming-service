@@ -18,6 +18,8 @@ export function loadFarmRun() {
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object') return null;
     if (Number(data.version) !== VERSION) return null;
+    const activeSession = getEngagementSessionId();
+    if (data.sessionId && activeSession && data.sessionId !== activeSession) return null;
     const levelId = Math.max(1, Number(data.levelId) || 0);
     if (!levelId) return null;
     return data;
@@ -80,6 +82,7 @@ export function saveFarmRun(snapshot, options = {}) {
   const record = {
     ...snapshot,
     version: VERSION,
+    sessionId: snapshot.sessionId || getEngagementSessionId() || null,
     savedAt: Date.now(),
   };
   try {
