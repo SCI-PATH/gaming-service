@@ -9,6 +9,7 @@ export default class GuideScene extends Phaser.Scene {
   create() {
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'guide' });
+    ForestGameBridge.emit(FARM_EVENTS.READY);
 
     this.soundtrack = this.game.registry.get('soundtrack');
     this.add.tileSprite(400, 300, 800, 600, 'title-bg');

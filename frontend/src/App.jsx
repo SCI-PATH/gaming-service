@@ -1079,8 +1079,7 @@ export default function App() {
   }, [farm.levelId, farm.earnings, resumeSettled, gameReady]);
 
   // Clear in-flight start once the farm scene is active (or after a timeout).
-  // Retry once — Exit→Continue can miss the first START_FARM_LEVEL while Phaser
-  // finishes MenuScene shutdown.
+  // Retry after Load/Menu settle — logout→Continue often fires before MenuScene READY.
   useEffect(() => {
     if (!lobbyStarting) return undefined;
     if (inFarmRef.current || inFarm) {
@@ -1096,17 +1095,26 @@ export default function App() {
       const payload = lobbyStartPayloadRef.current;
       if (!payload || retried) return;
       retried = true;
+      setLobbyStartError(null);
       emitStartFarmLevel({ ...payload, fromLobby: true });
-    }, 600);
+    }, 2000);
+    const retryTimer2 = window.setTimeout(() => {
+      if (inFarmRef.current) return;
+      const payload = lobbyStartPayloadRef.current;
+      if (!payload) return;
+      setLobbyStartError(null);
+      emitStartFarmLevel({ ...payload, fromLobby: true });
+    }, 5000);
     const failTimer = window.setTimeout(() => {
       if (inFarmRef.current) return;
       lobbyStartInFlightRef.current = false;
       lobbyStartPayloadRef.current = null;
       setLobbyStarting(false);
       setLobbyStartError('The farm did not open. Try Play again.');
-    }, 8000);
+    }, 16000);
     return () => {
       window.clearTimeout(retryTimer);
+      window.clearTimeout(retryTimer2);
       window.clearTimeout(failTimer);
     };
   }, [lobbyStarting, inFarm]);
@@ -1572,7 +1580,7 @@ export default function App() {
       if (detail.rp) setRpEarned((n) => n + detail.rp);
       setHint(
         detail.message ||
-          'Correct! Press E on ready crops to harvest onto your back.',
+          'Correct! Crops are on your back — press E at the Farm Shop to unload.',
       );
       window.setTimeout(() => setHint(null), 2600);
     }
@@ -1603,9 +1611,8 @@ export default function App() {
       }
     }
     if (detail?.type === 'farm_start_failed') {
-      lobbyStartInFlightRef.current = false;
-      lobbyStartPayloadRef.current = null;
-      setLobbyStarting(false);
+      // Keep lobbyStarting + payload so the scheduled retry can run after Load/Menu.
+      // Only the timeout (or a successful FARM_SCENE_ACTIVE) clears the start state.
       setLobbyStartError(
         detail.message || 'The farm did not open. Try Play again.',
       );

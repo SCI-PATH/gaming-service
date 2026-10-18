@@ -625,7 +625,7 @@ export default function ScienceQuizModal({
       : isLoad
         ? 'Harvests delivered to the shop — customers will buy automatically.'
         : isHarvest
-          ? 'Correct! Press E on ready crops to harvest onto your back.'
+          ? 'Correct! Crops go on your back — press E at the Farm Shop to unload.'
           : 'Crops will grow — press E when ready to harvest.';
 
   if (loading) {

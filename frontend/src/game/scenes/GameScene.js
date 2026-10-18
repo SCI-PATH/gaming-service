@@ -1194,7 +1194,16 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       if (code === 'KeyE') {
-        if (this.farmInputLocked || this.uiInputLocked) return;
+        // Clear sticky locks left after quiz close before deciding to block E
+        this.releaseStaleFarmLocks();
+        if (this.isScienceQuizOpen() || this.isAnswerLockActive()) return;
+        if (this.farmInputLocked && !this.harvestUnlocked) return;
+        // Sticky uiInputLocked alone must not swallow harvest after overlays close
+        if (this.uiInputLocked && this.isTextOverlayOpen()) return;
+        if (this.uiInputLocked) {
+          this.uiInputLocked = false;
+          if (this.input?.keyboard) this.input.keyboard.enabled = true;
+        }
         event.preventDefault();
         this.handleInteractKey();
       }
@@ -2973,10 +2982,18 @@ export default class GameScene extends Phaser.Scene {
       this.farmLevel?.cropId ||
       null;
     let cropKey = this.cropCarryTextureKey(stackTop);
-    if (!this.textures.exists(cropKey)) {
+    if (!cropKey || !this.textures.exists(cropKey)) {
       cropKey = this.cropCarryTextureKey(null);
     }
-    if (!this.textures.exists(cropKey)) return;
+    if (!cropKey || !this.textures.exists(cropKey)) {
+      // Last resort so harvested count still shows something on the back
+      const keys =
+        this.textures.getTextureKeys?.() ||
+        Object.keys(this.textures.list || {});
+      cropKey =
+        keys.find((k) => /^crop_|^hm_|^kf_/i.test(String(k))) || keys[0] || null;
+    }
+    if (!cropKey || !this.textures.exists(cropKey)) return;
 
     const need = this.carriedCount || 0;
     const scale = this.cropSpriteScale(cropKey, 0.7);
@@ -2985,6 +3002,7 @@ export default class GameScene extends Phaser.Scene {
       const img = this.add.image(this.player.x, this.player.y, cropKey);
       img.setScale(scale);
       img.setDepth(baseDepth);
+      img.setScrollFactor(1);
       this.carrySprites.push(img);
     }
     while (this.carrySprites.length > need) {
@@ -4245,13 +4263,28 @@ export default class GameScene extends Phaser.Scene {
   /** E: Farm Shop unload, harvest/collect quizzes, plant bed, or nearby challenge. */
   handleInteractKey() {
     if (!this.player) return;
-    if (this.farmInputLocked) return;
+    this.releaseStaleFarmLocks();
+    if (this.farmInputLocked && this.isAnswerLockActive()) return;
+    if (this.farmInputLocked) {
+      this.farmInputLocked = false;
+    }
     if (!this.guardFarmAction('interact')) return;
 
     const cell = this.getPlayerGridCell();
     const nearShop =
       isFarmShopTile(cell.gridX, cell.gridY) ||
       this.farmShopLayer?.isNear?.(this.player.x, this.player.y);
+
+    // Ready crops win over shop proximity — otherwise a wide shop radius
+    // steals E and players can never pick up grown plants.
+    if (this.hasReadyCropsUnderfoot()) {
+      if (!this.harvestUnlocked) {
+        this.openHarvestQuestion();
+        return;
+      }
+      this.harvestCropsUnderfoot();
+      return;
+    }
 
     if (nearShop) {
       // Carrying harvest → unload into shop stock. No popup.
@@ -4264,16 +4297,6 @@ export default class GameScene extends Phaser.Scene {
             'Carry harvests here and press E to unload — customers buy automatically.',
         });
       }
-      return;
-    }
-
-    // Ready crops: E opens harvest quiz first; after a correct answer, E harvests.
-    if (this.hasReadyCropsUnderfoot()) {
-      if (!this.harvestUnlocked) {
-        this.openHarvestQuestion();
-        return;
-      }
-      this.harvestCropsUnderfoot();
       return;
     }
 
@@ -4334,7 +4357,7 @@ export default class GameScene extends Phaser.Scene {
 
   hasReadyCropsUnderfoot() {
     if (!this.player) return false;
-    const reach = TILE_SIZE * 1.15;
+    const reach = TILE_SIZE * 1.75;
     return (this.plantedCrops || []).some((crop) => {
       if (!crop?.active || !crop.isReady?.()) return false;
       return (
@@ -4847,23 +4870,20 @@ export default class GameScene extends Phaser.Scene {
 
   /**
    * Harvest ready crops underfoot after the harvest quiz unlocks.
-   * Only called from E (handleInteractKey) — never from the walk loop.
+   * Only called from E (handleInteractKey) or right after a correct harvest quiz.
    * Does not open quizzes; approaching alone only shows the interact prompt.
    */
   harvestCropsUnderfoot() {
-    if (this.farmInputLocked || !this.player) return;
+    if (!this.player) return;
     if (!this.harvestUnlocked) return;
 
-    if (!this.plantDoneForChallenge && (!this.cropPlantedSet || this.cropPlantedSet.size === 0)) {
-      this.hideHarvestingBanner();
-      return;
-    }
-
-    const reach = TILE_SIZE * 1.15;
+    // Ready plants on the ground are enough — do not require plantDone flags
+    // (resume / bed-switch / soft unlock can leave those stale and block carry).
+    const reach = TILE_SIZE * 1.75;
     const hit = [];
 
-    this.plantedCrops.forEach((crop) => {
-      if (!crop?.active || !crop.isReady()) return;
+    (this.plantedCrops || []).forEach((crop) => {
+      if (!crop?.active || !crop.isReady?.()) return;
       const d = Phaser.Math.Distance.Between(
         crop.x,
         crop.y,
@@ -4881,6 +4901,8 @@ export default class GameScene extends Phaser.Scene {
     hit.forEach((crop) => this.harvestCrop(crop, { silent: true }));
     this.showHarvestingBanner(hit.length);
     this.emitInventoryUpdated();
+    this.syncCarryTrail();
+    this.updateCarryTrailPositions();
 
     if (!this._harvestFlashCool) {
       this._harvestFlashCool = true;
@@ -5058,17 +5080,44 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Science question that unlocks harvesting. Player must press E again to pick.
-   * If Assessment Engine is down, unlock harvest (still requires E) so play is not soft-locked.
+   * Science question that unlocks harvesting, then picks ready crops onto the back.
+   * If the question quota/clock is already closed (or Assessment Engine is down),
+   * unlock and harvest immediately so play is not soft-locked.
    */
   openHarvestQuestion() {
-    if (!this.player || this.farmInputLocked) return;
+    if (!this.player) return;
     if (this.pendingQuizMode === 'harvest') return;
     if (this.isScienceQuizOpen?.()) return;
-    if (this.blockNewQuestion()) {
+
+    const unlockAndPick = (message) => {
+      this.harvestUnlocked = true;
+      this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
+      this.resumeAfterQuiz();
+      this.harvestCropsUnderfoot();
+      if (message) {
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'farm_shop_hint',
+          message,
+        });
+      }
+      this.emitFarmState();
+    };
+
+    // Questions already done — shop hint says "finish harvesting"; do not soft-lock E.
+    if (this.levelQuestionsClosed()) {
       this.holdOrFinishLevel('time_expired');
+      unlockAndPick(
+        (this.carriedCount || 0) > 0
+          ? 'Harvest on your back — press E at the Farm Shop to unload.'
+          : 'Press E on ready crops to harvest onto your back.',
+      );
       return;
     }
+    if (this.blockNewQuestion()) {
+      // Another card is mid-open; don't start a second harvest quiz.
+      return;
+    }
+
     this.pendingQuizMode = 'harvest';
     this.lockPlayerForAnswer();
     this.quizOpenedAt = Date.now();
@@ -5079,16 +5128,9 @@ export default class GameScene extends Phaser.Scene {
       if (this.forestUnlocked || this.levelTimeExpired || this._runEnded || this._levelFinishStarted) {
         return;
       }
-      // Soft unlock only — never auto-harvest without E
-      this.harvestUnlocked = true;
-      this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
-      this.resumeAfterQuiz();
-      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-        type: 'farm_shop_hint',
-        message:
-          'Science quiz unavailable — press E on ready crops to harvest.',
-      });
-      this.emitFarmState();
+      unlockAndPick(
+        'Science quiz unavailable — ready crops are on your back. Take them to the Farm Shop.',
+      );
     });
   }
 
@@ -5213,12 +5255,14 @@ export default class GameScene extends Phaser.Scene {
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'harvest_success',
           rp: payload.rp ?? 0,
-          message: 'Correct! Press E on ready crops to harvest.',
+          message:
+            'Correct! Crops are on your back — press E at the Farm Shop to unload.',
         });
         this.emitFarmState();
         this.checkTargetReached();
         this.resumeAfterQuiz();
-        // Do not auto-harvest — player must press E again
+        // Same as animal collect: pick up underfoot right after a correct answer
+        this.harvestCropsUnderfoot();
         return;
       }
 

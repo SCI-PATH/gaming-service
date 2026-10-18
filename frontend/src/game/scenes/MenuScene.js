@@ -9,6 +9,8 @@ export default class MenuScene extends Phaser.Scene {
   create() {
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'menu' });
+    // Assets + menu are live — safe for React Continue (do not READY during LoadScene).
+    ForestGameBridge.emit(FARM_EVENTS.READY);
 
     this.soundtrack = this.game.registry.get('soundtrack');
     this.add.tileSprite(400, 300, 800, 600, 'title-bg');

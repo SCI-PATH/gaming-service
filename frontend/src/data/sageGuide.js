@@ -27,7 +27,7 @@ export function sageLineForStep(step, { frustrationLevel } = {}) {
     return `Let's plant! Walk to the gold bed and press E.`;
   }
   if (/^Pick /.test(title)) {
-    return 'Ready crops are waiting. Press E to answer, then press E again to harvest.';
+    return 'Ready crops are waiting. Press E to answer — a correct answer puts them on your back.';
   }
   if (/^Feed |^Shear /.test(title)) {
     return 'The animals need you. Walk into the pen and press E.';

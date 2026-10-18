@@ -88,7 +88,9 @@ export default function ForestRPGCanvas({
       Math.max(0, Number(startingMoney) || 0),
     );
 
+    let phaserReady = false;
     const handleReady = () => {
+      phaserReady = true;
       setReady(true);
       cbs.current.onReady?.();
     };
@@ -108,12 +110,6 @@ export default function ForestRPGCanvas({
     const handleStartFarmLevel = (payload = {}) => {
       const levelId = Math.max(1, Number(payload.levelId) || 1);
       const nextStoryline = payload.storyline ?? storylineRef.current ?? null;
-      game.registry.set('farmLevelId', levelId);
-      game.registry.set(
-        'farmStartingMoney',
-        Math.max(0, Number(payload.startingMoney) || 0),
-      );
-      game.registry.set('storyline', nextStoryline);
       const startData = {
         levelId,
         startingMoney: Number(payload.startingMoney) || 0,
@@ -121,78 +117,151 @@ export default function ForestRPGCanvas({
         resume: payload.resume === true,
       };
       const fromLobby = payload.fromLobby === true || payload.resume === true;
-      let leftMenu = false;
-      ['GameOverScene', 'MenuScene', 'GuideScene'].forEach((key) => {
-        try {
-          if (game.scene.isActive(key) || game.scene.isPaused(key)) {
-            leftMenu = true;
-            game.scene.stop(key);
-          }
-        } catch {
-          /* ignore */
-        }
-      });
-      ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
 
-      const hardStart = () => {
-        try {
-          if (
-            game.scene.isActive('GameScene') ||
-            game.scene.isPaused('GameScene') ||
-            game.scene.isSleeping?.('GameScene')
-          ) {
-            game.scene.stop('GameScene');
-          }
-        } catch {
-          /* ignore */
-        }
-        // Defer so MenuScene/GameScene shutdown finishes before create
-        window.setTimeout(() => {
-          try {
-            const g = gameRef.current;
-            if (!g) {
-              ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-                type: 'farm_start_failed',
-                message: 'Could not open the farm. Try Continue again.',
-              });
-              return;
-            }
-            g.scene.start('GameScene', startData);
-          } catch (err) {
-            console.error('Failed to start GameScene', err);
-            ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-              type: 'farm_start_failed',
-              message: 'Could not open the farm. Try Continue again.',
-            });
-          }
-        }, 50);
+      const liveGame = () => {
+        const g = gameRef.current;
+        if (!g || g.destroyed) return null;
+        return g;
       };
 
-      // Lobby Continue / resume must always hard-start — soft reset after Exit
-      // leaves React thinking the farm never opened (no create → no FARM_SCENE_ACTIVE).
+      const stopScene = (g, key) => {
+        try {
+          if (
+            g.scene.isActive(key) ||
+            g.scene.isPaused(key) ||
+            g.scene.isSleeping?.(key)
+          ) {
+            g.scene.stop(key);
+            return true;
+          }
+        } catch {
+          /* ignore */
+        }
+        return false;
+      };
+
+      const markFarmOpen = () => {
+        ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
+        ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'farm' });
+      };
+
+      const failStart = (err) => {
+        if (err) console.error('Failed to start GameScene', err);
+        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+          type: 'farm_start_failed',
+          message: 'Could not open the farm. Try Continue again.',
+        });
+      };
+
+      /**
+       * Lobby Continue after logout must wait for Load/Menu — starting GameScene
+       * during Boot/Load throws and showed "Could not open the farm".
+       */
+      const hardStart = (attempt = 0) => {
+        const g = liveGame();
+        if (!g) {
+          if (attempt < 5) {
+            window.setTimeout(() => hardStart(attempt + 1), 120 * (attempt + 1));
+            return;
+          }
+          failStart();
+          return;
+        }
+
+        g.registry.set('farmLevelId', levelId);
+        g.registry.set(
+          'farmStartingMoney',
+          Math.max(0, Number(payload.startingMoney) || 0),
+        );
+        g.registry.set('storyline', nextStoryline);
+        ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
+
+        // Still booting assets — wait, do not fail yet
+        if (g.scene.isActive('BootScene') || g.scene.isActive('LoadScene')) {
+          if (attempt < 20) {
+            window.setTimeout(() => hardStart(attempt + 1), 200);
+            return;
+          }
+          failStart();
+          return;
+        }
+
+        stopScene(g, 'GameOverScene');
+        stopScene(g, 'MenuScene');
+        stopScene(g, 'GuideScene');
+
+        const launch = () => {
+          const g2 = liveGame();
+          if (!g2) {
+            if (attempt < 5) {
+              window.setTimeout(() => hardStart(attempt + 1), 150);
+              return;
+            }
+            failStart();
+            return;
+          }
+          try {
+            if (g2.scene.isActive('GameScene') && !startData.resume && !fromLobby) {
+              markFarmOpen();
+              return;
+            }
+            stopScene(g2, 'GameScene');
+            g2.scene.start('GameScene', startData);
+            // Backup signal if create is slow; create also emits active:true
+            window.setTimeout(() => {
+              const g3 = liveGame();
+              if (!g3) return;
+              if (g3.scene.isActive('GameScene')) {
+                markFarmOpen();
+                return;
+              }
+              if (attempt < 4) {
+                hardStart(attempt + 1);
+                return;
+              }
+              failStart();
+            }, 280);
+          } catch (err) {
+            if (attempt < 4) {
+              window.setTimeout(() => hardStart(attempt + 1), 200);
+              return;
+            }
+            failStart(err);
+          }
+        };
+
+        window.setTimeout(launch, attempt === 0 ? 80 : 40);
+      };
+
+      const gNow = liveGame() || game;
+      let leftMenu = false;
+      ['GameOverScene', 'MenuScene', 'GuideScene'].forEach((key) => {
+        if (stopScene(gNow, key)) leftMenu = true;
+      });
+
+      // Lobby Continue / resume must always hard-start
       if (fromLobby || leftMenu || startData.resume) {
-        hardStart();
+        hardStart(0);
         return;
       }
 
-      const gameScene = game.scene.getScene('GameScene');
+      const gameScene = gNow.scene.getScene('GameScene');
       const canSoftReset =
         gameScene &&
         typeof gameScene.beginNextLevel === 'function' &&
         gameScene.player &&
-        (game.scene.isActive('GameScene') || game.scene.isPaused('GameScene'));
+        (gNow.scene.isActive('GameScene') || gNow.scene.isPaused('GameScene'));
       if (canSoftReset) {
         try {
-          if (game.scene.isPaused('GameScene')) game.scene.resume('GameScene');
+          if (gNow.scene.isPaused('GameScene')) gNow.scene.resume('GameScene');
           gameScene.beginNextLevel(startData);
-          ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
-          ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'farm' });
+          markFarmOpen();
           return;
         } catch (err) {
           console.warn('beginNextLevel failed, falling back to start', err);
         }
       }
-      hardStart();
+      hardStart(0);
     };
 
     const farmMove = { up: false, down: false, left: false, right: false };
@@ -349,13 +418,17 @@ export default function ForestRPGCanvas({
     };
     parent.addEventListener('pointerdown', focusCanvas);
 
-    const t = window.setTimeout(() => {
-      ForestGameBridge.emit(FARM_EVENTS.READY);
-      focusCanvas();
-    }, 300);
+    // Do NOT emit READY here — LoadScene may still be running. MenuScene/GuideScene
+    // emit READY when the lobby is actually safe to Continue. Fallback only if stuck.
+    const readyFallback = window.setTimeout(() => {
+      if (gameRef.current && !phaserReady) {
+        ForestGameBridge.emit(FARM_EVENTS.READY);
+        focusCanvas();
+      }
+    }, 12000);
 
     return () => {
-      window.clearTimeout(t);
+      window.clearTimeout(readyFallback);
       parent.removeEventListener('pointerdown', focusCanvas);
       window.removeEventListener('keydown', onFarmKeyDown, true);
       window.removeEventListener('keyup', onFarmKeyUp, true);
