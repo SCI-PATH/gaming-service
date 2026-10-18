@@ -1197,8 +1197,9 @@ export async function insertStudentUnlock(body = {}) {
 }
 
 async function quoteShopPrice(studentId, itemId, levelNumber) {
+  // Local module — Docker only copies backend/lib (no ../frontend tree).
   const { basePriceForItem, priceFromAverageFrustration, averageLevelFrustration } =
-    await import('../../frontend/src/data/shopPricePolicy.js');
+    await import('./shopPricePolicy.mjs');
   const base = basePriceForItem(itemId);
   if (base == null) throw new Error('unknown_shop_item');
   const level = Math.max(1, Number(levelNumber) || 1);
