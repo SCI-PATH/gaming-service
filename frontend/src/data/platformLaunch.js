@@ -124,24 +124,34 @@ export function resolvePlatformLaunch() {
     student.chapterTitle = chapter.chapterTitle;
   }
 
-  const startLevel =
+  const requestedLevel =
     chapter.startLevel != null
       ? chapter.startLevel
       : launch.startLevel;
 
   const fresh = student ? consumeFreshLogin(student.id) : false;
-  if (student && startLevel != null) {
-    applyChapterFarmLevel(startLevel, launch.cash, chapter.lessonId);
+  let farmStartLevel = requestedLevel != null ? Math.max(1, Number(requestedLevel) || 1) : 1;
+  if (student && requestedLevel != null) {
+    const progress = applyChapterFarmLevel(
+      requestedLevel,
+      launch.cash,
+      chapter.lessonId,
+    );
+    farmStartLevel = Math.max(1, Number(progress?.currentLevelId) || farmStartLevel);
     if (chapter.rewardItem || chapter.lessonId) {
-      grantLearningPathReward(startLevel, chapter.rewardItem);
+      grantLearningPathReward(farmStartLevel, chapter.rewardItem);
     }
   } else if (student && (launch.startLevel != null || launch.cash != null)) {
-    applyRemoteFarmProgress({
+    const progress = applyRemoteFarmProgress({
       currentLevel: launch.startLevel,
       highestCompletedLevel:
         launch.startLevel != null ? Math.max(0, launch.startLevel - 1) : 0,
       cash: launch.cash,
     });
+    farmStartLevel = Math.max(
+      1,
+      Number(progress?.currentLevelId) || Number(launch.startLevel) || 1,
+    );
   }
 
   // Clean URL so refresh doesn't duplicate telemetry bootstrap noise
@@ -185,7 +195,7 @@ export function resolvePlatformLaunch() {
     student,
     sessionId: launch.sessionId,
     topicId: launch.topicId,
-    startLevel: fresh ? 1 : startLevel,
+    startLevel: fresh ? 1 : farmStartLevel,
     cash: launch.cash,
     lessonId: chapter.lessonId || launch.lessonId,
     chapterTitle: chapter.chapterTitle || launch.chapterTitle,

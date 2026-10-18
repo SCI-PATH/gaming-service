@@ -1,7 +1,7 @@
 /**
- * Shop items bought in chapter N appear on chapter N+1.
- * Relative farm Level 1 is not used for that check, because every chapter starts at 1.
- * A Learning Path reward with availableAtLevel still appears on the chapter that granted it.
+ * Shop items bought on farm level P appear once the student reaches a later
+ * farm (level P+1) or a later learning-path chapter.
+ * Learning Path rewards with availableAtLevel can appear on the granting chapter.
  */
 
 export function chapterOrdinalFromId(lessonId) {
@@ -23,16 +23,25 @@ export function shouldPlaceOwnedUnlock(
     return level >= availableAt;
   }
 
+  const purchasedAt = Number(meta?.purchasedAtLevel) || 0;
   const purchaseChapter = Number(meta?.purchaseChapterOrdinal) || 0;
   const currentChapter = Number(chapterOrdinal) || 0;
-  if (purchaseChapter > 0 && currentChapter > 0) {
-    return currentChapter > purchaseChapter;
+
+  // Later chapter always shows prior shop purchases (every chapter can start at Level 1).
+  if (purchaseChapter > 0 && currentChapter > purchaseChapter) {
+    return true;
   }
 
-  const purchasedAt = Number(meta?.purchasedAtLevel) || 0;
-  // Older shop rows only stored relative Level 1. A later chapter should still show them.
-  if (purchasedAt > 0 && purchasedAt <= 1 && currentChapter > 1) return true;
-  if (purchasedAt > 0) return level > purchasedAt;
+  // Same chapter (or standalone): show once the farm level advances past purchase.
+  if (purchasedAt > 0) {
+    if (level > purchasedAt) return true;
+    // Legacy rows without chapter ordinal: Level-1 buys still appear on a later chapter.
+    if (purchasedAt <= 1 && currentChapter > 1 && !(purchaseChapter > 0)) {
+      return true;
+    }
+    return false;
+  }
+
   if (availableAt > 0) return level >= availableAt;
   return true;
 }

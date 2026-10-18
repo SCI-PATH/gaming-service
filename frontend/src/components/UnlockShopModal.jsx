@@ -127,15 +127,13 @@ export default function UnlockShopModal({
 
         <p className="unlock-shop-hint">
           {returnToLearningPath && retryLesson
-            ? `This farm felt tough — practice again is recommended. You can still continue${
-                nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ' to the next lesson'
-              } when you are ready.`
+            ? 'Frustration or mastery on this farm means you should learn this lesson again before the next one unlocks. Bought items still appear on your next farm.'
             : returnToLearningPath
-            ? `Bought items will appear on your next chapter farm. After this shop you return to the learning path${
+            ? `Bought items will appear on your next farm. After this shop you return to the learning path${
                 nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ''
               }.`
             : retryLesson
-            ? 'This farm felt tough — practice again is recommended. You can still continue to the next level when you are ready.'
+            ? 'Frustration or mastery on this farm means you should play this level again. Bought items appear once you reach the next farm level.'
             : 'Prices adapt to how this level went: stronger quiz results raise prices; higher support need lowers them so unlocks stay reachable. Bought items appear on your next farm — no extra quests for them.'}
         </p>
 
@@ -184,25 +182,26 @@ export default function UnlockShopModal({
           {retryLesson ? (
             <button
               type="button"
-              className="unlock-shop-continue is-secondary"
+              className="unlock-shop-continue"
               onClick={() => (onRetryLesson || onClose)?.()}
             >
               {returnToLearningPath
                 ? 'Learn this lesson again'
                 : 'Play this level again'}
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="unlock-shop-continue"
-            onClick={() => (onContinueNext || onClose)?.()}
-          >
-            {returnToLearningPath
-              ? nextChapterTitle
-                ? `Go to ${nextChapterTitle}`
-                : 'Go to the next lesson'
-              : 'Continue to Next Level'}
-          </button>
+          ) : (
+            <button
+              type="button"
+              className="unlock-shop-continue"
+              onClick={() => (onContinueNext || onClose)?.()}
+            >
+              {returnToLearningPath
+                ? nextChapterTitle
+                  ? `Go to ${nextChapterTitle}`
+                  : 'Go to the next lesson'
+                : 'Continue to Next Level'}
+            </button>
+          )}
         </footer>
       </div>
     </div>

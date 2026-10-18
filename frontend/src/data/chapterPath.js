@@ -378,13 +378,37 @@ export function returnToLearningPath(opts = {}) {
   return href;
 }
 
-/** Keep the farm cursor on the completed chapter level until LPE launches the next. */
-export function parkFarmProgressAtCompletedLevel(levelId, cash) {
+/**
+ * Park farm cursor when leaving for the learning path.
+ * Pass → advance to the next farm level so the next lesson does not reopen Level 1.
+ * Retry (high frustration / low mastery) → stay on this farm level.
+ */
+export function parkFarmProgressAtCompletedLevel(
+  levelId,
+  cash,
+  { retryLesson = false } = {},
+) {
   const completed = Math.max(1, Number(levelId) || 1);
+  const prev = loadFarmProgress();
+  if (retryLesson) {
+    return saveFarmProgress({
+      currentLevelId: completed,
+      highestCompletedLevel: Math.max(
+        0,
+        Math.min(Number(prev.highestCompletedLevel) || 0, completed - 1),
+      ),
+      cash,
+      levelSource: 'lesson',
+    });
+  }
   return saveFarmProgress({
-    currentLevelId: completed,
-    highestCompletedLevel: completed,
+    currentLevelId: completed + 1,
+    highestCompletedLevel: Math.max(
+      completed,
+      Number(prev.highestCompletedLevel) || 0,
+    ),
     cash,
+    levelSource: 'lesson',
   });
 }
 

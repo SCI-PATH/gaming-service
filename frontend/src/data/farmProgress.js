@@ -128,18 +128,35 @@ function lessonOrdinal(lessonId) {
   return match ? Math.max(1, Number(match[1]) || 1) : null;
 }
 
-/** Learning Path launch: play this chapter's relative farm level, not the lesson ordinal. */
+/**
+ * Learning Path launch: never treat the lesson ordinal as the farm level.
+ * Keep saved farm progression across chapters (Level 2 after finishing Level 1)
+ * unless the cursor was inflated to the lesson number.
+ */
 export function applyChapterFarmLevel(levelId, cash = null, lessonId = '') {
   const prev = loadFarmProgress();
   const lessonIndex = lessonOrdinal(lessonId);
   const requested = Math.max(1, Number(levelId) || 1);
-  const currentLevelId =
-    lessonIndex && requested === lessonIndex ? 1 : requested;
+  const fromLessonOrdinal = Boolean(lessonIndex && requested === lessonIndex);
   const inflated =
     lessonIndex != null &&
     (prev.currentLevelId === lessonIndex ||
       prev.highestCompletedLevel === lessonIndex - 1 ||
       prev.highestCompletedLevel >= lessonIndex);
+
+  let currentLevelId;
+  if (inflated) {
+    currentLevelId = 1;
+  } else if (fromLessonOrdinal || requested === 1) {
+    const saved = Math.max(1, Number(prev.currentLevelId) || 1);
+    const highest = Math.max(0, Number(prev.highestCompletedLevel) || 0);
+    // If parked on an already-completed level, open the next one.
+    currentLevelId =
+      highest > 0 && saved <= highest ? highest + 1 : saved;
+  } else {
+    currentLevelId = requested;
+  }
+
   return saveFarmProgress({
     currentLevelId,
     highestCompletedLevel: inflated

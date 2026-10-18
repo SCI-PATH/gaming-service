@@ -3169,7 +3169,7 @@ export default class GameScene extends Phaser.Scene {
     this.unlockSlotUsed = [];
   }
 
-  /** Owned shop items appear on a later chapter. Learning Path rewards can appear now. */
+  /** Owned shop items appear on the next farm level or a later chapter. LP rewards can appear now. */
   shouldShowOwnedUnlock(itemId) {
     if (!itemId || SKIP_UNLOCK_ITEMS.has(itemId)) return false;
     const launch = getChapterLaunch();

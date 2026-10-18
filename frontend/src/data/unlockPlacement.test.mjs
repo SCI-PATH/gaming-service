@@ -26,6 +26,22 @@ describe('shouldPlaceOwnedUnlock', () => {
     assert.equal(chapterOrdinalFromId('g7_sci_14'), 14);
   });
 
+  it('places a same-chapter purchase once the farm level advances', () => {
+    const meta = {
+      source: 'shop',
+      purchasedAtLevel: 1,
+      purchaseChapterOrdinal: 14,
+    };
+    assert.equal(
+      shouldPlaceOwnedUnlock(meta, { levelId: 1, chapterOrdinal: 14 }),
+      false,
+    );
+    assert.equal(
+      shouldPlaceOwnedUnlock(meta, { levelId: 2, chapterOrdinal: 14 }),
+      true,
+    );
+  });
+
   it('places an older level-1 purchase once a later chapter starts', () => {
     const meta = { source: 'shop', purchasedAtLevel: 1 };
     assert.equal(shouldPlaceOwnedUnlock(meta, { levelId: 1, chapterOrdinal: 1 }), false);

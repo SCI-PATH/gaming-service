@@ -1539,14 +1539,17 @@ export default function App() {
     if (returnToPath) {
       const decided = levelDecisionRef.current;
       const launch = getChapterLaunch();
-      parkFarmProgressAtCompletedLevel(levelId, farm.earnings ?? farm.currentMoney);
+      const retryLesson = decided?.retryLesson === true;
+      parkFarmProgressAtCompletedLevel(levelId, farm.earnings ?? farm.currentMoney, {
+        retryLesson,
+      });
       returnToLearningPath({
         lessonId: launch.lessonId,
         levelId,
         chapterTitle: launch.chapterTitle,
-        nextLessonId: launch.nextLessonId,
-        nextChapterTitle: launch.nextChapterTitle,
-        retryLesson: false,
+        nextLessonId: retryLesson ? '' : launch.nextLessonId,
+        nextChapterTitle: retryLesson ? '' : launch.nextChapterTitle,
+        retryLesson,
         frustrationScore: decided?.frustrationScore ?? telemetrySession.frustrationScore,
         frustrationLevel: decided?.frustrationLevel ?? telemetrySession.frustrationLevel,
         mastery: decided?.masteryPercentage,
@@ -1924,21 +1927,19 @@ export default function App() {
             farm.currentMoney,
         ) || 0,
       );
-      parkFarmProgressAtCompletedLevel(levelId, cash);
       setShopOpen(false);
       emitUnlockShopClose();
       const launch = getChapterLaunch();
       const frustrationScore = Number(telemetrySession.frustrationScore) || 0;
       const frustrationLevel = telemetrySession.frustrationLevel || 'low';
       const decided = levelDecisionRef.current;
-      // Explicit shop choice wins; otherwise use the saved level decision only
-      // (do not re-check live telemetry — that hid "next lesson" after a finish).
+      // Frustration / mastery decision from level-outcome wins — shop cannot bypass it.
       const retryLesson =
-        typeof payload.retryLesson === 'boolean'
-          ? payload.retryLesson
-          : decided?.retryLesson === true ||
-            shopPerformance?.retryLesson === true ||
-            remediation?.retryLesson === true;
+        decided?.retryLesson === true ||
+        shopPerformance?.retryLesson === true ||
+        remediation?.retryLesson === true ||
+        payload.retryLesson === true;
+      parkFarmProgressAtCompletedLevel(levelId, cash, { retryLesson });
       returnToLearningPath({
         lessonId: launch.lessonId,
         levelId,
@@ -1969,22 +1970,20 @@ export default function App() {
   );
 
   const leaveShopAfterLevel = useCallback(
-    ({ retryLesson: forceRetry } = {}) => {
+    () => {
     if (isLearningPathLinked()) {
       handleReturnToLearningPath({
         levelId: farm.levelId,
         currentMoney: farm.earnings ?? farm.currentMoney,
-        ...(typeof forceRetry === 'boolean' ? { retryLesson: forceRetry } : {}),
       });
       return;
     }
     const decided = levelDecisionRef.current;
+    // Always honor frustration / mastery from level-outcome — never force advance.
     const retryLesson =
-      typeof forceRetry === 'boolean'
-        ? forceRetry
-        : decided?.retryLesson === true ||
-          shopPerformance?.retryLesson === true ||
-          remediation?.retryLesson === true;
+      decided?.retryLesson === true ||
+      shopPerformance?.retryLesson === true ||
+      remediation?.retryLesson === true;
     levelDecisionRef.current = null;
     const completedLevelId = Math.max(1, farm.levelId || 1);
     const nextLevelId = retryLesson
@@ -2054,15 +2053,15 @@ export default function App() {
   );
 
   const handleShopClose = useCallback(() => {
-    leaveShopAfterLevel({});
+    leaveShopAfterLevel();
   }, [leaveShopAfterLevel]);
 
   const handleShopContinueNext = useCallback(() => {
-    leaveShopAfterLevel({ retryLesson: false });
+    leaveShopAfterLevel();
   }, [leaveShopAfterLevel]);
 
   const handleShopRetryLesson = useCallback(() => {
-    leaveShopAfterLevel({ retryLesson: true });
+    leaveShopAfterLevel();
   }, [leaveShopAfterLevel]);
 
   const handlePracticeTopicAgain = useCallback(() => {
