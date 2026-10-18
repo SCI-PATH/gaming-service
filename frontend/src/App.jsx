@@ -79,7 +79,6 @@ import {
   answeredFromRun,
 } from './data/farmRunStore.js';
 import { saveFarmProgress } from './data/farmProgress.js';
-import { shouldRetryLessonAfterFarm } from './data/frustrationModel.js';
 import { submitLevelOutcome } from './data/levelOutcome.js';
 import {
   canOpenShopAfterOutcome,
@@ -1932,13 +1931,14 @@ export default function App() {
       const frustrationScore = Number(telemetrySession.frustrationScore) || 0;
       const frustrationLevel = telemetrySession.frustrationLevel || 'low';
       const decided = levelDecisionRef.current;
+      // Explicit shop choice wins; otherwise use the saved level decision only
+      // (do not re-check live telemetry — that hid "next lesson" after a finish).
       const retryLesson =
-        decided?.retryLesson === true ||
-        (decided ? false : (
-          remediation?.retryLesson === true ||
-          shouldRetryLessonAfterFarm(frustrationScore) ||
-          shouldRetryLessonAfterFarm(frustrationLevel)
-        ));
+        typeof payload.retryLesson === 'boolean'
+          ? payload.retryLesson
+          : decided?.retryLesson === true ||
+            shopPerformance?.retryLesson === true ||
+            remediation?.retryLesson === true;
       returnToLearningPath({
         lessonId: launch.lessonId,
         levelId,
@@ -1964,26 +1964,27 @@ export default function App() {
       telemetrySession.frustrationScore,
       telemetrySession.frustrationLevel,
       remediation?.retryLesson,
+      shopPerformance?.retryLesson,
     ],
   );
 
-  const handleShopClose = useCallback(() => {
+  const leaveShopAfterLevel = useCallback(
+    ({ retryLesson: forceRetry } = {}) => {
     if (isLearningPathLinked()) {
       handleReturnToLearningPath({
         levelId: farm.levelId,
         currentMoney: farm.earnings ?? farm.currentMoney,
+        ...(typeof forceRetry === 'boolean' ? { retryLesson: forceRetry } : {}),
       });
       return;
     }
     const decided = levelDecisionRef.current;
     const retryLesson =
-      decided?.retryLesson === true ||
-      shopPerformance?.retryLesson === true ||
-      (decided ? false : (
-        remediation?.retryLesson === true ||
-        shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
-        shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
-      ));
+      typeof forceRetry === 'boolean'
+        ? forceRetry
+        : decided?.retryLesson === true ||
+          shopPerformance?.retryLesson === true ||
+          remediation?.retryLesson === true;
     levelDecisionRef.current = null;
     const completedLevelId = Math.max(1, farm.levelId || 1);
     const nextLevelId = retryLesson
@@ -2039,18 +2040,30 @@ export default function App() {
         startingMoney: cash,
       });
     }, 80);
-  }, [
+  },
+  [
     farm.levelId,
     farm.earnings,
     farm.currentMoney,
     refreshChallenges,
     handleReturnToLearningPath,
-    telemetrySession.frustrationScore,
-    telemetrySession.frustrationLevel,
     remediation?.retryLesson,
     shopPerformance?.retryLesson,
     student,
-  ]);
+  ],
+  );
+
+  const handleShopClose = useCallback(() => {
+    leaveShopAfterLevel({});
+  }, [leaveShopAfterLevel]);
+
+  const handleShopContinueNext = useCallback(() => {
+    leaveShopAfterLevel({ retryLesson: false });
+  }, [leaveShopAfterLevel]);
+
+  const handleShopRetryLesson = useCallback(() => {
+    leaveShopAfterLevel({ retryLesson: true });
+  }, [leaveShopAfterLevel]);
 
   const handlePracticeTopicAgain = useCallback(() => {
     levelDecisionRef.current = null;
@@ -2277,13 +2290,13 @@ export default function App() {
             cash={farm.earnings}
             performance={shopPerformance}
             onClose={handleShopClose}
+            onContinueNext={handleShopContinueNext}
+            onRetryLesson={handleShopRetryLesson}
             returnToLearningPath={pathLinked}
             retryLesson={
               shopPerformance?.retryLesson === true ||
               levelDecisionRef.current?.retryLesson === true ||
-              remediation?.retryLesson === true ||
-              shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
-              shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
+              remediation?.retryLesson === true
             }
             chapterTitle={chapterLaunch.chapterTitle}
             nextChapterTitle={chapterLaunch.nextChapterTitle}

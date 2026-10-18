@@ -15,6 +15,10 @@ export default function UnlockShopModal({
   cash,
   performance,
   onClose,
+  /** Optional: leave shop and advance (next farm / next lesson). */
+  onContinueNext = null,
+  /** Optional: leave shop and retry this lesson. */
+  onRetryLesson = null,
   returnToLearningPath = false,
   retryLesson = false,
   chapterTitle = '',
@@ -123,13 +127,15 @@ export default function UnlockShopModal({
 
         <p className="unlock-shop-hint">
           {returnToLearningPath && retryLesson
-            ? 'This farm felt tough. After the shop you will go back to the lesson and learn it again before the next chapter unlocks.'
+            ? `This farm felt tough — practice again is recommended. You can still continue${
+                nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ' to the next lesson'
+              } when you are ready.`
             : returnToLearningPath
             ? `Bought items will appear on your next chapter farm. After this shop you return to the learning path${
                 nextChapterTitle ? ` to unlock ${nextChapterTitle}` : ''
               }.`
             : retryLesson
-            ? 'This farm felt tough. After the shop you will play this same level again so you can keep practicing.'
+            ? 'This farm felt tough — practice again is recommended. You can still continue to the next level when you are ready.'
             : 'Prices adapt to how this level went: stronger quiz results raise prices; higher support need lowers them so unlocks stay reachable. Bought items appear on your next farm — no extra quests for them.'}
         </p>
 
@@ -175,18 +181,27 @@ export default function UnlockShopModal({
         </div>
 
         <footer className="unlock-shop-foot">
+          {retryLesson ? (
+            <button
+              type="button"
+              className="unlock-shop-continue is-secondary"
+              onClick={() => (onRetryLesson || onClose)?.()}
+            >
+              {returnToLearningPath
+                ? 'Learn this lesson again'
+                : 'Play this level again'}
+            </button>
+          ) : null}
           <button
             type="button"
             className="unlock-shop-continue"
-            onClick={onClose}
+            onClick={() => (onContinueNext || onClose)?.()}
           >
             {returnToLearningPath
-              ? retryLesson
-                ? 'Learn this lesson again'
+              ? nextChapterTitle
+                ? `Go to ${nextChapterTitle}`
                 : 'Go to the next lesson'
-              : retryLesson
-                ? 'Play this level again'
-                : 'Continue to Next Level'}
+              : 'Continue to Next Level'}
           </button>
         </footer>
       </div>

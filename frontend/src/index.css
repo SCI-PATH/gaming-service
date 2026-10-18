@@ -1303,7 +1303,9 @@ body {
 
 .unlock-shop-foot {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 8px;
   padding-top: 4px;
   border-top: 1px solid rgba(47, 93, 63, 0.5);
 }
@@ -1319,8 +1321,19 @@ body {
   padding: 10px 16px;
 }
 
+.unlock-shop-continue.is-secondary {
+  border-color: rgba(120, 140, 110, 0.65);
+  background: rgba(20, 28, 22, 0.9);
+  color: #c8d4c0;
+}
+
 .unlock-shop-continue:hover {
   border-color: #e0c56a;
+}
+
+.unlock-shop-continue.is-secondary:hover {
+  border-color: rgba(180, 200, 160, 0.85);
+  color: #eef4e8;
 }
 
 /* —— Adaptive Farm Customer Shop (Q) —— */

@@ -600,15 +600,30 @@ body {
   color: #fff;
 }
 
+.unlock-shop-foot {
+  gap: 8px;
+}
+
 .unlock-shop-continue {
   border: 1px solid var(--brand-surface);
   background: #fff;
   color: var(--brand-text);
 }
 
+.unlock-shop-continue.is-secondary {
+  border-color: var(--wheat-husk, var(--brand-surface));
+  background: var(--wheat-pale, #f7f1e4);
+  color: var(--muted, var(--brand-text));
+}
+
 .unlock-shop-continue:hover {
   border-color: var(--brand-primary);
   color: var(--brand-primary);
+}
+
+.unlock-shop-continue.is-secondary:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-text);
 }
 
 /* —— Farm customer shop —— */
