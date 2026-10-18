@@ -95,6 +95,7 @@ import {
   coveringCellsInPlot,
   findPlotAt,
   isPlantableTile,
+  isTileInPlot,
   isFarmShopTile,
   PLANT_PLOTS,
 } from '../../data/plantPlots.js';
@@ -2976,6 +2977,7 @@ export default class GameScene extends Phaser.Scene {
   /** Long vertical stack of harvested crops carried behind the runner. */
   syncCarryTrail(cropType = null) {
     if (!this.player) return;
+    if (!Array.isArray(this.carrySprites)) this.carrySprites = [];
     const stackTop =
       cropType ||
       this.carryStack?.[this.carryStack.length - 1] ||
@@ -2991,24 +2993,37 @@ export default class GameScene extends Phaser.Scene {
         this.textures.getTextureKeys?.() ||
         Object.keys(this.textures.list || {});
       cropKey =
-        keys.find((k) => /^crop_|^hm_|^kf_/i.test(String(k))) || keys[0] || null;
+        keys.find((k) => /^crop_|^hm_|^kf_/i.test(String(k))) ||
+        keys.find((k) => this.textures.exists(k)) ||
+        null;
     }
     if (!cropKey || !this.textures.exists(cropKey)) return;
 
-    const need = this.carriedCount || 0;
-    const scale = this.cropSpriteScale(cropKey, 0.7);
-    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 2;
+    const need = Math.max(0, Number(this.carriedCount) || 0);
+    // Keep carry icons readable on the character's back
+    const scale = Math.max(0.55, Number(this.cropSpriteScale(cropKey, 0.85)) || 0.85);
+    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 40;
     while (this.carrySprites.length < need) {
-      const img = this.add.image(this.player.x, this.player.y, cropKey);
+      const img = this.add.image(this.player.x, this.player.y - 12, cropKey);
       img.setScale(scale);
       img.setDepth(baseDepth);
       img.setScrollFactor(1);
+      img.setOrigin(0.5, 0.85);
       this.carrySprites.push(img);
     }
     while (this.carrySprites.length > need) {
       const img = this.carrySprites.pop();
       img?.destroy();
     }
+    // Refresh texture/scale if crop type changed mid-stack
+    this.carrySprites.forEach((sprite) => {
+      if (!sprite?.active) return;
+      if (sprite.texture?.key !== cropKey) sprite.setTexture(cropKey);
+      sprite.setScale(scale);
+      sprite.setDepth(baseDepth);
+      sprite.setVisible(true);
+      sprite.setAlpha(1);
+    });
   }
 
   updateCarryTrailPositions() {
@@ -3016,29 +3031,31 @@ export default class GameScene extends Phaser.Scene {
 
     const model = this.player.playerModel;
     const dir = model?.direction || 'down';
-    // Stack vertically behind the runner (column on their back)
+    // Stack vertically on the runner's back (column above the shoulders)
     let backX = 0;
-    let backY = 0;
+    let backY = -14;
     if (dir === 'up') {
       backX = 0;
-      backY = 10;
+      backY = 8;
     } else if (dir === 'down') {
       backX = 0;
-      backY = -10;
+      backY = -16;
     } else if (dir === 'left') {
-      backX = 8;
-      backY = -2;
+      backX = 10;
+      backY = -12;
     } else {
-      backX = -8;
-      backY = -2;
+      backX = -10;
+      backY = -12;
     }
 
-    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 2;
+    const baseDepth = Math.max(Number(this.player.depth) || 5, 5) + 40;
     this.carrySprites.forEach((sprite, i) => {
       if (!sprite?.active) return;
+      sprite.setVisible(true);
+      sprite.setAlpha(1);
       sprite.setPosition(
         this.player.x + backX,
-        this.player.y + backY - (i + 1) * 7,
+        this.player.y + backY - (i + 1) * 9,
       );
       sprite.setDepth(baseDepth + i * 0.01);
     });
@@ -4275,16 +4292,7 @@ export default class GameScene extends Phaser.Scene {
       isFarmShopTile(cell.gridX, cell.gridY) ||
       this.farmShopLayer?.isNear?.(this.player.x, this.player.y);
 
-    // Ready crops win over shop proximity — otherwise a wide shop radius
-    // steals E and players can never pick up grown plants.
-    if (this.hasReadyCropsUnderfoot()) {
-      if (!this.harvestUnlocked) {
-        this.openHarvestQuestion();
-        return;
-      }
-      this.harvestCropsUnderfoot();
-      return;
-    }
+    // Ready crops auto-collect on walk-over — E is for plant / shop / animals.
 
     if (nearShop) {
       // Carrying harvest → unload into shop stock. No popup.
@@ -4355,11 +4363,21 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  hasReadyCropsUnderfoot() {
-    if (!this.player) return false;
-    const reach = TILE_SIZE * 1.75;
-    return (this.plantedCrops || []).some((crop) => {
+  /** Ready crops near the player or sharing the plant bed they stand on. */
+  getReadyCropsInReach() {
+    if (!this.player) return [];
+    const reach = TILE_SIZE * 4.5;
+    const cell = this.getPlayerGridCell?.() || {};
+    const plot =
+      Number.isFinite(cell.gridX) && Number.isFinite(cell.gridY)
+        ? findPlotAt(cell.gridX, cell.gridY)
+        : null;
+
+    return (this.plantedCrops || []).filter((crop) => {
       if (!crop?.active || !crop.isReady?.()) return false;
+      if (plot && Number.isFinite(crop.gridX) && Number.isFinite(crop.gridY)) {
+        if (isTileInPlot(crop.gridX, crop.gridY, plot)) return true;
+      }
       return (
         Phaser.Math.Distance.Between(
           crop.x,
@@ -4369,6 +4387,10 @@ export default class GameScene extends Phaser.Scene {
         ) <= reach
       );
     });
+  }
+
+  hasReadyCropsUnderfoot() {
+    return this.getReadyCropsInReach().length > 0;
   }
 
   beginAnimalTend() {
@@ -4756,6 +4778,9 @@ export default class GameScene extends Phaser.Scene {
 
     if (planted.length > 0) {
       this.plantDoneForChallenge = true;
+      // Plant quiz already answered — allow E harvest when plants mature
+      this.harvestUnlocked = true;
+      this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
       // Record which crop was planted for per-crop tracking
       const plantedCropId = planted[0]?.cropType || cropId;
       if (plantedCropId) {
@@ -4869,30 +4894,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Harvest ready crops underfoot after the harvest quiz unlocks.
-   * Only called from E (handleInteractKey) or right after a correct harvest quiz.
-   * Does not open quizzes; approaching alone only shows the interact prompt.
+   * Auto-collect ready crops near the player / on the current bed onto the back.
+   * Called from the walk loop (and after a correct harvest quiz if one runs).
    */
   harvestCropsUnderfoot() {
     if (!this.player) return;
-    if (!this.harvestUnlocked) return;
+    if (this.farmInputLocked || this.isAnswerLockActive()) return;
+    this.harvestUnlocked = true;
+    this.harvestArmedUntil = Number.MAX_SAFE_INTEGER;
 
-    // Ready plants on the ground are enough — do not require plantDone flags
-    // (resume / bed-switch / soft unlock can leave those stale and block carry).
-    const reach = TILE_SIZE * 1.75;
-    const hit = [];
-
-    (this.plantedCrops || []).forEach((crop) => {
-      if (!crop?.active || !crop.isReady?.()) return;
-      const d = Phaser.Math.Distance.Between(
-        crop.x,
-        crop.y,
-        this.player.x,
-        this.player.y,
-      );
-      if (d <= reach) hit.push(crop);
-    });
-
+    const hit = this.getReadyCropsInReach();
     if (hit.length < 1) {
       this.hideHarvestingBanner();
       return;
@@ -4910,6 +4921,14 @@ export default class GameScene extends Phaser.Scene {
       this.audioItem?.play();
       this.time.delayedCall(180, () => {
         this._harvestFlashCool = false;
+      });
+      ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+        type: 'harvest',
+        message:
+          hit.length > 1
+            ? `${hit.length} crops on your back — press E at the Farm Shop to unload.`
+            : 'Crop on your back — press E at the Farm Shop to unload.',
+        carriedCount: this.carriedCount,
       });
     }
   }
@@ -5020,13 +5039,14 @@ export default class GameScene extends Phaser.Scene {
   }
 
   harvestCrop(crop, options = {}) {
-    if (!crop?.active || !crop.isReady()) return;
-    // Hard gate: never harvest before the harvest quiz unlocks
-    if (!this.harvestUnlocked) return;
+    if (!crop?.active || !crop.isReady?.()) return;
 
+    this.harvestUnlocked = true;
     crop.playHarvestFx();
     // Harvested crops ride on the runner's back until unloaded at the Farm Shop
     const cropId = crop.cropType || this.farmLevel?.cropId || 'tomato';
+    if (!Array.isArray(this.carryStack)) this.carryStack = [];
+    if (!Array.isArray(this.carrySprites)) this.carrySprites = [];
     this.carriedCount = (this.carriedCount || 0) + 1;
     this.cropsHarvestedTotal = (this.cropsHarvestedTotal || 0) + 1;
     this.cropHarvestMap = this.cropHarvestMap || {};
@@ -5109,7 +5129,7 @@ export default class GameScene extends Phaser.Scene {
       unlockAndPick(
         (this.carriedCount || 0) > 0
           ? 'Harvest on your back — press E at the Farm Shop to unload.'
-          : 'Press E on ready crops to harvest onto your back.',
+          : 'Walk over ready crops to collect them onto your back.',
       );
       return;
     }
@@ -5802,7 +5822,8 @@ export default class GameScene extends Phaser.Scene {
     this.tickPhysicalFarmShop?.(time);
     this.handlePlayerInput();
     this.handleCollisions();
-    // Crops require E after the harvest quiz — never auto-pick on walk-over
+    // Walk over ready plants → collect onto back (same as original farm loop)
+    this.harvestCropsUnderfoot();
     this.updateInteractPrompt();
     this.collectAnimalProduceUnderfoot();
     this.sweepCleaningUnderfoot();

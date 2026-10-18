@@ -28,12 +28,34 @@ export default function SageAvatar({
       ? ''
       : '';
 
+  const showTopControls = Boolean(onToggleMute || onStop);
+
   return (
     <div
       className={`sage-avatar size-${size}${speaking ? ' is-speaking' : ''}${listening ? ' is-listening' : ''}${muted ? ' is-muted' : ''}${figureOnly ? ' is-figure-only' : ''}${voiceOnly ? ' is-voice-only' : ''}`}
       data-mood={mood}
     >
-      <div className="sage-agent" aria-hidden={!figureOnly}>
+      {showTopControls ? (
+        <div className="sage-float-controls" role="toolbar" aria-label="Sage voice">
+          {onToggleMute ? (
+            <button
+              type="button"
+              className="sage-ctrl"
+              onClick={onToggleMute}
+              aria-pressed={muted}
+            >
+              {muted ? 'Unmute' : 'Mute'}
+            </button>
+          ) : null}
+          {onStop && speaking ? (
+            <button type="button" className="sage-ctrl is-stop" onClick={onStop}>
+              Stop
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="sage-agent" aria-hidden={false}>
         <div className="sage-orbs" aria-hidden>
           <span className="sage-orb sage-orb-outer" />
           <span className="sage-orb sage-orb-mid" />
@@ -66,26 +88,6 @@ export default function SageAvatar({
         )}
       </div>
 
-      {figureOnly && (onToggleMute || onStop) ? (
-        <div className="sage-float-controls">
-          {onToggleMute ? (
-            <button
-              type="button"
-              className="sage-ctrl"
-              onClick={onToggleMute}
-              aria-pressed={muted}
-            >
-              {muted ? 'Unmute' : 'Mute'}
-            </button>
-          ) : null}
-          {onStop && speaking ? (
-            <button type="button" className="sage-ctrl is-stop" onClick={onStop}>
-              Stop
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       {figureOnly ? (
         <p className="sage-subtitle" aria-live="polite">
           {displaySubtitle || '\u00a0'}
@@ -114,24 +116,6 @@ export default function SageAvatar({
                   : 'I can talk through your mind map and answer questions.'}
               </span>
             )}
-          </div>
-
-          <div className="sage-controls">
-            {onToggleMute ? (
-              <button
-                type="button"
-                className="sage-ctrl"
-                onClick={onToggleMute}
-                aria-pressed={muted}
-              >
-                {muted ? 'Unmute' : 'Mute'}
-              </button>
-            ) : null}
-            {onStop && speaking ? (
-              <button type="button" className="sage-ctrl is-stop" onClick={onStop}>
-                Stop
-              </button>
-            ) : null}
           </div>
         </div>
       )}

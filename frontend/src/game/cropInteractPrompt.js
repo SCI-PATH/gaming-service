@@ -1,6 +1,6 @@
 /**
  * Contextual E-key prompt for crop / shop interactions.
- * Harvest must not start until the harvest quiz unlocks; prompts never imply auto-pick.
+ * Ready crops auto-collect on walk-over — E is for plant / shop unload only.
  */
 
 export function resolveCropInteractPrompt({
@@ -20,10 +20,10 @@ export function resolveCropInteractPrompt({
     return 'Farm Shop — bring harvests here';
   }
 
+  // Ready crops: walk over to collect — do not ask for E
   if (hasReadyCrops) {
-    return harvestUnlocked
-      ? 'Press E to harvest'
-      : 'Press E to interact';
+    void harvestUnlocked;
+    return null;
   }
 
   if (onPlantableBed && canPlant) {

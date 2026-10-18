@@ -1572,7 +1572,7 @@ export default function App() {
     if (detail?.type === 'plant_success' && detail.rp) {
       setRpEarned((n) => n + detail.rp);
       setHint(
-        'Correct plant answer! When crops are ready, press E to answer, then press E again to harvest.',
+        'Correct plant answer! When crops are ready, walk over them to collect onto your back.',
       );
       window.setTimeout(() => setHint(null), 2600);
     }

@@ -5109,7 +5109,8 @@ button.farm-map-bed {
     0 24px 48px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 240, 200, 0.08);
   color: #e8f0dc;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .avatar-assistant-card.is-companion {
@@ -5123,6 +5124,9 @@ button.farm-map-bed {
   gap: 10px;
   padding: 14px 14px 12px;
   position: relative;
+  /* Clip only horizontally — never crop Sage's head at the top */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .avatar-assistant-card.is-voice-shell.has-map-split {
@@ -5171,8 +5175,9 @@ button.farm-map-bed {
 .avatar-solo-sage.is-voice-only {
   max-height: none;
   overflow: visible;
-  padding: 18px 4px 4px;
-  flex: 1 1 auto;
+  padding: 8px 4px 4px;
+  /* Never let probe choices flex-squash the portrait away */
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -5180,9 +5185,9 @@ button.farm-map-bed {
 }
 
 .avatar-solo-sage.is-voice-only .sage-lesson {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
-  max-height: 38vh;
+  max-height: 22vh;
   overflow-y: auto;
 }
 
@@ -5640,11 +5645,14 @@ button.farm-map-bed {
 }
 
 .avatar-action-dock {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  flex-shrink: 1;
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .avatar-action-bar {
@@ -6574,9 +6582,10 @@ button.farm-map-bed {
   justify-items: center;
   gap: 6px;
   padding: 4px 0 6px;
+  flex: 0 0 auto;
   flex-shrink: 0;
-  max-height: 42%;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 /* Main stage: LEFT mind map Â· RIGHT speaking avatar */
@@ -6659,14 +6668,17 @@ button.farm-map-bed {
   overflow: visible;
 }
 
-/* Agent wrap: portrait + rings */
+/* Agent wrap: portrait + rings — locked size so flex never crops the head */
 .sage-agent {
   position: relative;
   display: grid;
   place-items: center;
   width: min(88%, 390px);
   aspect-ratio: 1;
+  min-width: 160px;
+  min-height: 160px;
   max-height: min(80vh, 410px);
+  flex: 0 0 auto;
   overflow: visible;
 }
 
@@ -6772,8 +6784,8 @@ button.farm-map-bed {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Center face in circular frame — prior 16% + scale(1.06) clipped chin/sides */
-  object-position: center 28%;
+  /* Keep crown + face inside the circle (avoid clipping the head) */
+  object-position: center 18%;
   display: block;
   user-select: none;
   pointer-events: none;
@@ -6909,13 +6921,26 @@ button.farm-map-bed {
   line-height: 1.4;
 }
 
+.sage-float-controls {
+  position: relative;
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  flex: 0 0 auto;
+  margin: 0 0 4px;
+}
+
 .avatar-split-right.is-sage-only .sage-float-controls {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 9;
-  display: flex;
-  gap: 6px;
+  left: auto;
+  width: auto;
+  margin: 0;
+  justify-content: flex-end;
 }
 
 /* Suppress old face-hacks / mouth overlays if any linger in DOM */
@@ -7141,23 +7166,29 @@ button.farm-map-bed {
 }
 
 .sage-avatar.size-hero .sage-agent {
-  width: min(280px, 42vw);
+  width: min(280px, 70vw);
+  min-width: 200px;
+  min-height: 200px;
   max-height: min(42vh, 280px);
 }
 
 .sage-avatar.size-lg .sage-agent {
-  width: min(220px, 42vw);
-  max-height: min(48vh, 240px);
+  width: min(200px, 56vw);
+  min-width: 168px;
+  min-height: 168px;
+  max-height: min(36vh, 220px);
 }
 
 .sage-avatar.size-md .sage-agent {
   width: 144px;
+  min-width: 144px;
+  min-height: 144px;
   max-height: none;
 }
 
 .sage-float-controls .sage-ctrl {
   backdrop-filter: blur(6px);
-  background: rgba(10, 20, 30, 0.8);
+  background: rgba(10, 20, 30, 0.88);
 }
 
 .sage-live-word {
@@ -7166,7 +7197,19 @@ button.farm-map-bed {
 
 .sage-avatar.is-figure-only {
   position: relative;
-  height: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.sage-avatar.is-voice-only {
+  width: 100%;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  overflow: visible;
 }
 
 .sage-meta {
@@ -7282,12 +7325,15 @@ button.farm-map-bed {
 
   .avatar-split-right {
     order: -1;
-    max-height: 28%;
-    min-height: 120px;
+    max-height: min(42%, 280px);
+    min-height: 200px;
+    overflow: visible;
   }
 
   .avatar-split-right.is-sage-only .sage-agent {
-    width: min(70%, 240px);
+    width: min(70%, 200px);
+    min-width: 140px;
+    min-height: 140px;
   }
 
   .avatar-split-left {

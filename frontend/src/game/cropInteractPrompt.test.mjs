@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { resolveCropInteractPrompt } from './cropInteractPrompt.js';
 
-describe('resolveCropInteractPrompt (question-first harvest)', () => {
+describe('resolveCropInteractPrompt (walk-over harvest)', () => {
   it('hides the prompt while a quiz or input lock is active', () => {
     assert.equal(
       resolveCropInteractPrompt({
@@ -22,23 +22,20 @@ describe('resolveCropInteractPrompt (question-first harvest)', () => {
     );
   });
 
-  it('asks for E to interact before the harvest quiz is unlocked', () => {
+  it('does not ask for E on ready crops — walk-over collects them', () => {
     assert.equal(
       resolveCropInteractPrompt({
         hasReadyCrops: true,
         harvestUnlocked: false,
       }),
-      'Press E to interact',
+      null,
     );
-  });
-
-  it('asks for E to harvest only after the quiz unlocks', () => {
     assert.equal(
       resolveCropInteractPrompt({
         hasReadyCrops: true,
         harvestUnlocked: true,
       }),
-      'Press E to harvest',
+      null,
     );
   });
 
