@@ -1,20 +1,13 @@
 /**
  * Sage agent screen → Socrates (Component 4).
  *
- * On click:
- *  1. Flush the live farm score to gaming-service (0–100)
- *  2. GET /api/engagement/frustration (per student — not per topic)
- *  3. POST that score to Component 4 as a per-student tone cue
- *  4. Open SCI-PATH /tutor?from=farm with the lesson unlocked so Socrates
- *     can infer the real topic from the student's question
+ * On click, leave the farm and open SCI-PATH /tutor?from=farm on the same
+ * origin that launched the game. The tutor page stores the frustration cue.
+ * Do not POST analytics from here: the farm is HTTPS on Render and that
+ * call blocks the navigation.
  */
-import {
-  fetchFrustration,
-  getEngagementSessionId,
-  syncFrustration,
-} from './engagementSync.js';
+import { getChapterLaunch } from './chapterPath.js';
 
-const DEFAULT_ANALYTICS_API = 'http://54.253.36.7:8003';
 const DEFAULT_SCIPATH_APP = 'http://127.0.0.1:3000';
 
 function envUrl(key, fallback) {
@@ -78,30 +71,19 @@ function liveFrustration(telemetry = {}, metrics = {}) {
   };
 }
 
-async function postFrustrationCue({ userId, frustrationScore, source }) {
-  const base = envUrl('VITE_LEARNER_ANALYTICS_API_BASE', DEFAULT_ANALYTICS_API);
-  const res = await fetch(`${base}/api/v1/engagement/frustration-cue`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      user_id: userId,
-      frustration_score: frustrationScore,
-      source,
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.success === false) {
-    const detail =
-      data?.detail || data?.error || data?.message || `HTTP ${res.status}`;
-    throw new Error(
-      typeof detail === 'string' ? detail : 'Frustration cue was not stored',
-    );
+/** Origin of the SCI-PATH tab that launched this farm (localhost vs 127.0.0.1). */
+function scipathAppOrigin() {
+  try {
+    const stored = String(getChapterLaunch()?.returnUrl || '').trim();
+    if (stored) return new URL(stored).origin;
+  } catch {
+    /* fall through to the build-time default */
   }
-  return data;
+  return envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
 }
 
 function buildSocratesUrl({ frustrationScore, cuePosted } = {}) {
-  const app = envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
+  const app = scipathAppOrigin();
   const url = new URL('/tutor', `${app}/`);
   url.searchParams.set('from', 'farm');
   const unit = toUnitScore(frustrationScore);
@@ -134,10 +116,16 @@ export async function handoffToSocrates({
   const userId = resolveHandoffStudentId(student);
   const live = liveFrustration(telemetry, metrics);
 
+  const unit = toUnitScore(live.frustrationScore);
+  // Navigate immediately. Waiting on the farm API, then opening a popup,
+  // drops the click. Render is also HTTPS, so it cannot POST the http
+  // analytics host. /tutor stores the cue from SCI-PATH.
+  const tutorUrl = buildSocratesUrl({
+    frustrationScore: unit,
+    cuePosted: false,
+  });
+
   if (!userId) {
-    const tutorUrl = buildSocratesUrl({
-      frustrationScore: live.frustrationScore,
-    });
     return {
       opened: false,
       cuePosted: false,
@@ -149,66 +137,11 @@ export async function handoffToSocrates({
   }
 
   try {
-    await syncFrustration(
-      {
-        frustrationScore: live.frustrationScore ?? 0,
-        frustrationLevel: live.frustrationLevel || 'low',
-        levelNumber: farm?.levelId ?? telemetry?.levelNumber ?? null,
-        source: 'gameplay',
-      },
-      student,
-    );
-  } catch {
-    /* live GET / POST below still run */
-  }
-
-  let score100 = live.frustrationScore;
-  try {
-    let remote = await fetchFrustration(student, {
-      sessionId: getEngagementSessionId(),
-      limit: 1,
-    });
-    if (!remote?.ok || remote.frustrationScore == null) {
-      remote = await fetchFrustration(student, { sessionId: '', limit: 1 });
-    }
-    if (remote?.ok && remote.frustrationScore != null) {
-      score100 = Number(remote.frustrationScore);
-    }
-  } catch {
-    /* keep live score */
-  }
-
-  const unit = toUnitScore(score100) ?? 0;
-  let cuePosted = false;
-  let cueError = '';
-  try {
-    await postFrustrationCue({
-      userId,
-      frustrationScore: unit,
-      source: 'gaming_socrates_unlock',
-    });
-    cuePosted = true;
-  } catch (err) {
-    cueError = err?.message || 'Could not send frustration cue';
-    console.warn('[socratesHandoff] cue', cueError);
-  }
-  const tutorUrl = buildSocratesUrl({
-    frustrationScore: unit,
-    cuePosted,
-  });
-
-  let opened = false;
-  try {
-    const popup = window.open(tutorUrl, '_blank', 'noopener,noreferrer');
-    opened = Boolean(popup);
-    if (!opened) {
-      window.location.assign(tutorUrl);
-      opened = true;
-    }
+    window.location.assign(tutorUrl);
   } catch (err) {
     return {
       opened: false,
-      cuePosted,
+      cuePosted: false,
       frustrationScore: unit,
       topicId: null,
       tutorUrl,
@@ -217,11 +150,10 @@ export async function handoffToSocrates({
   }
 
   return {
-    opened,
-    cuePosted,
+    opened: true,
+    cuePosted: false,
     frustrationScore: unit,
     topicId: null,
     tutorUrl,
-    ...(cuePosted ? {} : { error: cueError }),
   };
 }
