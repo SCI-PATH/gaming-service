@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
-import { bindPressEnter } from '../ui/bindPressEnter.js';
 
 export default class MenuScene extends Phaser.Scene {
   constructor() {
@@ -19,43 +18,18 @@ export default class MenuScene extends Phaser.Scene {
     this.menuKeys = this.input.keyboard.addKeys('enter, m, l');
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
 
-    this._started = false;
-    this._canStartLobby = true;
-
-    this.applyLobbyGate = (payload = {}) => {
-      this._canStartLobby = payload.canStart !== false;
-    };
-
-    this.startGuide = () => {
-      if (this._started || !this.sys?.isActive() || !this._canStartLobby) return;
-      this._started = true;
-      // One-shot start: skip GuideScene so Enter / MENU_START cannot be lost
-      // during the menu→guide listener handoff (React lobby also starts GameScene).
-      const levelId = this.game.registry.get('farmLevelId') || 1;
-      const startingMoney =
-        Number(this.game.registry.get('farmStartingMoney')) || 0;
-      this.scene.start('GameScene', {
-        levelId,
-        startingMoney,
-        storyline: this.game.registry.get('storyline') || null,
-      });
-    };
-
+    // React GameLobbyOverlay owns Play/Continue. Do not start GameScene from
+    // Phaser Enter / MENU_START — dual starts after Exit race and leave React
+    // thinking the farm never opened.
     this.openLeaderboard = () => {
       if (!this.sys?.isActive()) return;
       ForestGameBridge.emit(FARM_EVENTS.LEADERBOARD_OPEN);
     };
 
-    bindPressEnter(this, this.startGuide);
-
-    ForestGameBridge.on(FARM_EVENTS.MENU_START, this.startGuide);
-    ForestGameBridge.on(FARM_EVENTS.LOBBY_GATE, this.applyLobbyGate);
     ForestGameBridge.on(FARM_EVENTS.MENU_LEADERBOARD, this.openLeaderboard);
     ForestGameBridge.on(FARM_EVENTS.MENU_TOGGLE_MUSIC, this.toggleMusic, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      ForestGameBridge.off(FARM_EVENTS.MENU_START, this.startGuide);
-      ForestGameBridge.off(FARM_EVENTS.LOBBY_GATE, this.applyLobbyGate);
       ForestGameBridge.off(FARM_EVENTS.MENU_LEADERBOARD, this.openLeaderboard);
       ForestGameBridge.off(FARM_EVENTS.MENU_TOGGLE_MUSIC, this.toggleMusic, this);
     });
@@ -68,10 +42,6 @@ export default class MenuScene extends Phaser.Scene {
 
     if (Phaser.Input.Keyboard.JustDown(this.menuKeys.l)) {
       this.openLeaderboard();
-    }
-
-    if (Phaser.Input.Keyboard.JustDown(this.menuKeys.enter)) {
-      this.startGuide();
     }
   }
 

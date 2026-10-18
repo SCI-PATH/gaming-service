@@ -327,10 +327,12 @@ export default function App() {
   const [motivationContext, setMotivationContext] = useState(null);
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
+  const inFarmRef = useRef(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [lobbyStarting, setLobbyStarting] = useState(false);
   const [lobbyStartError, setLobbyStartError] = useState(null);
   const lobbyStartInFlightRef = useRef(false);
+  const lobbyStartPayloadRef = useRef(null);
   const [gamePhase, setGamePhase] = useState('menu');
   const [gameOverPayload, setGameOverPayload] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -602,6 +604,7 @@ export default function App() {
     setMotivationOpen(false);
     setMotivationContext(null);
     setGameOverPayload(null);
+    inFarmRef.current = false;
     setInFarm(false);
     setChallenges([]);
     setQuestScrollOpen(false);
@@ -954,7 +957,15 @@ export default function App() {
   }, []);
 
   const handleFarmSceneActive = useCallback((payload = {}) => {
-    setInFarm(payload.active === true);
+    const active = payload.active === true;
+    inFarmRef.current = active;
+    setInFarm(active);
+    if (active) {
+      lobbyStartInFlightRef.current = false;
+      lobbyStartPayloadRef.current = null;
+      setLobbyStarting(false);
+      setLobbyStartError(null);
+    }
   }, []);
 
   useEffect(() => {
@@ -974,6 +985,7 @@ export default function App() {
     const onGameOver = (payload = {}) => {
       setQuizPayload(null);
       setGameOverPayload(payload);
+      inFarmRef.current = false;
       setInFarm(false);
       emitUiInputLock(true, { freezeCombat: true });
     };
@@ -1026,32 +1038,39 @@ export default function App() {
     try {
       const run = loadFarmRun();
       if (run) {
+        const payload = {
+          levelId: run.levelId,
+          startingMoney: run.currentMoney,
+          resume: true,
+          fromLobby: true,
+        };
+        lobbyStartPayloadRef.current = payload;
         emitSetFarmResume({
           levelId: run.levelId,
           startingMoney: run.currentMoney,
         });
-        emitStartFarmLevel({
-          levelId: run.levelId,
-          startingMoney: run.currentMoney,
-          resume: true,
-        });
+        emitStartFarmLevel(payload);
         return;
       }
       const levelId = Math.max(1, Number(farm.levelId) || 1);
       const cash = Math.max(0, Number(farm.earnings) || 0);
+      const payload = {
+        levelId,
+        startingMoney: cash,
+        resume: false,
+        fromLobby: true,
+      };
+      lobbyStartPayloadRef.current = payload;
       emitSetFarmResume({
         levelId,
         startingMoney: cash,
       });
       // One click: start GameScene directly (skip menu→guide handoff races)
-      emitStartFarmLevel({
-        levelId,
-        startingMoney: cash,
-        resume: false,
-      });
+      emitStartFarmLevel(payload);
     } catch (error) {
       console.error('Lobby start failed:', error);
       lobbyStartInFlightRef.current = false;
+      lobbyStartPayloadRef.current = null;
       setLobbyStarting(false);
       setLobbyStartError(
         'Could not start the farm. Check your connection and try again.',
@@ -1059,24 +1078,37 @@ export default function App() {
     }
   }, [farm.levelId, farm.earnings, resumeSettled, gameReady]);
 
-  // Clear in-flight start once the farm scene is active (or after a timeout)
+  // Clear in-flight start once the farm scene is active (or after a timeout).
+  // Retry once — Exit→Continue can miss the first START_FARM_LEVEL while Phaser
+  // finishes MenuScene shutdown.
   useEffect(() => {
     if (!lobbyStarting) return undefined;
-    if (inFarm) {
+    if (inFarmRef.current || inFarm) {
       lobbyStartInFlightRef.current = false;
+      lobbyStartPayloadRef.current = null;
       setLobbyStarting(false);
+      setLobbyStartError(null);
       return undefined;
     }
-    const t = window.setTimeout(() => {
-      if (!inFarm) {
-        lobbyStartInFlightRef.current = false;
-        setLobbyStarting(false);
-        setLobbyStartError(
-          'The farm did not open. Try Play again.',
-        );
-      }
-    }, 12000);
-    return () => window.clearTimeout(t);
+    let retried = false;
+    const retryTimer = window.setTimeout(() => {
+      if (inFarmRef.current) return;
+      const payload = lobbyStartPayloadRef.current;
+      if (!payload || retried) return;
+      retried = true;
+      emitStartFarmLevel({ ...payload, fromLobby: true });
+    }, 600);
+    const failTimer = window.setTimeout(() => {
+      if (inFarmRef.current) return;
+      lobbyStartInFlightRef.current = false;
+      lobbyStartPayloadRef.current = null;
+      setLobbyStarting(false);
+      setLobbyStartError('The farm did not open. Try Play again.');
+    }, 8000);
+    return () => {
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(failTimer);
+    };
   }, [lobbyStarting, inFarm]);
 
   const handleLobbyStartOver = useCallback(() => {
@@ -1093,13 +1125,16 @@ export default function App() {
       levelId,
       startingMoney: cash,
     });
-    lobbyStartInFlightRef.current = true;
-    setLobbyStarting(true);
-    emitStartFarmLevel({
+    const payload = {
       levelId,
       startingMoney: cash,
       resume: false,
-    });
+      fromLobby: true,
+    };
+    lobbyStartPayloadRef.current = payload;
+    lobbyStartInFlightRef.current = true;
+    setLobbyStarting(true);
+    emitStartFarmLevel(payload);
   }, [farm.levelId, farm.earnings, resetAvatarTelemetry]);
 
   const handleLobbyLeaderboard = useCallback(() => {
@@ -1154,6 +1189,7 @@ export default function App() {
       levelId: run.levelId,
       startingMoney: run.currentMoney,
       resume: true,
+      fromLobby: true,
     });
   }, [appView, gameReady, inFarm]);
 
@@ -1527,12 +1563,17 @@ export default function App() {
   const handleInteraction = useCallback((detail) => {
     if (detail?.type === 'plant_success' && detail.rp) {
       setRpEarned((n) => n + detail.rp);
-      setHint('Correct plant answer! Harvest crops — they stack on your back.');
+      setHint(
+        'Correct plant answer! When crops are ready, press E to answer, then press E again to harvest.',
+      );
       window.setTimeout(() => setHint(null), 2600);
     }
     if (detail?.type === 'harvest_success') {
       if (detail.rp) setRpEarned((n) => n + detail.rp);
-      setHint('Harvest unlocked — run over ready crops to pick them up.');
+      setHint(
+        detail.message ||
+          'Correct! Press E on ready crops to harvest onto your back.',
+      );
       window.setTimeout(() => setHint(null), 2600);
     }
     if (detail?.type === 'farm_customer_shop_closed') {
@@ -1560,6 +1601,14 @@ export default function App() {
         );
         window.setTimeout(() => setHint(null), 3600);
       }
+    }
+    if (detail?.type === 'farm_start_failed') {
+      lobbyStartInFlightRef.current = false;
+      lobbyStartPayloadRef.current = null;
+      setLobbyStarting(false);
+      setLobbyStartError(
+        detail.message || 'The farm did not open. Try Play again.',
+      );
     }
     if (detail?.type === 'farm_shop_hint') {
       setHint(
@@ -1778,12 +1827,18 @@ export default function App() {
     }
     if (detail?.type === 'unlock_purchased') {
       if (detail.earnings != null || detail.currentMoney != null) {
+        const nextCash = detail.currentMoney ?? detail.earnings;
         setFarm((prev) => ({
           ...prev,
-          earnings: detail.earnings ?? detail.currentMoney ?? prev.earnings,
+          earnings: nextCash ?? prev.earnings,
+          currentMoney: nextCash ?? prev.currentMoney,
         }));
       }
-      setHint(`Bought! It will appear on your farm next level.`);
+      setHint(
+        detail.itemName
+          ? `Bought ${detail.itemName}! Cash updated.`
+          : 'Bought! Cash updated — item appears on your next farm.',
+      );
       window.setTimeout(() => setHint(null), 2200);
     }
     if (detail?.type === 'challenge_complete') {

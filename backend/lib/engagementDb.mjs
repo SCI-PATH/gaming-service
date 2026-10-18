@@ -819,6 +819,16 @@ export async function saveLessonCheckpoint(body = {}) {
       payload: { lessonId, lastCompletedQuestionIndex: lastCompleted },
     });
   }
+  // Keep students.wallet_balance aligned with the farm cash in the snapshot
+  const farmCash = Number(metrics.farm_snapshot?.currentMoney);
+  if (Number.isFinite(farmCash) && farmCash >= 0) {
+    await query(
+      `UPDATE engagement_gaming.students
+          SET wallet_balance = $2, updated_at = NOW()
+        WHERE student_id = $1`,
+      [studentId, Math.max(0, Math.round(farmCash))],
+    ).catch(() => {});
+  }
   return {
     studentId,
     lessonId,
@@ -1084,7 +1094,16 @@ export async function insertStudentUnlock(body = {}) {
 
   const studentUnlockId = String(body.studentUnlockId || rowUuid());
   const charged = await quoteShopPrice(studentId, itemId, body.purchasedAtLevel);
-  const pricePaid = charged.price;
+  // Prefer the farm's frozen shop price (client already validated + deducted).
+  const clientPrice = Number(body.pricePaid);
+  const pricePaid =
+    Number.isFinite(clientPrice) && clientPrice >= 0 ? clientPrice : charged.price;
+  const reportedWallet = Number(
+    body.walletBalance ?? body.currentMoney ?? body.cash,
+  );
+  const clientAlreadyDeducted =
+    Number.isFinite(reportedWallet) && reportedWallet >= 0 && pricePaid >= 0;
+
   const insertSql = `INSERT INTO engagement_gaming.student_unlocks (
        student_unlock_id, student_id, item_id, session_id,
        purchased_at_level, price_paid, is_equipped, placement
@@ -1124,15 +1143,29 @@ export async function insertStudentUnlock(body = {}) {
     [studentId],
   );
 
+  let balanceAfter = null;
   if (pricePaid > 0) {
-    const balance = await deductStoredCash(studentId, pricePaid);
-    if (balance == null) {
-      await query(
-        `DELETE FROM engagement_gaming.student_unlocks
-          WHERE student_id = $1 AND item_id = $2`,
-        [studentId, itemId],
-      );
-      throw new Error('insufficient_cash');
+    if (clientAlreadyDeducted) {
+      // Farm already subtracted cash — sync that balance; do not deduct twice.
+      balanceAfter = await syncReportedFarmCash(studentId, reportedWallet);
+      if (balanceAfter == null) {
+        await query(
+          `DELETE FROM engagement_gaming.student_unlocks
+            WHERE student_id = $1 AND item_id = $2`,
+          [studentId, itemId],
+        );
+        throw new Error('insufficient_cash');
+      }
+    } else {
+      balanceAfter = await deductStoredCash(studentId, pricePaid);
+      if (balanceAfter == null) {
+        await query(
+          `DELETE FROM engagement_gaming.student_unlocks
+            WHERE student_id = $1 AND item_id = $2`,
+          [studentId, itemId],
+        );
+        throw new Error('insufficient_cash');
+      }
     }
     await insertPointsLedger({
       studentId,
@@ -1141,17 +1174,26 @@ export async function insertStudentUnlock(body = {}) {
       levelNumber: body.purchasedAtLevel ?? null,
       entryType: 'spend',
       amount: -pricePaid,
-      balanceAfter: balance,
+      balanceAfter,
       reason: 'unlock_shop',
       referenceId: itemId,
       meta: {
         itemId,
         purchaseChapterId: placement.purchaseChapterId,
+        clientAlreadyDeducted,
       },
     }).catch(() => {});
   }
 
-  return { ok: true, studentUnlockId, itemId, placement, pricePaid, duplicate: false };
+  return {
+    ok: true,
+    studentUnlockId,
+    itemId,
+    placement,
+    pricePaid,
+    walletBalance: balanceAfter,
+    duplicate: false,
+  };
 }
 
 async function quoteShopPrice(studentId, itemId, levelNumber) {
@@ -1219,38 +1261,54 @@ async function deductStoredCash(studentId, price) {
   return next;
 }
 
-/** Store the cash the farm already deducted, without subtracting the price a second time. */
-async function applyReportedFarmCash(studentId, reported) {
-  const nextCash = Number(reported);
+/**
+ * Store the cash the farm already deducted, without subtracting again.
+ * Always updates students.wallet_balance; updates farm_snapshot when present.
+ */
+async function syncReportedFarmCash(studentId, reported) {
+  const nextCash = Math.max(0, Number(reported));
   if (!studentId || !Number.isFinite(nextCash)) return null;
   const found = await query(
     `SELECT level_progress_id, metrics_snapshot
        FROM engagement_gaming.level_progress
       WHERE student_id = $1
-        AND status IN ${OPEN_LEVEL_STATUSES}
       ORDER BY updated_at DESC
       LIMIT 1`,
     [studentId],
   );
   const row = found.rows?.[0];
-  const metrics = row?.metrics_snapshot || {};
-  const farm = metrics.farm_snapshot;
-  if (!row || !farm || typeof farm !== 'object') return null;
-  const cash = Math.max(0, nextCash);
-  const nextFarm = { ...farm, currentMoney: cash, earnings: cash };
+  if (row?.level_progress_id) {
+    const metrics = row.metrics_snapshot || {};
+    const farm =
+      metrics.farm_snapshot && typeof metrics.farm_snapshot === 'object'
+        ? metrics.farm_snapshot
+        : {};
+    const nextFarm = { ...farm, currentMoney: nextCash, earnings: nextCash };
+    await query(
+      `UPDATE engagement_gaming.level_progress
+          SET metrics_snapshot = jsonb_set(
+                COALESCE(metrics_snapshot, '{}'::jsonb),
+                '{farm_snapshot}',
+                $2::jsonb,
+                true
+              ),
+              updated_at = NOW()
+        WHERE level_progress_id = $1`,
+      [row.level_progress_id, JSON.stringify(nextFarm)],
+    );
+  }
   await query(
-    `UPDATE engagement_gaming.level_progress
-        SET metrics_snapshot = jsonb_set(
-              COALESCE(metrics_snapshot, '{}'::jsonb),
-              '{farm_snapshot}',
-              $2::jsonb,
-              true
-            ),
-            updated_at = NOW()
-      WHERE level_progress_id = $1`,
-    [row.level_progress_id, JSON.stringify(nextFarm)],
+    `UPDATE engagement_gaming.students
+        SET wallet_balance = $2, updated_at = NOW()
+      WHERE student_id = $1`,
+    [studentId, nextCash],
   );
   return nextCash;
+}
+
+/** @deprecated use syncReportedFarmCash */
+async function applyReportedFarmCash(studentId, reported) {
+  return syncReportedFarmCash(studentId, reported);
 }
 
 export async function insertPointsLedger(body = {}) {

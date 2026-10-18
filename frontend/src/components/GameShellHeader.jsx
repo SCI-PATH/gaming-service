@@ -76,7 +76,19 @@ export default function GameShellHeader({
           </span>
           <span className="game-shell-stat-chip is-cash">
             <span className="game-shell-stat-label">Cash</span>
-            <strong>${farm.earnings ?? 0}</strong>
+            <strong>${farm.earnings ?? farm.currentMoney ?? 0}</strong>
+          </span>
+          <span
+            className="game-shell-stat-chip is-questions"
+            title="Submitted answers this level"
+          >
+            <span className="game-shell-stat-label">Questions</span>
+            <strong>
+              {Math.max(0, Number(farm.questionsAnswered) || 0)}
+              {farm.maxQuestions
+                ? `/${Math.max(1, Number(farm.maxQuestions) || 1)}`
+                : ''}
+            </strong>
           </span>
         </div>
       ) : null}

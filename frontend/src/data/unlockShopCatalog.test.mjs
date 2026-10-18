@@ -3,7 +3,11 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShopCatalog } from './unlockShop.js';
+import {
+  buildShopCatalog,
+  getUnlockItem,
+  UNLOCK_ITEMS,
+} from './unlockShop.js';
 import { freezeShopOffer } from './questionFrustration.js';
 
 describe('buildShopCatalog after level completion', () => {
@@ -43,5 +47,22 @@ describe('buildShopCatalog after level completion', () => {
       [],
     );
     assert.equal(catalog.items.find((i) => i.id === 'sheep')?.price, offer.prices.sheep);
+  });
+});
+
+describe('unlock shop catalog images', () => {
+  it('gives every catalog item an image path and texture key', () => {
+    for (const item of UNLOCK_ITEMS) {
+      assert.ok(item.image, `${item.id} missing image`);
+      assert.ok(item.textureKey, `${item.id} missing textureKey`);
+      assert.match(item.image, /^\/assets\/shop\//);
+    }
+  });
+
+  it('crops Farm Supplies from its sprite atlas instead of showing the full sheet', () => {
+    const supplies = getUnlockItem('supplies');
+    assert.equal(supplies.frameWidth, 32);
+    assert.equal(supplies.frameHeight, 32);
+    assert.ok(supplies.sheetCols >= 1);
   });
 });

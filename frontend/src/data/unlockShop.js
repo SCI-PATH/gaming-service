@@ -210,7 +210,11 @@ export const UNLOCK_ITEMS = [
     description: 'Tools and bags for chores.',
     image: '/assets/shop/props/supplies.png',
     textureKey: 'unlock_supplies',
-    displayScale: 0.3,
+    displayScale: 1.6,
+    // 288×224 atlas — crop the first 32×32 cell for thumbs / world sprites
+    frameWidth: 32,
+    frameHeight: 32,
+    sheetCols: 9,
   },
   {
     id: 'barrel',

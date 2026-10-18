@@ -65,7 +65,7 @@ function cropStep(crop, carriedCount) {
     return {
       id: `harvest-${crop.cropId || name}`,
       title: `Pick ${name} (${harvested}/${target})`,
-      how: 'Press E on a ready plant for the harvest quiz, then run over the crops to pick them up. They stack on your back.',
+      how: 'Press E on a ready plant to answer the harvest quiz. After a correct answer, press E again to harvest onto your back.',
       key: 'E',
       pin: BED_PIN,
     };

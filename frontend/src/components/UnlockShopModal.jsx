@@ -40,7 +40,8 @@ export default function UnlockShopModal({
         buyingRef.current = false;
         setBusyId(null);
         setOwned(getOwnedUnlockIds());
-        setMessage(`Unlocked ${detail.itemId} for $${detail.price}.`);
+        const label = detail.itemName || detail.itemId;
+        setMessage(`Unlocked ${label} for $${detail.price}. Cash left: $${detail.currentMoney ?? detail.earnings ?? ''}`);
       }
       if (detail.type === 'unlock_blocked') {
         buyingRef.current = false;
@@ -51,7 +52,9 @@ export default function UnlockShopModal({
         } else if (detail.reason === 'already_owned') {
           setMessage('You already own that item.');
         } else {
-          setMessage('That purchase was not saved. Your cash was not kept.');
+          setMessage(
+            `That purchase was not saved (${detail.reason || 'save_failed'}). Your cash was restored — try Buy again.`,
+          );
         }
       }
     };

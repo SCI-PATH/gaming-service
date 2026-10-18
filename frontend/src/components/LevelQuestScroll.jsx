@@ -112,7 +112,8 @@ export default function LevelQuestScroll({
           detail = `Plant ${name} on its gold bed, then pick ${target} and sell.`;
         } else if (harvested < target) {
           detail = `Harvested ${harvested}/${target}. Carry them, then press E at the Farm Shop.`;
-          hint = 'Answer the harvest quiz, then run over ready crops.';
+          hint =
+            'Press E for the harvest quiz, then press E again to pick. Unload at the Farm Shop — unlock shop opens after sell targets.';
         } else if (sold < target) {
           detail = `Sold ${sold}/${target} ${name}. Unload at the Farm Shop so customers buy.`;
           hint = 'Walk to the Farm Shop and press E to unload into shop stock.';
@@ -163,7 +164,7 @@ export default function LevelQuestScroll({
         title: `Pick ${target} ${name}`,
         detail: `Harvested ${harvested}/${target}. Carry them on your back, then press E at the Farm Shop.`,
         done: harvested >= target,
-        hint: 'Answer the harvest quiz, then run over ready crops.',
+        hint: 'Press E for the harvest quiz, then press E again to pick crops.',
         kind: 'harvest',
         status: null,
       });

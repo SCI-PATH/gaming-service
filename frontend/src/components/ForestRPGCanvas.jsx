@@ -120,29 +120,61 @@ export default function ForestRPGCanvas({
         storyline: nextStoryline,
         resume: payload.resume === true,
       };
-      ['GameOverScene', 'MenuScene', 'GuideScene'].forEach(
-        (key) => {
-          try {
-            if (game.scene.isActive(key) || game.scene.isPaused(key)) {
-              game.scene.stop(key);
-            }
-          } catch {
-            /* ignore */
-          }
-        },
-      );
-      ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
-      if (startData.resume) {
+      const fromLobby = payload.fromLobby === true || payload.resume === true;
+      let leftMenu = false;
+      ['GameOverScene', 'MenuScene', 'GuideScene'].forEach((key) => {
         try {
-          if (game.scene.isActive('GameScene') || game.scene.isPaused('GameScene')) {
+          if (game.scene.isActive(key) || game.scene.isPaused(key)) {
+            leftMenu = true;
+            game.scene.stop(key);
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+      ForestGameBridge.emit(FARM_EVENTS.UI_INPUT_LOCK, { locked: false });
+
+      const hardStart = () => {
+        try {
+          if (
+            game.scene.isActive('GameScene') ||
+            game.scene.isPaused('GameScene') ||
+            game.scene.isSleeping?.('GameScene')
+          ) {
             game.scene.stop('GameScene');
           }
         } catch {
           /* ignore */
         }
-        game.scene.start('GameScene', startData);
+        // Defer so MenuScene/GameScene shutdown finishes before create
+        window.setTimeout(() => {
+          try {
+            const g = gameRef.current;
+            if (!g) {
+              ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+                type: 'farm_start_failed',
+                message: 'Could not open the farm. Try Continue again.',
+              });
+              return;
+            }
+            g.scene.start('GameScene', startData);
+          } catch (err) {
+            console.error('Failed to start GameScene', err);
+            ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
+              type: 'farm_start_failed',
+              message: 'Could not open the farm. Try Continue again.',
+            });
+          }
+        }, 50);
+      };
+
+      // Lobby Continue / resume must always hard-start — soft reset after Exit
+      // leaves React thinking the farm never opened (no create → no FARM_SCENE_ACTIVE).
+      if (fromLobby || leftMenu || startData.resume) {
+        hardStart();
         return;
       }
+
       const gameScene = game.scene.getScene('GameScene');
       const canSoftReset =
         gameScene &&
@@ -153,12 +185,14 @@ export default function ForestRPGCanvas({
         try {
           if (game.scene.isPaused('GameScene')) game.scene.resume('GameScene');
           gameScene.beginNextLevel(startData);
+          ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: true });
+          ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'farm' });
           return;
         } catch (err) {
           console.warn('beginNextLevel failed, falling back to start', err);
         }
       }
-      game.scene.start('GameScene', startData);
+      hardStart();
     };
 
     const farmMove = { up: false, down: false, left: false, right: false };

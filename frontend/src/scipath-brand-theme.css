@@ -131,6 +131,12 @@ body {
   background: rgba(112, 224, 0, 0.08);
 }
 
+.game-shell-stat-chip.is-questions {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.1);
+  min-width: 5rem;
+}
+
 .game-shell-stat-label {
   font-size: 0.62rem;
   font-weight: 700;

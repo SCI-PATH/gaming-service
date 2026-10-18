@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
-import { bindPressEnter } from '../ui/bindPressEnter.js';
 
 export default class GuideScene extends Phaser.Scene {
   constructor() {
@@ -16,26 +15,12 @@ export default class GuideScene extends Phaser.Scene {
     this.emitMusicState();
 
     if (this.input?.keyboard) this.input.keyboard.enabled = true;
-    this.enterKey = this.input.keyboard.addKeys('enter, m');
-    this._started = false;
-    this.startFarm = () => {
-      if (this._started || !this.sys?.isActive()) return;
-      this._started = true;
-      const levelId = this.game.registry.get('farmLevelId') || 1;
-      const startingMoney = Number(this.game.registry.get('farmStartingMoney')) || 0;
-      this.scene.start('GameScene', {
-        levelId,
-        startingMoney,
-        storyline: this.game.registry.get('storyline') || null,
-      });
-    };
+    this.enterKey = this.input.keyboard.addKeys('m');
 
-    bindPressEnter(this, this.startFarm);
-    ForestGameBridge.on(FARM_EVENTS.MENU_START, this.startFarm);
+    // React GameLobbyOverlay owns Enter the Farm — avoid dual Phaser starts.
     ForestGameBridge.on(FARM_EVENTS.MENU_TOGGLE_MUSIC, this.toggleMusic, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      ForestGameBridge.off(FARM_EVENTS.MENU_START, this.startFarm);
       ForestGameBridge.off(FARM_EVENTS.MENU_TOGGLE_MUSIC, this.toggleMusic, this);
     });
   }
@@ -43,9 +28,6 @@ export default class GuideScene extends Phaser.Scene {
   update() {
     if (Phaser.Input.Keyboard.JustDown(this.enterKey.m)) {
       this.toggleMusic();
-    }
-    if (Phaser.Input.Keyboard.JustDown(this.enterKey.enter)) {
-      this.startFarm();
     }
   }
 
