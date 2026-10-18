@@ -29,7 +29,16 @@ export default class MenuScene extends Phaser.Scene {
     this.startGuide = () => {
       if (this._started || !this.sys?.isActive() || !this._canStartLobby) return;
       this._started = true;
-      this.scene.start('GuideScene');
+      // One-shot start: skip GuideScene so Enter / MENU_START cannot be lost
+      // during the menu→guide listener handoff (React lobby also starts GameScene).
+      const levelId = this.game.registry.get('farmLevelId') || 1;
+      const startingMoney =
+        Number(this.game.registry.get('farmStartingMoney')) || 0;
+      this.scene.start('GameScene', {
+        levelId,
+        startingMoney,
+        storyline: this.game.registry.get('storyline') || null,
+      });
     };
 
     this.openLeaderboard = () => {

@@ -129,7 +129,7 @@ export function resolvePlatformLaunch() {
       ? chapter.startLevel
       : launch.startLevel;
 
-  if (student) consumeFreshLogin(student.id);
+  const fresh = student ? consumeFreshLogin(student.id) : false;
   if (student && startLevel != null) {
     applyChapterFarmLevel(startLevel, launch.cash, chapter.lessonId);
     if (chapter.rewardItem || chapter.lessonId) {

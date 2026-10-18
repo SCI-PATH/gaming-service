@@ -1042,17 +1042,29 @@ body {
   color: var(--brand-text);
 }
 
-.avatar-close,
-.avatar-close.is-voice-close {
+.avatar-close {
   border: 1px solid var(--brand-surface);
   background: #fff;
   color: var(--brand-text);
 }
 
-.avatar-close:hover,
-.avatar-close.is-voice-close:hover {
+.avatar-close:hover {
   border-color: var(--brand-primary);
   color: var(--brand-primary);
+}
+
+/* Voice shell needs a high-contrast dismiss control over Sage art */
+.avatar-close.is-voice-close {
+  border: 2px solid var(--brand-primary);
+  background: var(--brand-text);
+  color: #fff;
+}
+
+.avatar-close.is-voice-close:hover,
+.avatar-close.is-voice-close:focus-visible {
+  border-color: var(--brand-special, var(--brand-primary));
+  color: #fff;
+  background: #1a1f24;
 }
 
 .avatar-letter-chip.is-labeled {
@@ -1599,6 +1611,15 @@ body {
 .game-lobby-play:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.game-lobby-start-error {
+  margin: 10px 0 0;
+  max-width: 28rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f87171;
+  text-align: center;
 }
 
 .game-lobby-enter-hint {

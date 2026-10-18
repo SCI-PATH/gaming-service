@@ -14,6 +14,7 @@ import ScienceQuizModal from './components/ScienceQuizModal.jsx';
 import UnlockShopModal from './components/UnlockShopModal.jsx';
 import MotivationalVideoModal from './components/MotivationalVideoModal.jsx';
 import LevelRemediationModal from './components/LevelRemediationModal.jsx';
+import DdaResearchOverlay from './components/DdaResearchOverlay.jsx';
 import LevelQuestScroll from './components/LevelQuestScroll.jsx';
 import PlayWizard from './components/PlayWizard.jsx';
 import CustomerMoodHud from './components/CustomerMoodHud.jsx';
@@ -80,6 +81,13 @@ import {
 import { saveFarmProgress } from './data/farmProgress.js';
 import { shouldRetryLessonAfterFarm } from './data/frustrationModel.js';
 import { submitLevelOutcome } from './data/levelOutcome.js';
+import {
+  canOpenShopAfterOutcome,
+  levelSaveNeedsWarning,
+  shopPerformanceFromLevelPayload,
+} from './data/levelCompletionFlow.js';
+import { readDemoLaunch } from './data/demoScenarios.js';
+import { normalizeStudentGrade } from './data/gradeChallengeLibraries.js';
 import {
   getChapterLaunch,
   isLearningPathLinked,
@@ -160,9 +168,24 @@ function createInitialFarm() {
  * Phaser canvas stays clean — all HUD lives in React overlays.
  */
 export default function App() {
-  const [student, setStudent] = useState(
-    () => platformLaunchRef?.student || getCurrentStudent(),
+  const demoLaunchRef = useRef(
+    typeof window !== 'undefined'
+      ? readDemoLaunch(window.location.search)
+      : readDemoLaunch(''),
   );
+  const [student, setStudent] = useState(() => {
+    const base = platformLaunchRef?.student || getCurrentStudent();
+    const demoGrade = demoLaunchRef.current?.grade;
+    if (!base) return base;
+    if (demoGrade != null && normalizeStudentGrade(base.grade) == null) {
+      return { ...base, grade: demoGrade };
+    }
+    return base;
+  });
+  const [researchOverlayOpen] = useState(
+    () => Boolean(demoLaunchRef.current?.researchOverlay),
+  );
+  const [lastQuizAttempt, setLastQuizAttempt] = useState(null);
 
   useEffect(() => {
     if (platformLaunchRef?.student?.id) {
@@ -305,6 +328,9 @@ export default function App() {
   const [playerMap, setPlayerMap] = useState({ x: 48, y: 32 });
   const [inFarm, setInFarm] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [lobbyStarting, setLobbyStarting] = useState(false);
+  const [lobbyStartError, setLobbyStartError] = useState(null);
+  const lobbyStartInFlightRef = useRef(false);
   const [gamePhase, setGamePhase] = useState('menu');
   const [gameOverPayload, setGameOverPayload] = useState(null);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -530,6 +556,7 @@ export default function App() {
   // Depend on open/closed booleans only — swapping the loading quiz payload must not
   // unlock combat (a cleanup emitUiInputLock(false) was thawing enemies mid-quiz).
   const quizOpen = Boolean(quizPayload);
+  const remediationOpen = Boolean(remediation);
   useEffect(() => {
     const locked = Boolean(
       avatarOpen ||
@@ -538,7 +565,8 @@ export default function App() {
         questScrollOpen ||
         motivationOpen ||
         pauseOpen ||
-        gameOverPayload,
+        gameOverPayload ||
+        remediationOpen,
     );
     const freezeCombat = Boolean(
       avatarOpen ||
@@ -546,7 +574,8 @@ export default function App() {
         shopOpen ||
         motivationOpen ||
         pauseOpen ||
-        gameOverPayload,
+        gameOverPayload ||
+        remediationOpen,
     );
     emitUiInputLock(locked, { freezeCombat });
   }, [
@@ -557,6 +586,7 @@ export default function App() {
     motivationOpen,
     pauseOpen,
     gameOverPayload,
+    remediationOpen,
   ]);
 
   const resetSessionUi = useCallback(() => {
@@ -704,6 +734,13 @@ export default function App() {
       } else {
         correctStreakRef.current = 0;
       }
+      setLastQuizAttempt({
+        isCorrect: Boolean(attempt.isCorrect),
+        responseTimeMs: attempt.responseTimeMs ?? null,
+        questionId: attempt.questionData?.id || null,
+        frustrationScore: attempt.questionData?.frustrationScore ?? null,
+        frustrationLevel: attempt.questionData?.frustrationLevel ?? null,
+      });
       recordAvatarAnswer({
         isCorrect: Boolean(attempt.isCorrect),
         selectedText: attempt.selectedText || null,
@@ -743,26 +780,46 @@ export default function App() {
     if (loggingOut) return;
     setLoggingOut(true);
     setQuizPayload(null);
-    const saveFailed = (result) => result && result.ok === false && !result.skipped;
+    setBanner(null);
+    const saveFailed = (result) =>
+      result && result.ok === false && !result.skipped;
+    const withTimeout = (promise, ms) =>
+      Promise.race([
+        promise,
+        new Promise((resolve) => {
+          window.setTimeout(
+            () => resolve({ ok: false, skipped: false, timedOut: true }),
+            ms,
+          );
+        }),
+      ]);
     try {
+      // Leaderboard is best-effort — never block Exit Game
       if (student?.id) {
-        await submitLeaderboardScore({
-          studentId: student.id,
-          studentName: student.displayName,
-          displayName: student.displayName,
-          score: computeArenaScore({
-            rpEarned,
-            earnings: farm.earnings,
-            levelId: farm.levelId,
-            questionsAnswered: farm.questionsAnswered,
-          }),
-          currentLevel: farm.levelId,
-          quizCorrect: farm.questionsAnswered || 0,
-          walletBalance: farm.earnings,
-        });
+        try {
+          await withTimeout(
+            submitLeaderboardScore({
+              studentId: student.id,
+              studentName: student.displayName,
+              displayName: student.displayName,
+              score: computeArenaScore({
+                rpEarned,
+                earnings: farm.earnings,
+                levelId: farm.levelId,
+                questionsAnswered: farm.questionsAnswered,
+              }),
+              currentLevel: farm.levelId,
+              quizCorrect: farm.questionsAnswered || 0,
+              walletBalance: farm.earnings,
+            }),
+            4000,
+          );
+        } catch (err) {
+          console.warn('Leaderboard save on exit skipped:', err);
+        }
       }
       persistLeaveProgress();
-      const pending = await flushPendingEngagement();
+      const pending = await withTimeout(flushPendingEngagement(), 8000);
       const run =
         loadFarmRun() ||
         (student?.id
@@ -776,32 +833,47 @@ export default function App() {
           : null);
       let farmSaved = { ok: true };
       if (student?.id && run) {
-        farmSaved = await flushFarmProgress(
-          {
-            ...run,
-            levelId: run.levelId || farm.levelId || 1,
-            currentMoney: run.currentMoney ?? farm.earnings ?? farm.currentMoney,
-            questionsAnswered: Math.max(
-              Number(run.questionsAnswered) || 0,
-              Number(farm.questionsAnswered) || 0,
-            ),
-          },
-          student,
+        farmSaved = await withTimeout(
+          flushFarmProgress(
+            {
+              ...run,
+              levelId: run.levelId || farm.levelId || 1,
+              currentMoney:
+                run.currentMoney ?? farm.earnings ?? farm.currentMoney,
+              questionsAnswered: Math.max(
+                Number(run.questionsAnswered) || 0,
+                Number(farm.questionsAnswered) || 0,
+              ),
+            },
+            student,
+          ),
+          8000,
         );
       }
-      const sessionSaved = await syncStudentLogout({
-        endLevel: run?.levelId || farm.levelId,
-        quizCorrect: farm.questionsAnswered || 0,
-        quizIncorrect: run?.quizIncorrect,
-      });
-      if (saveFailed(pending) || saveFailed(farmSaved) || saveFailed(sessionSaved)) {
-        setBanner('Could not save your farm. You are still signed in — try leaving again.');
+      const sessionSaved = await withTimeout(
+        syncStudentLogout({
+          endLevel: run?.levelId || farm.levelId,
+          quizCorrect: farm.questionsAnswered || 0,
+          quizIncorrect: run?.quizIncorrect,
+        }),
+        8000,
+      );
+      if (
+        saveFailed(pending) ||
+        saveFailed(farmSaved) ||
+        saveFailed(sessionSaved)
+      ) {
+        setBanner(
+          'Could not save your farm. You are still signed in — try Exit Game again.',
+        );
         setLoggingOut(false);
         return;
       }
     } catch (error) {
       console.error('Error saving state during logout:', error);
-      setBanner('Could not save your farm. You are still signed in — try leaving again.');
+      setBanner(
+        'Could not save your farm. You are still signed in — try Exit Game again.',
+      );
       setLoggingOut(false);
       return;
     }
@@ -812,6 +884,8 @@ export default function App() {
     );
     if (leaveToHome) {
       openAuthenticatedHome();
+      // If navigation stalls (popup blocker / slow assign), re-enable Exit
+      window.setTimeout(() => setLoggingOut(false), 2500);
       return;
     }
     logoutStudent();
@@ -827,7 +901,6 @@ export default function App() {
     farm.currentMoney,
     rpEarned,
     student,
-    inFarm,
     persistLeaveProgress,
     telemetrySession.frustrationScore,
     telemetrySession.frustrationLevel,
@@ -864,8 +937,7 @@ export default function App() {
     const x = Number(payload.playerMapX);
     const y = Number(payload.playerMapY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    // Map positions only emit from GameScene → treat as "in farm"
-    setInFarm(true);
+    // FARM_SCENE_ACTIVE owns inFarm — map pins must not re-hide the lobby
     playerMapRef.current = { x, y };
     if (payload.quizOpen) {
       if (playerMapRaf.current) {
@@ -945,39 +1017,89 @@ export default function App() {
   ]);
 
   const handleLobbyStart = useCallback(() => {
-    if (!resumeSettled) return;
-    const run = loadFarmRun();
-    if (run) {
-      setPauseOpen(false);
-      emitStartFarmLevel({
-        levelId: run.levelId,
-        startingMoney: run.currentMoney,
-        resume: true,
+    if (!resumeSettled || !gameReady) return;
+    if (lobbyStartInFlightRef.current) return;
+    lobbyStartInFlightRef.current = true;
+    setLobbyStarting(true);
+    setLobbyStartError(null);
+    setPauseOpen(false);
+    try {
+      const run = loadFarmRun();
+      if (run) {
+        emitSetFarmResume({
+          levelId: run.levelId,
+          startingMoney: run.currentMoney,
+        });
+        emitStartFarmLevel({
+          levelId: run.levelId,
+          startingMoney: run.currentMoney,
+          resume: true,
+        });
+        return;
+      }
+      const levelId = Math.max(1, Number(farm.levelId) || 1);
+      const cash = Math.max(0, Number(farm.earnings) || 0);
+      emitSetFarmResume({
+        levelId,
+        startingMoney: cash,
       });
-      return;
+      // One click: start GameScene directly (skip menu→guide handoff races)
+      emitStartFarmLevel({
+        levelId,
+        startingMoney: cash,
+        resume: false,
+      });
+    } catch (error) {
+      console.error('Lobby start failed:', error);
+      lobbyStartInFlightRef.current = false;
+      setLobbyStarting(false);
+      setLobbyStartError(
+        'Could not start the farm. Check your connection and try again.',
+      );
     }
-    const levelId = Math.max(1, Number(farm.levelId) || 1);
-    const cash = Math.max(0, Number(farm.earnings) || 0);
-    emitSetFarmResume({
-      levelId,
-      startingMoney: cash,
-    });
-    ForestGameBridge.emit(FARM_EVENTS.MENU_START);
-  }, [farm.levelId, farm.earnings, resumeSettled]);
+  }, [farm.levelId, farm.earnings, resumeSettled, gameReady]);
+
+  // Clear in-flight start once the farm scene is active (or after a timeout)
+  useEffect(() => {
+    if (!lobbyStarting) return undefined;
+    if (inFarm) {
+      lobbyStartInFlightRef.current = false;
+      setLobbyStarting(false);
+      return undefined;
+    }
+    const t = window.setTimeout(() => {
+      if (!inFarm) {
+        lobbyStartInFlightRef.current = false;
+        setLobbyStarting(false);
+        setLobbyStartError(
+          'The farm did not open. Try Play again.',
+        );
+      }
+    }, 12000);
+    return () => window.clearTimeout(t);
+  }, [lobbyStarting, inFarm]);
 
   const handleLobbyStartOver = useCallback(() => {
+    if (lobbyStartInFlightRef.current) return;
     clearFarmRun();
     clearAssessmentSession();
     resetAvatarTelemetry();
     setSavedRun(null);
     pendingResumeRef.current = false;
+    setLobbyStartError(null);
     const levelId = Math.max(1, Number(farm.levelId) || 1);
     const cash = Math.max(0, Number(farm.earnings) || 0);
     emitSetFarmResume({
       levelId,
       startingMoney: cash,
     });
-    ForestGameBridge.emit(FARM_EVENTS.MENU_START);
+    lobbyStartInFlightRef.current = true;
+    setLobbyStarting(true);
+    emitStartFarmLevel({
+      levelId,
+      startingMoney: cash,
+      resume: false,
+    });
   }, [farm.levelId, farm.earnings, resetAvatarTelemetry]);
 
   const handleLobbyLeaderboard = useCallback(() => {
@@ -1200,8 +1322,12 @@ export default function App() {
 
   const handleTargetReached = useCallback((payload) => {
     setQuizPayload(null);
+    ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_DISMISS);
     const frScore =
-      payload.frustrationScore ?? telemetrySession.frustrationScore ?? 0;
+      payload.avgFrustrationScore ??
+      payload.frustrationScore ??
+      telemetrySession.frustrationScore ??
+      0;
     const frLevel =
       payload.frustrationLevel ?? telemetrySession.frustrationLevel ?? 'low';
     const requestId = outcomeRequestRef.current + 1;
@@ -1222,7 +1348,7 @@ export default function App() {
       }));
     };
 
-    const openPassedLevel = () => {
+    const openUnlockShop = (decision = null) => {
       applyFarmComplete(payload.goalText);
       if (payload.gameplayBand || payload.pendingGameplayBonus) {
         setGameplay((prev) => ({
@@ -1241,75 +1367,57 @@ export default function App() {
           },
         }));
       }
-      if (isLearningPathLinked()) {
-        const perf = {
-          attemptScores: payload.attemptScores ?? [],
-          avgResponseMs: payload.avgResponseMs ?? 0,
-          performanceScore: payload.performanceScore,
-          performanceBand: payload.performanceBand,
-          questionsAnswered: payload.questionsAnswered,
-          questionFrustrationScores: payload.questionFrustrationScores ?? [],
-          avgFrustrationScore: payload.avgFrustrationScore ?? null,
-          frozenPrices: payload.frozenPrices ?? null,
-          levelId: payload.levelId ?? farm.levelId ?? 1,
-          sessionId: payload.sessionId ?? null,
-          frustrationScore: payload.avgFrustrationScore ?? frScore,
-          frustrationLevel: payload.frustrationLevel || frLevel,
-        };
-        setShopPerformance(perf);
-        setShopOpen(false);
-        setMotivationContext({
-          frustrationScore: perf.frustrationScore,
-          frustrationLevel: perf.frustrationLevel,
-          levelId: perf.levelId,
-          pendingShop: true,
-          returnToPath: true,
-        });
-        setMotivationOpen(true);
-        setBanner('Level complete! Visit the shop, then return to your learning path.');
-        return;
-      }
-      if (payload.openUnlockShop === true) {
-        const perf = {
-          attemptScores: payload.attemptScores ?? [],
-          avgResponseMs: payload.avgResponseMs ?? 0,
-          performanceScore: payload.performanceScore,
-          performanceBand: payload.performanceBand,
-          questionsAnswered: payload.questionsAnswered,
-          questionFrustrationScores: payload.questionFrustrationScores ?? [],
-          avgFrustrationScore: payload.avgFrustrationScore ?? null,
-          frozenPrices: payload.frozenPrices ?? null,
-          levelId: payload.levelId ?? farm.levelId ?? 1,
-          sessionId: payload.sessionId ?? null,
-          frustrationScore: payload.avgFrustrationScore ?? frScore,
-          frustrationLevel: payload.frustrationLevel || frLevel,
-        };
-        setShopPerformance(perf);
-        setMotivationContext({
-          frustrationScore: frScore,
-          frustrationLevel: frLevel,
-          levelId: payload.levelId ?? farm.levelId ?? 1,
-          pendingShop: true,
-        });
-        setMotivationOpen(true);
-        const beatNote = payload.beatTimeTarget === true ? ' You beat the time target!' : '';
-        const bonus = payload.pendingGameplayBonus;
-        const bonusNote =
-          bonus?.totalBonus > 0
-            ? ` Next level bonus: +$${bonus.totalBonus} (${bonus.gradeLabel}${
-                bonus.improvementBonusPct ? ` + improvement` : ''
-              }).`
-            : '';
+
+      const retryLesson = decision?.retryLesson === true;
+      const pathLinked = isLearningPathLinked();
+      const perf = shopPerformanceFromLevelPayload(payload, {
+        frustrationScore: frScore,
+        frustrationLevel: frLevel,
+        levelId: farm.levelId ?? 1,
+        retryLesson,
+      });
+
+      levelDecisionRef.current = decision;
+      setRemediation(null);
+      setMotivationOpen(false);
+      setMotivationContext(null);
+      setShopPerformance(perf);
+      setShopOpen(true);
+      emitUnlockShopOpen();
+
+      const beatNote = payload.beatTimeTarget === true ? ' You beat the time target!' : '';
+      const bonus = payload.pendingGameplayBonus;
+      const bonusNote =
+        bonus?.totalBonus > 0
+          ? ` Next level bonus: +$${bonus.totalBonus} (${bonus.gradeLabel}${
+              bonus.improvementBonusPct ? ` + improvement` : ''
+            }).`
+          : '';
+      if (retryLesson) {
+        setBanner(
+          decision?.mentorReply ||
+            'Level complete — visit the shop, then practice this topic again.',
+        );
+      } else if (pathLinked) {
         setBanner(
           `Level complete!${beatNote}${bonusNote} Spend cash on unlocks, then return to your learning path.`,
         );
+      } else if (payload.openUnlockShop === true) {
+        setBanner(
+          `Level complete!${beatNote}${bonusNote} Spend cash on unlocks, then continue to the next level.`,
+        );
       } else {
-        setBanner('Level complete! Proceed to the Forest Entrance!');
+        setBanner('Level complete! Continue to the next level when you are ready.');
       }
     };
 
     if (!payload.evaluateProgression) {
-      openPassedLevel();
+      if (payload.openUnlockShop === true) {
+        openUnlockShop(null);
+      } else {
+        applyFarmComplete(payload.goalText);
+        setBanner('Level complete! Continue to the next level when you are ready.');
+      }
       return;
     }
 
@@ -1329,37 +1437,45 @@ export default function App() {
       pointsEarned: payload.earnings ?? payload.currentMoney,
     }).then(async (decision) => {
       if (outcomeRequestRef.current !== requestId) return;
+
+      let cashSaved = { ok: true, skipped: !student?.id };
       if (student?.id) {
-        const cashSaved = await flushFarmProgress(
+        cashSaved = await flushFarmProgress(
           {
             levelId: payload.levelId ?? farm.levelId ?? 1,
-            currentMoney: payload.currentMoney ?? payload.earnings ?? farm.earnings ?? 0,
-            questionsAnswered: payload.questionsAnswered ?? farm.questionsAnswered ?? 0,
+            currentMoney:
+              payload.currentMoney ?? payload.earnings ?? farm.earnings ?? 0,
+            questionsAnswered:
+              payload.questionsAnswered ?? farm.questionsAnswered ?? 0,
+            questionFrustrationScores: payload.questionFrustrationScores ?? [],
+            frustrationScore: frScore,
+            frustrationLevel: frLevel,
+            avgFrustrationScore: payload.avgFrustrationScore ?? frScore,
+            frozenPrices: payload.frozenPrices ?? null,
           },
           student,
         );
-        if (cashSaved?.ok === false && !cashSaved?.skipped) {
-          setBanner('This level could not be saved. Stay here and try finishing again.');
-          return;
-        }
       }
-      if (decision?.persisted === false && !decision?.skipped) {
-        setBanner('This level could not be saved. Stay here and try finishing again.');
+
+      if (!canOpenShopAfterOutcome(decision)) {
+        setBanner(
+          'This level could not be saved. Stay here and try finishing again.',
+        );
         return;
       }
-      levelDecisionRef.current = decision;
-      if (decision?.retryLesson) {
-        setRemediation(decision);
-        setMotivationOpen(false);
-        setShopOpen(false);
-        setBanner(decision.mentorReply || 'Practice this topic again before the next level opens.');
-        return;
+
+      if (levelSaveNeedsWarning(decision, cashSaved)) {
+        setBanner(
+          'Level complete, but the latest save did not finish. Your shop is open — continue when ready, or exit and re-enter if cash looks wrong.',
+        );
       }
-      setRemediation(null);
-      openPassedLevel();
+
+      openUnlockShop(decision);
     });
   }, [
     farm.levelId,
+    farm.earnings,
+    farm.questionsAnswered,
     student?.id,
     student?.displayName,
     telemetrySession.frustrationScore,
@@ -1527,6 +1643,13 @@ export default function App() {
       }));
     }
     if (detail?.type === 'quiz_attempt') {
+      setLastQuizAttempt({
+        isCorrect: Boolean(detail.wasCorrect),
+        responseTimeMs: detail.responseTimeMs ?? null,
+        frustrationScore: detail.frustrationScore ?? null,
+        frustrationLevel: detail.frustrationLevel ?? null,
+        attemptScore: detail.attemptScore ?? null,
+      });
       setHint(
         `Answered in ${detail.responseLabel} · score ${detail.attemptScore}`,
       );
@@ -1607,6 +1730,7 @@ export default function App() {
     }
     if (detail?.type === 'quiz_blocked') {
       setQuizPayload(null);
+      ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_DISMISS);
       setHint(
         detail.hint ||
           'Science quiz is unavailable right now. Try again in a moment.',
@@ -1719,6 +1843,8 @@ export default function App() {
 
   const handleQuizClose = useCallback(() => {
     setQuizPayload(null);
+    // Ensure Phaser clears pendingQuizMode even if SCIENCE_CORRECT already ran
+    ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_DISMISS);
     persistLeaveProgress();
   }, [persistLeaveProgress]);
 
@@ -1790,15 +1916,17 @@ export default function App() {
     const decided = levelDecisionRef.current;
     const retryLesson =
       decided?.retryLesson === true ||
+      shopPerformance?.retryLesson === true ||
       (decided ? false : (
         remediation?.retryLesson === true ||
         shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
         shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
       ));
     levelDecisionRef.current = null;
+    const completedLevelId = Math.max(1, farm.levelId || 1);
     const nextLevelId = retryLesson
-      ? Math.max(1, farm.levelId || 1)
-      : Math.max(1, (farm.levelId || 1) + 1);
+      ? completedLevelId
+      : completedLevelId + 1;
     const cash = Math.max(
       0,
       Number(farm.earnings ?? farm.currentMoney) || 0,
@@ -1807,6 +1935,7 @@ export default function App() {
     emitUnlockShopClose();
     setBanner(null);
     setQuizPayload(null);
+    setShopPerformance(null);
     playerMapRef.current = { x: 48, y: 32 };
     setPlayerMap({ x: 48, y: 32 });
     setFarm((prev) => ({
@@ -1819,7 +1948,9 @@ export default function App() {
       harvestedCount: 0,
       carriedCount: 0,
       earnings: cash,
-      goalText: `Level ${nextLevelId}: finish ${DDA_CONFIG.maxQuestions} questions · then shop`,
+      goalText: retryLesson
+        ? `Level ${nextLevelId}: practice this topic again`
+        : `Level ${nextLevelId}: finish ${DDA_CONFIG.maxQuestions} questions · then shop`,
     }));
     refreshChallenges(nextLevelId);
     questScrollLevelRef.current = nextLevelId;
@@ -1828,6 +1959,18 @@ export default function App() {
       currentLevelId: nextLevelId,
       cash,
     });
+    if (student?.id) {
+      void flushFarmProgress(
+        {
+          levelId: nextLevelId,
+          currentMoney: cash,
+          questionsAnswered: 0,
+          completedLevelId,
+          retryLesson,
+        },
+        student,
+      );
+    }
     window.setTimeout(() => {
       emitStartFarmLevel({
         levelId: nextLevelId,
@@ -1843,6 +1986,8 @@ export default function App() {
     telemetrySession.frustrationScore,
     telemetrySession.frustrationLevel,
     remediation?.retryLesson,
+    shopPerformance?.retryLesson,
+    student,
   ]);
 
   const handlePracticeTopicAgain = useCallback(() => {
@@ -1959,6 +2104,8 @@ export default function App() {
               savedRun={savedRun}
               resumeReady={resumeSettled}
               resumeQuestion={lessonResume?.resumeQuestionIndex}
+              starting={lobbyStarting}
+              startError={lobbyStartError}
               onLeaderboard={handleLobbyLeaderboard}
               onToggleMusic={handleLobbyToggleMusic}
               onOpenProgress={handleOpenResearchDashboard}
@@ -2070,6 +2217,9 @@ export default function App() {
             onClose={handleShopClose}
             returnToLearningPath={pathLinked}
             retryLesson={
+              shopPerformance?.retryLesson === true ||
+              levelDecisionRef.current?.retryLesson === true ||
+              remediation?.retryLesson === true ||
               shouldRetryLessonAfterFarm(telemetrySession.frustrationScore) ||
               shouldRetryLessonAfterFarm(telemetrySession.frustrationLevel)
             }
@@ -2111,6 +2261,27 @@ export default function App() {
             studentId={student?.id || ''}
             levelId={motivationContext?.levelId ?? farm.levelId ?? 1}
             onContinue={handleMotivationContinue}
+          />
+
+          <DdaResearchOverlay
+            open={researchOverlayOpen}
+            grade={
+              normalizeStudentGrade(student?.grade) ??
+              demoLaunchRef.current?.grade ??
+              null
+            }
+            demoProfile={demoLaunchRef.current?.profile || null}
+            farm={{
+              ...farm,
+              frustrationScore: telemetrySession.frustrationScore,
+              frustrationLevel: telemetrySession.frustrationLevel,
+              performanceBand: farm.performanceBand || gameplay.band,
+              avgFrustrationScore: shopPerformance?.avgFrustrationScore,
+              librarySummary: farm.librarySummary,
+            }}
+            shopPerformance={shopPerformance}
+            lastAttempt={lastQuizAttempt}
+            gameplaySettings={gameplay.settings}
           />
 
           <LevelQuestScroll

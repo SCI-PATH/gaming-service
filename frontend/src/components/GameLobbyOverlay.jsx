@@ -38,6 +38,8 @@ export default function GameLobbyOverlay({
   savedRun = null,
   resumeReady = true,
   resumeQuestion = null,
+  starting = false,
+  startError = null,
   onStart,
   onStartOver,
   onLeaderboard,
@@ -50,10 +52,11 @@ export default function GameLobbyOverlay({
 }) {
   const isGuide = mode === 'guide';
   const progress = lobbyProgress || {};
+  const canStart = Boolean(gameReady && resumeReady && !starting);
 
   useEffect(() => {
     const onKey = (event) => {
-      if (!resumeReady) return;
+      if (!canStart) return;
       if (event.code !== 'Enter' && event.code !== 'NumpadEnter') return;
       if (event.repeat) return;
       event.preventDefault();
@@ -62,7 +65,7 @@ export default function GameLobbyOverlay({
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onStart, resumeReady]);
+  }, [onStart, canStart]);
   const currentLevelNumber = Math.max(
     1,
     Number(progress.currentLevelNumber ?? progress.levelId) || 1,
@@ -146,17 +149,29 @@ export default function GameLobbyOverlay({
             type="button"
             className="game-lobby-play"
             onClick={onStart}
-            disabled={!gameReady || !resumeReady}
+            disabled={!canStart}
+            aria-busy={starting}
           >
             <IconPlay size={18} />
-            {!resumeReady
-              ? 'Restoring your farm…'
-              : isGuide
-              ? 'Enter the Farm'
-              : savedRun || progress.phase === 'returning' || resumeQuestion > 1
-                ? 'Continue'
-                : 'Play'}
+            {starting
+              ? 'Starting…'
+              : !resumeReady
+                ? 'Restoring your farm…'
+                : !gameReady
+                  ? 'Loading farm…'
+                  : isGuide
+                    ? 'Enter the Farm'
+                    : savedRun ||
+                        progress.phase === 'returning' ||
+                        resumeQuestion > 1
+                      ? 'Continue'
+                      : 'Play'}
           </button>
+          {startError ? (
+            <p className="game-lobby-start-error" role="alert">
+              {startError}
+            </p>
+          ) : null}
           {!isGuide && savedRun ? (
             <p className="game-lobby-saved">
               Saved: {savedRun.label}

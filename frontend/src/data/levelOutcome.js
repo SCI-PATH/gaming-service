@@ -7,6 +7,38 @@ import { getChapterLaunch } from './chapterPath.js';
 import { getEngagementSessionId } from './engagementSync.js';
 import { decideFarmLessonProgression } from './farmLessonProgression.js';
 
+function localLevelOutcome(payload = {}) {
+  const local = decideFarmLessonProgression({
+    frustrationScore: payload.frustrationScore,
+    frustrationLevel: payload.frustrationLevel,
+    correctAnswers: payload.quizCorrect,
+    incorrectAnswers: payload.quizIncorrect,
+    mastery: payload.mastery,
+  });
+  const retryLesson = local.retryLesson === true;
+  const levelNumber = Math.max(1, Number(payload.levelNumber) || 1);
+  return {
+    ok: true,
+    persisted: false,
+    offline: true,
+    outcome: retryLesson ? 'REMEDIATION_REQUIRED' : 'LEVEL_PASSED',
+    retryLesson,
+    reason: local.reason,
+    status: retryLesson ? 'remediation_required' : 'completed',
+    mentorReply: retryLesson
+      ? 'Let’s practice this topic again before the next level opens. Review the explanation, then try the farm once more.'
+      : 'This topic looks ready. The next level can open.',
+    frustrationScore: Number(payload.frustrationScore) || 0,
+    frustrationLevel: payload.frustrationLevel || 'low',
+    masteryPercentage: null,
+    levelNumber,
+    nextLevelNumber: retryLesson ? levelNumber : levelNumber + 1,
+    nextLevelUnlocked: !retryLesson,
+    explanation: '',
+    mindmap: null,
+  };
+}
+
 export async function submitLevelOutcome(body = {}) {
   const launch = getChapterLaunch();
   const payload = {
@@ -26,41 +58,14 @@ export async function submitLevelOutcome(body = {}) {
       return { ...data, persisted: true };
     }
     if (data?.skipped || data?.error === 'DATABASE_URL_not_configured') {
-      return { persisted: false, skipped: true, error: data.error };
-    }
-    if (!res.ok || data?.ok === false) {
-      return { ok: false, persisted: false, error: data?.error || 'save_failed' };
+      return {
+        ...localLevelOutcome(payload),
+        skipped: true,
+        error: data.error || 'DATABASE_URL_not_configured',
+      };
     }
   } catch {
-    return { ok: false, persisted: false, error: 'save_failed' };
+    /* fall through to local thresholds so the shop can still open */
   }
-  const local = decideFarmLessonProgression({
-    frustrationScore: payload.frustrationScore,
-    frustrationLevel: payload.frustrationLevel,
-    correctAnswers: payload.quizCorrect,
-    incorrectAnswers: payload.quizIncorrect,
-    mastery: payload.mastery,
-  });
-  const retryLesson = local.retryLesson === true;
-  const levelNumber = Math.max(1, Number(payload.levelNumber) || 1);
-  return {
-    ok: false,
-    persisted: false,
-    offline: true,
-    outcome: retryLesson ? 'REMEDIATION_REQUIRED' : 'LEVEL_PASSED',
-    retryLesson,
-    reason: local.reason,
-    status: retryLesson ? 'remediation_required' : 'completed',
-    mentorReply: retryLesson
-      ? 'Let’s practice this topic again before the next level opens. Review the explanation, then try the farm once more.'
-      : 'This topic looks ready. The next level can open.',
-    frustrationScore: Number(payload.frustrationScore) || 0,
-    frustrationLevel: payload.frustrationLevel || 'low',
-    masteryPercentage: null,
-    levelNumber,
-    nextLevelNumber: retryLesson ? levelNumber : levelNumber + 1,
-    nextLevelUnlocked: !retryLesson,
-    explanation: '',
-    mindmap: null,
-  };
+  return localLevelOutcome(payload);
 }

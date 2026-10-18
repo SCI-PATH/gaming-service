@@ -123,19 +123,45 @@ function emptyLaunch() {
 
 function readStoredLaunch() {
   try {
-    const raw = sessionStorage.getItem(LAUNCH_STORAGE_KEY);
-    if (!raw) return emptyLaunch();
-    const data = JSON.parse(raw);
-    return { ...emptyLaunch(), ...(data && typeof data === 'object' ? data : {}) };
+    const sessionRaw = sessionStorage.getItem(LAUNCH_STORAGE_KEY);
+    if (sessionRaw) {
+      const data = JSON.parse(sessionRaw);
+      return {
+        ...emptyLaunch(),
+        ...(data && typeof data === 'object' ? data : {}),
+      };
+    }
+    // Survive refresh / new tab: mirror lives in localStorage
+    const localRaw = localStorage.getItem(LAUNCH_STORAGE_KEY);
+    if (localRaw) {
+      const data = JSON.parse(localRaw);
+      const launch = {
+        ...emptyLaunch(),
+        ...(data && typeof data === 'object' ? data : {}),
+      };
+      try {
+        sessionStorage.setItem(LAUNCH_STORAGE_KEY, localRaw);
+      } catch {
+        /* ignore */
+      }
+      return launch;
+    }
   } catch {
-    return emptyLaunch();
+    /* ignore */
   }
+  return emptyLaunch();
 }
 
 export function persistChapterLaunch(patch = {}) {
   const next = { ...readStoredLaunch(), ...patch };
+  const raw = JSON.stringify(next);
   try {
-    sessionStorage.setItem(LAUNCH_STORAGE_KEY, JSON.stringify(next));
+    sessionStorage.setItem(LAUNCH_STORAGE_KEY, raw);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(LAUNCH_STORAGE_KEY, raw);
   } catch {
     /* ignore */
   }

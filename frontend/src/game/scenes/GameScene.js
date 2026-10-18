@@ -14,6 +14,7 @@ import {
   TILE_SIZE,
   FARM_CAMERA_ZOOM,
 } from '../config/constants';
+import { cropCarryScale } from '../cropSpriteScale.js';
 import { ForestGameBridge, FARM_EVENTS } from '../EventBus';
 import { readLevelDuration, shouldBlockQuestionOpen } from '../levelClock.js';
 import {
@@ -46,6 +47,8 @@ import {
 } from '../../data/masteryModel';
 import { loadFarmProgress, saveFarmProgress } from '../../data/farmProgress.js';
 import { isLearningPathLinked } from '../../data/chapterPath.js';
+import { getCurrentStudent } from '../../data/mockStudents.js';
+import { normalizeStudentGrade } from '../../data/gradeChallengeLibraries.js';
 import {
   applyFrustrationToGameplaySettings,
   consumePendingGameplayBonus,
@@ -1327,8 +1330,33 @@ export default class GameScene extends Phaser.Scene {
   /**
    * Shop / missed quiz close can leave Arcade paused and the hero wedged.
    * Walking is restored whenever quiz / quest scroll are not on screen.
+   * Also clears orphaned pendingQuizMode when the React quiz overlay is gone
+   * (React can dismiss without SCIENCE_CORRECT/INCORRECT).
    */
   releaseStaleFarmLocks() {
+    if (this.pendingQuizMode) {
+      if (!this._pendingQuizSetAt) this._pendingQuizSetAt = Date.now();
+    } else {
+      this._pendingQuizSetAt = 0;
+    }
+    const quizDomOpen = this.isScienceQuizOpen();
+    if (quizDomOpen) {
+      this._quizOverlaySeenAt = Date.now();
+    } else if (this.pendingQuizMode) {
+      const setAt = Number(this._pendingQuizSetAt) || 0;
+      const seenAt = Number(this._quizOverlaySeenAt) || 0;
+      const now = Date.now();
+      // Grace: overlay may mount a frame after pendingQuizMode is set.
+      // Clear only when the overlay was seen then closed, or never appeared.
+      const orphanAfterSeen = seenAt > 0 && now - seenAt > 400;
+      const neverMounted = !seenAt && setAt > 0 && now - setAt > 2500;
+      if (orphanAfterSeen || neverMounted) {
+        this.pendingQuizMode = null;
+        this._quizOverlaySeenAt = 0;
+        this._pendingQuizSetAt = 0;
+      }
+    }
+
     if (this.isFarmCombatFrozen() || this.isAnswerLockActive()) return;
     const needsThaw =
       this._farmCombatFrozen || Boolean(this.physics?.world?.isPaused);
@@ -1471,12 +1499,18 @@ export default class GameScene extends Phaser.Scene {
         } else {
           this._uiMusicWasPlaying = false;
         }
-      } else if (!locked && this._uiOverlayPaused) {
+      } else if (!locked) {
         this._uiOverlayPaused = false;
         if (this._uiOwnedWorldPause && !this.isFarmCombatFrozen()) {
           this.thawFarmCombat();
         }
         this._uiOwnedWorldPause = this.isFarmCombatFrozen();
+        // React closed overlays — clear sticky farmInputLocked when nothing
+        // still owns the screen (was left true after freezeFarmForQuiz).
+        if (!this.isFarmCombatFrozen() && !this.isAnswerLockActive()) {
+          this.farmInputLocked = false;
+          this.releaseStaleFarmLocks();
+        }
         try {
           this.sound?.resumeAll?.();
         } catch {
@@ -1506,10 +1540,18 @@ export default class GameScene extends Phaser.Scene {
       }
     };
 
+    this._onQuizDismiss = () => {
+      if (!this.sys?.isActive()) return;
+      if (this.pendingQuizMode || this.farmInputLocked) {
+        this.resumeAfterQuiz();
+      }
+    };
+
     // Drop stale handlers from HMR / StrictMode so dead scenes cannot eat events
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PLANT_CROP);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SCIENCE_QUIZ_FAILURE);
+    ForestGameBridge.removeAllListeners(FARM_EVENTS.SCIENCE_QUIZ_DISMISS);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.SELL_INVENTORY_ACTION);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.PURCHASE_UNLOCK);
     ForestGameBridge.removeAllListeners(FARM_EVENTS.UNLOCK_SHOP_OPEN);
@@ -1524,6 +1566,7 @@ export default class GameScene extends Phaser.Scene {
     ForestGameBridge.on(FARM_EVENTS.PLANT_CROP, this._onPlant);
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, this._onQuizSuccess);
     ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
+    ForestGameBridge.on(FARM_EVENTS.SCIENCE_QUIZ_DISMISS, this._onQuizDismiss);
     ForestGameBridge.on(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
     ForestGameBridge.on(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
     this._onOwnedUnlocks = () => {
@@ -1549,6 +1592,7 @@ export default class GameScene extends Phaser.Scene {
       ForestGameBridge.off(FARM_EVENTS.PLANT_CROP, this._onPlant);
       ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, this._onQuizSuccess);
       ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, this._onQuizFailure);
+      ForestGameBridge.off(FARM_EVENTS.SCIENCE_QUIZ_DISMISS, this._onQuizDismiss);
       ForestGameBridge.off(FARM_EVENTS.SELL_INVENTORY_ACTION, this._onSell);
       ForestGameBridge.off(FARM_EVENTS.PURCHASE_UNLOCK, this._onPurchaseUnlock);
       ForestGameBridge.off(FARM_EVENTS.OWNED_UNLOCKS_LOADED, this._onOwnedUnlocks);
@@ -1702,6 +1746,16 @@ export default class GameScene extends Phaser.Scene {
       mastery: this.mastery,
       masteryPercent: Math.round((this.mastery || 0) * 100),
       masterySource: this.masterySource,
+      studentGrade: this.studentGrade ?? null,
+      libraryLabel: this.levelPlan?.libraryLabel || null,
+      librarySummary: this.levelPlan?.summary || '',
+      learningObjective: this.levelPlan?.learningObjective || null,
+      topicId: this.levelPlan?.topicId || null,
+      frustrationScore: this.frustrationScore || 0,
+      frustrationLevel: this.frustrationLevel || 'low',
+      enemyDamageChance: this.enemyDamageChance ?? 1,
+      enemySpeed: this.enemySpeed ?? null,
+      gameplaySettings: this.gameplaySettings || null,
       quizCorrect: this.quizCorrect,
       quizIncorrect: this.quizIncorrect,
       wrongAnswersRemaining: Math.max(
@@ -2024,6 +2078,8 @@ export default class GameScene extends Phaser.Scene {
       responseTimeMs: ms,
       responseLabel: formatResponseTime(ms),
       attemptScore,
+      frustrationScore: attempt.frustrationScore,
+      frustrationLevel: attempt.frustrationLevel,
       performanceScore: Math.round(averageScore(this.attemptScores)),
       performanceBand: this.performanceBand,
       timeTargetMs: this.timeTargetMs,
@@ -2187,7 +2243,13 @@ export default class GameScene extends Phaser.Scene {
         pickMode,
       );
       if (!this.sys?.isActive() || quizGen !== this._scienceQuizGen) {
-        if (this.sys?.isActive() && this._finishAfterQuiz) this.resumeAfterQuiz();
+        // Cancelled / superseded load must not leave pendingQuizMode stuck
+        if (
+          this.sys?.isActive() &&
+          (this.pendingQuizMode || this.farmInputLocked || this._finishAfterQuiz)
+        ) {
+          this.resumeAfterQuiz();
+        }
         return false;
       }
       if (!isRenderableQuizQuestion(question)) {
@@ -2272,7 +2334,11 @@ export default class GameScene extends Phaser.Scene {
 
   /** Assign this level's slice of the challenge library. */
   bindLevelLibrary() {
-    this.levelPlan = getLevelChallengePlan(this.levelId);
+    const student = getCurrentStudent();
+    this.studentGrade = normalizeStudentGrade(
+      this.studentGrade ?? student?.grade ?? student?.gradeLevel ?? null,
+    );
+    this.levelPlan = getLevelChallengePlan(this.levelId, this.studentGrade);
     this.libraryOverride = false;
     this.levelCropSlot = 0;
     this.levelCropComplete = false;
@@ -2365,11 +2431,14 @@ export default class GameScene extends Phaser.Scene {
     return 'crop_flower';
   }
 
+  /**
+   * Carry-trail icon scale. Tiny Kenney tiles get a boost; large Harvest Moon
+   * produce (e.g. hm_potato 65×60) is fit to ~tile size so potatoes are not huge.
+   */
   cropSpriteScale(key, fallback) {
     const tex = this.textures.get(key);
     const src = tex?.getSourceImage?.();
-    const w = Number(src?.width) || 32;
-    return w <= 20 ? fallback * 1.7 : fallback;
+    return cropCarryScale(src?.width, src?.height, fallback, TILE_SIZE);
   }
 
   /**
@@ -4434,6 +4503,7 @@ export default class GameScene extends Phaser.Scene {
     });
 
     this.applyShopFulfillmentResult(result, { rp });
+    this.checkTargetReached();
   }
 
   /**
@@ -4595,12 +4665,14 @@ export default class GameScene extends Phaser.Scene {
   finishPlanting({ rp = 0 } = {}) {
     const cropId = this.farmLevel?.cropId;
     if (cropId && this.cropPlantedSet?.has(cropId)) {
-      // Already planted this crop type this level — ignore duplicate quiz completion
+      // Already planted this crop type this level — ignore duplicate planting,
+      // but still finish the level when the question quota is met.
       this.pendingQuizMode = null;
       this.pendingGridKey = null;
       this.pendingPatchCells = [];
       this.currentTargetTile = null;
       this.emitFarmState();
+      this.checkTargetReached();
       return;
     }
 
@@ -4868,6 +4940,8 @@ export default class GameScene extends Phaser.Scene {
     this._finishAfterQuiz = null;
     this.farmInputLocked = false;
     this.pendingQuizMode = null;
+    this._pendingQuizSetAt = 0;
+    this._quizOverlaySeenAt = 0;
     this.thawFarmCombat();
     this.focusGameCanvas();
     if (finishReason && !this.forestUnlocked && !this._runEnded) {
@@ -5049,11 +5123,13 @@ export default class GameScene extends Phaser.Scene {
           message: 'Press E at the Farm Shop to unload harvests into stock.',
         });
         this.emitFarmState();
+        this.checkTargetReached();
         return;
       }
 
       if (mode === 'load') {
         this.finishLoadToShop({ rp: payload.rp ?? 0 });
+        this.checkTargetReached();
         return;
       }
 

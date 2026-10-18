@@ -184,14 +184,16 @@ export default function ForestRPGCanvas({
         return;
       }
       const scene = game.scene.getScene('GameScene');
+      if (scene?.shouldPassKeysToDom?.(event)) return;
       if (
         overlayBlocksWalk() ||
         scene?.pendingQuizMode ||
-        scene?.farmInputLocked ||
-        scene?.shouldPassKeysToDom?.(event)
+        scene?.isScienceQuizOpen?.() ||
+        scene?.isAvatarOpen?.()
       ) {
         return;
       }
+      // Sticky farmInputLocked alone must not swallow WASD after overlays close
       event.preventDefault();
       setFarmMove(code, true);
     };
@@ -201,13 +203,25 @@ export default function ForestRPGCanvas({
     const applyFarmMove = () => {
       const scene = game.scene.getScene('GameScene');
       if (!scene?.sys?.isActive?.() || !scene.player) return;
-      if (
+      // Let GameScene release orphaned locks before we decide to zero velocity
+      scene.releaseStaleFarmLocks?.();
+      const blocked =
         overlayBlocksWalk() ||
-        scene.pendingQuizMode ||
-        scene.farmInputLocked
-      ) {
+        Boolean(scene.pendingQuizMode) ||
+        Boolean(scene.isScienceQuizOpen?.()) ||
+        Boolean(scene.isAvatarOpen?.()) ||
+        Boolean(scene.isQuestScrollOpen?.()) ||
+        Boolean(scene.isUnlockShopOpen?.()) ||
+        Boolean(scene.isMotivationOpen?.()) ||
+        Boolean(scene.isPauseOpen?.());
+      if (blocked) {
         scene.player.setVelocity?.(0);
         return;
+      }
+      // Sticky farmInputLocked with no overlay — clear so WASD recovers without refresh
+      if (scene.farmInputLocked) {
+        scene.farmInputLocked = false;
+        scene.uiInputLocked = false;
       }
       try {
         scene.physics?.world?.resume?.();

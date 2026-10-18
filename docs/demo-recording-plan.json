@@ -1,0 +1,914 @@
+[
+  {
+    "videoId": "G6-smart-intro-01",
+    "grade": 6,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "intro",
+    "challengeId": "g6_animal_cow",
+    "challengeTitle": "cow paddock",
+    "learningObjective": "States of matter",
+    "topicId": "G6_C2_MAT_STATES",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/smart/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-smart-question_frustration-02",
+    "grade": 6,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g6_clean_weed",
+    "challengeTitle": "weed yard",
+    "learningObjective": "States and types of water",
+    "topicId": "G6_C3_WAT_STATES",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/smart/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-smart-adaptive_gameplay-03",
+    "grade": 6,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g6_sci_g6_c1_org_chars",
+    "challengeTitle": "Ch.1: Characteristics of organisms",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/smart/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-smart-level_shop-04",
+    "grade": 6,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g6_crop_tomato",
+    "challengeTitle": "tomato bed",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/smart/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-intermediate-intro-01",
+    "grade": 6,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "intro",
+    "challengeId": "g6_animal_cow",
+    "challengeTitle": "cow paddock",
+    "learningObjective": "States of matter",
+    "topicId": "G6_C2_MAT_STATES",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/intermediate/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-intermediate-question_frustration-02",
+    "grade": 6,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g6_clean_weed",
+    "challengeTitle": "weed yard",
+    "learningObjective": "States and types of water",
+    "topicId": "G6_C3_WAT_STATES",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/intermediate/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-intermediate-adaptive_gameplay-03",
+    "grade": 6,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g6_sci_g6_c1_org_chars",
+    "challengeTitle": "Ch.1: Characteristics of organisms",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/intermediate/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-intermediate-level_shop-04",
+    "grade": 6,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g6_crop_tomato",
+    "challengeTitle": "tomato bed",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/intermediate/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-weak-intro-01",
+    "grade": 6,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "intro",
+    "challengeId": "g6_animal_cow",
+    "challengeTitle": "cow paddock",
+    "learningObjective": "States of matter",
+    "topicId": "G6_C2_MAT_STATES",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/weak/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-weak-question_frustration-02",
+    "grade": 6,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g6_clean_weed",
+    "challengeTitle": "weed yard",
+    "learningObjective": "States and types of water",
+    "topicId": "G6_C3_WAT_STATES",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/weak/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-weak-adaptive_gameplay-03",
+    "grade": 6,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g6_sci_g6_c1_org_chars",
+    "challengeTitle": "Ch.1: Characteristics of organisms",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/weak/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G6-weak-level_shop-04",
+    "grade": 6,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g6_crop_tomato",
+    "challengeTitle": "tomato bed",
+    "learningObjective": "Characteristics of organisms",
+    "topicId": "G6_C1_ORG_CHARS",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 6,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-6/weak/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-smart-intro-01",
+    "grade": 7,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "intro",
+    "challengeId": "g7_animal_chicken",
+    "challengeTitle": "chicken paddock",
+    "learningObjective": "Charging objects and types of static charge",
+    "topicId": "G7_C2_STA_CHARGES",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/smart/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-smart-question_frustration-02",
+    "grade": 7,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g7_clean_bucket",
+    "challengeTitle": "bucket yard",
+    "learningObjective": "Sources of electricity generation",
+    "topicId": "G7_C3_ELE_SOURCES",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/smart/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-smart-adaptive_gameplay-03",
+    "grade": 7,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g7_sci_g7_c1_pla_diver",
+    "challengeTitle": "Ch.1: Morphological features and plant diversity",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/smart/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-smart-level_shop-04",
+    "grade": 7,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g7_crop_corn",
+    "challengeTitle": "corn bed",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/smart/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-intermediate-intro-01",
+    "grade": 7,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "intro",
+    "challengeId": "g7_animal_chicken",
+    "challengeTitle": "chicken paddock",
+    "learningObjective": "Charging objects and types of static charge",
+    "topicId": "G7_C2_STA_CHARGES",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/intermediate/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-intermediate-question_frustration-02",
+    "grade": 7,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g7_clean_bucket",
+    "challengeTitle": "bucket yard",
+    "learningObjective": "Sources of electricity generation",
+    "topicId": "G7_C3_ELE_SOURCES",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/intermediate/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-intermediate-adaptive_gameplay-03",
+    "grade": 7,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g7_sci_g7_c1_pla_diver",
+    "challengeTitle": "Ch.1: Morphological features and plant diversity",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/intermediate/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-intermediate-level_shop-04",
+    "grade": 7,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g7_crop_corn",
+    "challengeTitle": "corn bed",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/intermediate/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-weak-intro-01",
+    "grade": 7,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "intro",
+    "challengeId": "g7_animal_chicken",
+    "challengeTitle": "chicken paddock",
+    "learningObjective": "Charging objects and types of static charge",
+    "topicId": "G7_C2_STA_CHARGES",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/weak/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-weak-question_frustration-02",
+    "grade": 7,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g7_clean_bucket",
+    "challengeTitle": "bucket yard",
+    "learningObjective": "Sources of electricity generation",
+    "topicId": "G7_C3_ELE_SOURCES",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/weak/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-weak-adaptive_gameplay-03",
+    "grade": 7,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g7_sci_g7_c1_pla_diver",
+    "challengeTitle": "Ch.1: Morphological features and plant diversity",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/weak/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G7-weak-level_shop-04",
+    "grade": 7,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g7_crop_corn",
+    "challengeTitle": "corn bed",
+    "learningObjective": "Morphological features and plant diversity",
+    "topicId": "G7_C1_PLA_DIVER",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 7,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-7/weak/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-smart-intro-01",
+    "grade": 8,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "intro",
+    "challengeId": "g8_animal_sheep",
+    "challengeTitle": "sheep paddock",
+    "learningObjective": "Main invertebrate groups",
+    "topicId": "G8_C2_ANI_INVERT",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/smart/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-smart-question_frustration-02",
+    "grade": 8,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g8_clean_mushroom",
+    "challengeTitle": "mushroom yard",
+    "learningObjective": "Diversity and functions of plant leaves",
+    "topicId": "G8_C3_PLA_LEAVES",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/smart/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-smart-adaptive_gameplay-03",
+    "grade": 8,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g8_sci_g8_c1_mic_intro",
+    "challengeTitle": "Ch.1: Microorganisms and their diversity",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/smart/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-smart-level_shop-04",
+    "grade": 8,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g8_crop_cabbage",
+    "challengeTitle": "cabbage bed",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/smart/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-intermediate-intro-01",
+    "grade": 8,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "intro",
+    "challengeId": "g8_animal_sheep",
+    "challengeTitle": "sheep paddock",
+    "learningObjective": "Main invertebrate groups",
+    "topicId": "G8_C2_ANI_INVERT",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/intermediate/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-intermediate-question_frustration-02",
+    "grade": 8,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g8_clean_mushroom",
+    "challengeTitle": "mushroom yard",
+    "learningObjective": "Diversity and functions of plant leaves",
+    "topicId": "G8_C3_PLA_LEAVES",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/intermediate/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-intermediate-adaptive_gameplay-03",
+    "grade": 8,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g8_sci_g8_c1_mic_intro",
+    "challengeTitle": "Ch.1: Microorganisms and their diversity",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/intermediate/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-intermediate-level_shop-04",
+    "grade": 8,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g8_crop_cabbage",
+    "challengeTitle": "cabbage bed",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/intermediate/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-weak-intro-01",
+    "grade": 8,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "intro",
+    "challengeId": "g8_animal_sheep",
+    "challengeTitle": "sheep paddock",
+    "learningObjective": "Main invertebrate groups",
+    "topicId": "G8_C2_ANI_INVERT",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/weak/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-weak-question_frustration-02",
+    "grade": 8,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g8_clean_mushroom",
+    "challengeTitle": "mushroom yard",
+    "learningObjective": "Diversity and functions of plant leaves",
+    "topicId": "G8_C3_PLA_LEAVES",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/weak/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-weak-adaptive_gameplay-03",
+    "grade": 8,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g8_sci_g8_c1_mic_intro",
+    "challengeTitle": "Ch.1: Microorganisms and their diversity",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/weak/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G8-weak-level_shop-04",
+    "grade": 8,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g8_crop_cabbage",
+    "challengeTitle": "cabbage bed",
+    "learningObjective": "Microorganisms and their diversity",
+    "topicId": "G8_C1_MIC_INTRO",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 8,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-8/weak/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-smart-intro-01",
+    "grade": 9,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "intro",
+    "challengeId": "g9_animal_horse",
+    "challengeTitle": "horse paddock",
+    "learningObjective": "Structure and defects of the human eye",
+    "topicId": "G9_C2_SEN_EYE",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/smart/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-smart-question_frustration-02",
+    "grade": 9,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g9_clean_trough",
+    "challengeTitle": "trough yard",
+    "learningObjective": "Elements, compounds, and mixtures",
+    "topicId": "G9_C3_MAT_ELEMENTS",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/smart/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-smart-adaptive_gameplay-03",
+    "grade": 9,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g9_sci_g9_c1_mic_env",
+    "challengeTitle": "Ch.1: Micro-organisms, substrates, and environments",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/smart/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-smart-level_shop-04",
+    "grade": 9,
+    "profileId": "smart",
+    "profileLabel": "Smart / Low Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g9_crop_pumpkin",
+    "challengeTitle": "pumpkin bed",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "smart",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/smart/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-intermediate-intro-01",
+    "grade": 9,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "intro",
+    "challengeId": "g9_animal_horse",
+    "challengeTitle": "horse paddock",
+    "learningObjective": "Structure and defects of the human eye",
+    "topicId": "G9_C2_SEN_EYE",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/intermediate/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-intermediate-question_frustration-02",
+    "grade": 9,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g9_clean_trough",
+    "challengeTitle": "trough yard",
+    "learningObjective": "Elements, compounds, and mixtures",
+    "topicId": "G9_C3_MAT_ELEMENTS",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/intermediate/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-intermediate-adaptive_gameplay-03",
+    "grade": 9,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g9_sci_g9_c1_mic_env",
+    "challengeTitle": "Ch.1: Micro-organisms, substrates, and environments",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/intermediate/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-intermediate-level_shop-04",
+    "grade": 9,
+    "profileId": "intermediate",
+    "profileLabel": "Intermediate / Moderate Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g9_crop_pumpkin",
+    "challengeTitle": "pumpkin bed",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "intermediate",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/intermediate/level_shop.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-weak-intro-01",
+    "grade": 9,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "intro",
+    "challengeId": "g9_animal_horse",
+    "challengeTitle": "horse paddock",
+    "learningObjective": "Structure and defects of the human eye",
+    "topicId": "G9_C2_SEN_EYE",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/weak/intro.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-weak-question_frustration-02",
+    "grade": 9,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "question_frustration",
+    "challengeId": "g9_clean_trough",
+    "challengeTitle": "trough yard",
+    "learningObjective": "Elements, compounds, and mixtures",
+    "topicId": "G9_C3_MAT_ELEMENTS",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/weak/question_frustration.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-weak-adaptive_gameplay-03",
+    "grade": 9,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "adaptive_gameplay",
+    "challengeId": "g9_sci_g9_c1_mic_env",
+    "challengeTitle": "Ch.1: Micro-organisms, substrates, and environments",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/weak/adaptive_gameplay.mp4",
+    "recordingStatus": "planned"
+  },
+  {
+    "videoId": "G9-weak-level_shop-04",
+    "grade": 9,
+    "profileId": "weak",
+    "profileLabel": "Weak / High Frustration",
+    "videoType": "level_shop",
+    "challengeId": "g9_crop_pumpkin",
+    "challengeTitle": "pumpkin bed",
+    "learningObjective": "Micro-organisms, substrates, and environments",
+    "topicId": "G9_C1_MIC_ENV",
+    "startingConditions": {
+      "demoProfile": "weak",
+      "demoGrade": 9,
+      "researchOverlay": 1,
+      "freshSession": true
+    },
+    "outputFilename": "grade-9/weak/level_shop.mp4",
+    "recordingStatus": "planned"
+  }
+]

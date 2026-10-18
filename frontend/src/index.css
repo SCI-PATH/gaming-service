@@ -5133,18 +5133,39 @@ button.farm-map-bed {
 
 .avatar-close.is-voice-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 5;
-  border: 1px solid rgba(160, 130, 60, 0.55);
-  background: rgba(20, 28, 18, 0.9);
-  color: #e8dcc0;
+  top: 8px;
+  right: 8px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 36px;
+  border: 2px solid rgba(200, 160, 70, 0.85);
+  background: rgba(12, 18, 14, 0.95);
+  color: #f5ecd4;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  padding: 5px 10px;
-  border-radius: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
   cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.avatar-close.is-voice-close span[aria-hidden='true'] {
+  font-size: 1.35rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.avatar-close.is-voice-close:hover,
+.avatar-close.is-voice-close:focus-visible {
+  border-color: #e8c56a;
+  color: #fff;
+  outline: 2px solid rgba(232, 197, 106, 0.55);
+  outline-offset: 2px;
 }
 
 .avatar-solo-sage.is-voice-only {
@@ -6610,7 +6631,7 @@ button.farm-map-bed {
   background:
     radial-gradient(circle at 50% 42%, rgba(24, 70, 110, 0.5) 0%, transparent 52%),
     radial-gradient(ellipse at 50% 100%, rgba(8, 24, 40, 0.7), #04070b 72%);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .avatar-split-right.is-sage-only .sage-lesson {
@@ -6626,7 +6647,7 @@ button.farm-map-bed {
   height: auto;
   max-width: none;
   flex: 0 0 auto;
-  max-height: 42%;
+  max-height: min(52vh, 360px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -6635,6 +6656,7 @@ button.farm-map-bed {
   position: relative;
   gap: 12px;
   padding: 0;
+  overflow: visible;
 }
 
 /* Agent wrap: portrait + rings */
@@ -6750,11 +6772,12 @@ button.farm-map-bed {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 16%;
+  /* Center face in circular frame — prior 16% + scale(1.06) clipped chin/sides */
+  object-position: center 28%;
   display: block;
   user-select: none;
   pointer-events: none;
-  transform: scale(1.06);
+  transform: none;
 }
 
 .sage-frame-sheen {
@@ -7118,13 +7141,13 @@ button.farm-map-bed {
 }
 
 .sage-avatar.size-hero .sage-agent {
-  width: min(350px, 48vw);
-  max-height: none;
+  width: min(280px, 42vw);
+  max-height: min(42vh, 280px);
 }
 
 .sage-avatar.size-lg .sage-agent {
   width: min(220px, 42vw);
-  max-height: none;
+  max-height: min(48vh, 240px);
 }
 
 .sage-avatar.size-md .sage-agent {
@@ -10001,3 +10024,75 @@ button.farm-map-bed {
 
 
 
+
+/* Demonstration-only DDA research overlay */
+.dda-research-overlay {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(220, 232, 222, 0.28);
+  background: rgba(12, 22, 16, 0.92);
+  color: #e8f0ea;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  font-size: 0.72rem;
+}
+.dda-research-kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9bb89f;
+  font-size: 0.62rem;
+}
+.dda-research-head h2 {
+  margin: 2px 0 6px;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+.dda-research-note {
+  margin: 0 0 8px;
+  color: #b7c8ba;
+  line-height: 1.35;
+}
+.dda-research-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.dda-research-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-top: 1px solid rgba(220, 232, 222, 0.12);
+}
+.dda-research-list li span {
+  color: #c5d6c8;
+}
+.dda-research-list li strong {
+  font-weight: 600;
+  text-align: right;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dda-research-list li em {
+  font-style: normal;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7f9a84;
+}
+.dda-research-list li[data-kind='measured'] em { color: #8ec8ff; }
+.dda-research-list li[data-kind='derived'] em { color: #f0c36a; }
+.dda-research-list li[data-kind='config'] em { color: #9bb89f; }

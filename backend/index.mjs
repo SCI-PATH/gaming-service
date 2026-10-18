@@ -210,6 +210,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/challenges') {
+    try {
+      const gradeLib = await import('./lib/gradeChallenges.mjs');
+      const grade = url.searchParams.get('grade');
+      const challengeId = url.searchParams.get('challengeId') || '';
+      if (challengeId) {
+        const check = gradeLib.validateChallengeRequest({ grade, challengeId });
+        sendJson(res, check.ok ? 200 : 400, check);
+        return;
+      }
+      const payload = gradeLib.challengesPayloadForGrade(grade);
+      sendJson(res, payload.ok ? 200 : 400, payload);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, { ok: false, error: message });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/engagement/frustration') {
     try {
       const studentId = url.searchParams.get('studentId') || '';

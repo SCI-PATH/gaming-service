@@ -183,7 +183,7 @@ export default function UnlockShopModal({
                 : 'Go to the next lesson'
               : retryLesson
                 ? 'Play this level again'
-                : 'Continue to Forest'}
+                : 'Continue to Next Level'}
           </button>
         </footer>
       </div>

@@ -633,6 +633,21 @@ export default function AvatarAssistantModal({
     setSpokenCurrentWord('');
   }, []);
 
+  // Always-available dismiss while Sage is speaking or idle
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      if (event.repeat) return;
+      event.preventDefault();
+      event.stopPropagation();
+      stopSpeaking();
+      onClose?.();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, onClose, stopSpeaking]);
+
   const applySpeechFocus = useCallback((segment) => {
     if (!segment) {
       setSpeechMapFocus(null);
@@ -1686,8 +1701,10 @@ export default function AvatarAssistantModal({
             onClose?.();
           }}
           aria-label="Close mentor"
+          title="Close"
         >
-          Close
+          <span aria-hidden="true">×</span>
+          <span className="avatar-close-label">Close</span>
         </button>
 
         {/* Optional mind map stays side-stage only when student opens it */}

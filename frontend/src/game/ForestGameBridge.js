@@ -15,6 +15,8 @@ export const FARM_EVENTS = {
   TRIGGER_SCIENCE_QUIZ: 'TRIGGER_SCIENCE_QUIZ',
   SCIENCE_QUIZ_SUCCESS: 'SCIENCE_QUIZ_SUCCESS',
   SCIENCE_QUIZ_FAILURE: 'SCIENCE_QUIZ_FAILURE',
+  /** React dismissed the quiz overlay without a graded answer (or after one). */
+  SCIENCE_QUIZ_DISMISS: 'SCIENCE_QUIZ_DISMISS',
   /** Spec aliases used by ScienceQuizModal */
   SCIENCE_CORRECT: 'SCIENCE_CORRECT',
   SCIENCE_INCORRECT: 'SCIENCE_INCORRECT',
