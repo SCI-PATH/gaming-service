@@ -2723,7 +2723,8 @@ export default class GameScene extends Phaser.Scene {
   /**
    * Level clock or question quota is done.
    * An open card is allowed to finish; the next opener is refused.
-   * Unlock shop waits for farm objectives when ending on question quota.
+   * Questions finished → unlock shop opens even if farm challenges remain.
+   * Next lesson vs retry is decided from performance after the shop.
    */
   holdOrFinishLevel(reason) {
     if (this.forestUnlocked || this._runEnded || this._levelFinishStarted) return;
@@ -2733,19 +2734,7 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
     const why = !this.needsQuestionQuota() ? 'question_quota' : reason || 'time_expired';
-    if (
-      !shouldFinishLevelForShop(why, this.farmObjectivesReadyForShop())
-    ) {
-      this.syncVegetableGoalText();
-      this.emitFarmState();
-      if (!this._awaitingFarmForShopHint) {
-        this._awaitingFarmForShopHint = true;
-        ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
-          type: 'farm_shop_hint',
-          message:
-            'Questions done — finish harvesting and press E at the Farm Shop to unload. The unlock shop opens after that.',
-        });
-      }
+    if (!shouldFinishLevelForShop(why, this.farmObjectivesReadyForShop())) {
       return;
     }
     this.levelTimeExpired = true;
@@ -2771,7 +2760,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Level ends when quota + farm objectives are done, or the clock / miss limit fires. */
+  /** Level ends when question quota is done, or the clock / miss limit fires. */
   checkTargetReached() {
     if (this.forestUnlocked || this._runEnded) return;
 

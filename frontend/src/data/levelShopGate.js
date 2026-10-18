@@ -1,6 +1,7 @@
 /**
  * When the unlock shop may open after a level ends.
- * Question quota alone is not enough if farm crop objectives remain.
+ * Question quota finished → shop opens even if farm challenges remain.
+ * Next lesson vs retry is decided later from student performance.
  */
 
 export function farmObjectivesReadyForShop({
@@ -23,11 +24,11 @@ export function farmObjectivesReadyForShop({
 }
 
 /**
- * @param {'question_quota'|'time_expired'|'wrong_answers'|string} reason
+ * Unlock shop opens as soon as the level run ends (quota / clock / misses).
+ * Farm challenge completion is no longer required.
+ * @param {'question_quota'|'time_expired'|'wrong_answers'|string} [_reason]
+ * @param {boolean} [_farmReady] kept for callers; ignored
  */
-export function shouldFinishLevelForShop(reason, farmReady) {
-  const why = String(reason || '');
-  if (why === 'wrong_answers' || why === 'time_expired') return true;
-  if (why === 'question_quota') return Boolean(farmReady);
-  return Boolean(farmReady);
+export function shouldFinishLevelForShop(_reason, _farmReady) {
+  return true;
 }

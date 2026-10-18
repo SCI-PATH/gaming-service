@@ -10,7 +10,7 @@ describe('farmObjectivesReadyForShop', () => {
     assert.equal(farmObjectivesReadyForShop({ levelCrops: [] }), true);
   });
 
-  it('blocks the shop until every crop sell target is met', () => {
+  it('reports whether crop sell targets are met (informational)', () => {
     assert.equal(
       farmObjectivesReadyForShop({
         levelCrops: [{ cropId: 'tomato', harvestCount: 4 }],
@@ -46,8 +46,8 @@ describe('shouldFinishLevelForShop', () => {
     assert.equal(shouldFinishLevelForShop('wrong_answers', false), true);
   });
 
-  it('requires farm readiness for question_quota endings', () => {
-    assert.equal(shouldFinishLevelForShop('question_quota', false), false);
+  it('opens the unlock shop when question quota is done without farm completion', () => {
+    assert.equal(shouldFinishLevelForShop('question_quota', false), true);
     assert.equal(shouldFinishLevelForShop('question_quota', true), true);
   });
 });
