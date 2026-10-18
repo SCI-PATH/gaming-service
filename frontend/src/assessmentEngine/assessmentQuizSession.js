@@ -14,6 +14,7 @@ import {
   chapterIdFromTopicId,
   pickCanonicalTopicId,
 } from '../data/curriculumTopics.js';
+import { readGradeIsCorrect } from './gradeFlag.js';
 
 const FETCH_TIMEOUT_MS = 15000;
 /** Short answers wait on Groq; keep under the Vite proxy 60s cap. */
@@ -901,9 +902,7 @@ export async function submitAssessmentAnswer({
 
   const data = result.data || {};
   const grade = data.grade && typeof data.grade === 'object' ? data.grade : data;
-  const isCorrect = Boolean(
-    grade?.is_correct ?? grade?.isCorrect ?? data.is_correct,
-  );
+  const isCorrect = readGradeIsCorrect(grade, data);
   const isComplete = Boolean(
     data.is_complete === true ||
       String(data.status || '').toLowerCase() === 'complete' ||

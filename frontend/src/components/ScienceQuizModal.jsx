@@ -368,7 +368,7 @@ export default function ScienceQuizModal({
       setBusy(true);
       setGradeError(null);
       setResult({
-        isCorrect: Boolean(isCorrectLocal),
+        isCorrect: false,
         selectedIndex,
         selectedText: selectedText || '',
         responseTimeMs,
@@ -474,7 +474,7 @@ export default function ScienceQuizModal({
         if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = window.setTimeout(() => {
           finish(isCorrect, responseTimeMs);
-        }, 0);
+        }, isCorrect ? 1800 : 2800);
         setBusy(false);
         return;
       } catch {
@@ -851,7 +851,7 @@ export default function ScienceQuizModal({
           <div className="science-quiz-options">
             {options.map((option, idx) => {
               let tone = '';
-              if (result) {
+              if (result && !result.pending) {
                 if (idx === revealedCorrectIndex) tone = 'is-correct';
                 else if (idx === result.selectedIndex) tone = 'is-wrong';
               }
@@ -939,20 +939,22 @@ export default function ScienceQuizModal({
         {result && (
           <div
             className={`science-quiz-feedback ${
-              result.isCorrect ? 'is-ok' : 'is-miss'
+              result.pending ? '' : result.isCorrect ? 'is-ok' : 'is-miss'
             }`}
             aria-live="polite"
           >
             <strong>
-              {result.isCorrect
-                ? isStory
-                  ? 'Nice!'
-                  : 'Correct!'
-                : result.timedOut
-                  ? 'Time’s up.'
-                  : 'Not quite.'}
+              {result.pending
+                ? 'Checking…'
+                : result.isCorrect
+                  ? isStory
+                    ? 'Nice!'
+                    : 'Correct!'
+                  : result.timedOut
+                    ? 'Time’s up.'
+                    : 'Not quite.'}
             </strong>
-            {isStory ? (
+            {result.pending ? null : isStory ? (
               <p className="science-quiz-feedback-next">
                 {result.isCorrect
                   ? 'You can keep going.'
