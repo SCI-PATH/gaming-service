@@ -56,8 +56,10 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
       ? prevCurrent
       : 0;
 
-  const farmSnapshot =
-    body.farmSnapshot || body.farm_snapshot || prev.farm_snapshot || null;
+  const farmSnapshot = chooseFarmSnapshot(
+    prev.farm_snapshot,
+    body.farmSnapshot || body.farm_snapshot || null,
+  );
   const mindmap = body.mindmap || body.mindMap || prev.mindmap || null;
   const progressScore =
     body.progressScore != null
@@ -87,6 +89,15 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
       null,
     frustration_score_at_start: prev.frustration_score_at_start ?? null,
   };
+}
+
+function chooseFarmSnapshot(previous, incoming) {
+  if (!incoming) return previous || null;
+  if (!previous) return incoming;
+  const incomingAt = Number(incoming.savedAt) || 0;
+  const previousAt = Number(previous.savedAt) || 0;
+  if (previousAt && incomingAt < previousAt) return previous;
+  return incoming;
 }
 
 export function resumeView(row, lessonId = '') {

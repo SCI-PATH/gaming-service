@@ -78,6 +78,20 @@ describe('level progress snapshot', () => {
     assert.equal(next.relative_level, 1);
   });
 
+  it('keeps a newer farm snapshot when an older save arrives later', () => {
+    const prev = mergeLevelMetrics(initialLevelMetrics({ lessonId: 'g7_sci_14' }), {
+      farmSnapshot: { levelId: 3, currentMoney: 80, savedAt: 200 },
+    });
+    const next = mergeLevelMetrics(prev, {
+      lessonId: 'g7_sci_14',
+      isFinalSave: true,
+      syncQuestionIndex: true,
+      farmSnapshot: { levelId: 1, currentMoney: 5, savedAt: 100 },
+    });
+    assert.equal(next.farm_snapshot.levelId, 3);
+    assert.equal(next.farm_snapshot.currentMoney, 80);
+  });
+
   it('returns the farm snapshot with the relative level', () => {
     const view = resumeView({
       level_number: 1,

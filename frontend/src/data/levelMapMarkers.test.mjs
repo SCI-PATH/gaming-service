@@ -36,6 +36,7 @@ describe('level map markers', () => {
     assert.equal(carrots.beds[0].shortLabel, 'Carrot');
     assert.equal(carrots.beds[0].status, 'active');
     assert.equal(carrots.places[0].label, 'Milk Collection Point');
+    assert.equal(carrots.places[0].shortLabel, 'Milk');
     assert.equal(pumpkins.beds[0].label, 'Pumpkin Patch');
     assert.notEqual(carrots.beds[0].challengeId, pumpkins.beds[0].challengeId);
     assert.equal(bedLabelForCrop('tomato', 'tomatoes'), 'Tomato Bed');

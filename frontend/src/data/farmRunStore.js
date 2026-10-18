@@ -18,8 +18,6 @@ export function loadFarmRun() {
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object') return null;
     if (Number(data.version) !== VERSION) return null;
-    const activeSession = getEngagementSessionId();
-    if (data.sessionId && activeSession && data.sessionId !== activeSession) return null;
     const levelId = Math.max(1, Number(data.levelId) || 0);
     if (!levelId) return null;
     return data;
@@ -30,6 +28,20 @@ export function loadFarmRun() {
 
 export function hasFarmRun() {
   return Boolean(loadFarmRun());
+}
+
+/**
+ * Database snapshot wins when it is as new as the browser copy.
+ * A newer local save is kept until the next successful checkpoint.
+ */
+export function shouldApplyRemoteSnapshot(local, remote) {
+  if (!remote || typeof remote !== 'object') return false;
+  if (!local) return true;
+  const remoteAt = Number(remote.savedAt) || 0;
+  const localAt = Number(local.savedAt) || 0;
+  if (!remoteAt && !localAt) return true;
+  if (!remoteAt) return false;
+  return remoteAt >= localAt;
 }
 
 function checkpointBody(record, student, extra = {}) {
@@ -127,7 +139,7 @@ export function farmRunSummary(snapshot = loadFarmRun()) {
   const answered = answeredFromRun(snapshot);
   const quota = Math.max(
     1,
-    Number(snapshot.maxQuestions) || DDA_CONFIG.maxQuestions || 15,
+    DDA_CONFIG.maxQuestions || 10,
   );
   const remaining = Math.max(0, quota - answered);
   const frRaw = Number(snapshot.frustrationScore);

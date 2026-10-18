@@ -43,6 +43,17 @@ export function bedLabelForCrop(cropId, cropName) {
   return name ? `${name} Bed` : null;
 }
 
+export function compactAnimalLabel(animal) {
+  const produce = String(animal?.produceName || '').toLowerCase();
+  if (produce === 'milk') return 'Milk';
+  if (produce === 'eggs') return 'Eggs';
+  return titleWord(animal?.animalName || animal?.id) || 'Animal';
+}
+
+export function compactCleanLabel(clean) {
+  return titleWord(clean?.messName || clean?.id) || 'Clean';
+}
+
 export function animalMarkerLabel(animal) {
   if (!animal) return null;
   const produce = String(animal.produceName || '').toLowerCase();
@@ -102,7 +113,7 @@ export function assembleMapMarkers(plan, zones, progress = {}) {
       challengeId: plan.animal.id,
       kind: 'animal',
       label: animalLabel,
-      shortLabel: animalLabel,
+      shortLabel: compactAnimalLabel(plan.animal),
       instruction: `Tend ${plan.animal.animalName} and collect ${plan.animal.produceName}.`,
       x: zones.animal.x,
       y: zones.animal.y,
@@ -118,7 +129,7 @@ export function assembleMapMarkers(plan, zones, progress = {}) {
       challengeId: plan.clean.id,
       kind: 'clean',
       label: cleanLabel,
-      shortLabel: cleanLabel,
+      shortLabel: compactCleanLabel(plan.clean),
       instruction: `${plan.clean.verb || 'Clear'} ${plan.clean.messName}.`,
       x: zones.clean.x,
       y: zones.clean.y,

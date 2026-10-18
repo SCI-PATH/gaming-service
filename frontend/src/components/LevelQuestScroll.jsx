@@ -46,7 +46,7 @@ export default function LevelQuestScroll({
   cleanStarted = false,
   levelCleanComplete = false,
   questionsAnswered = 0,
-  maxQuestions = 15,
+  maxQuestions = 10,
   onClose,
 }) {
   const titleId = useId();
@@ -56,7 +56,7 @@ export default function LevelQuestScroll({
   const tasks = useMemo(() => {
     const list = [];
     const answered = Math.max(0, Number(questionsAnswered) || 0);
-    const quota = Math.max(1, Number(maxQuestions) || 15);
+    const quota = Math.max(1, Number(maxQuestions) || 10);
     list.push({
       id: 'science-quota',
       title: `Answer ${quota} science questions`,
@@ -364,7 +364,7 @@ export default function LevelQuestScroll({
                   ? `This level: ${librarySummary}`
                   : tasks.length
                     ? `${doneCount} of ${tasks.length} marked · tick tasks as you go`
-                    : 'Finish 15 questions, then buy farm items. Your unlocks stay on the next farm.'}
+                    : 'Finish 10 questions, then buy farm items. Your unlocks stay on the next farm.'}
               </p>
             </header>
 

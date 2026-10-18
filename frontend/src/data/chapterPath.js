@@ -282,7 +282,7 @@ export function buildLearningPathReturnUrl({
   return url.toString();
 }
 
-export function getScipathLogoutUrl() {
+function scipathOrigin() {
   const app = getScipathAppUrl();
   let origin = app;
   try {
@@ -293,7 +293,16 @@ export function getScipathLogoutUrl() {
   } catch {
     /* keep default */
   }
-  return `${String(origin).replace(/\/+$/, '')}/logout`;
+  return String(origin).replace(/\/+$/, '');
+}
+
+export function getScipathLogoutUrl() {
+  return `${scipathOrigin()}/logout`;
+}
+
+/** Signed-in student home. Does not touch the login token. */
+export function getAuthenticatedHomeUrl() {
+  return `${scipathOrigin()}/dashboard`;
 }
 
 /**
@@ -302,6 +311,15 @@ export function getScipathLogoutUrl() {
  */
 export function openScipathLogout() {
   const href = getScipathLogoutUrl();
+  if (typeof window !== 'undefined') {
+    window.location.assign(href);
+  }
+  return href;
+}
+
+/** Leave the farm for the signed-in home. The SCI-PATH login stays active. */
+export function openAuthenticatedHome() {
+  const href = getAuthenticatedHomeUrl();
   if (typeof window !== 'undefined') {
     window.location.assign(href);
   }

@@ -56,11 +56,7 @@ import {
   syncGameplayEvent,
   flushPendingEngagement,
 } from './data/engagementSync.js';
-import {
-  clearStudentLocalGameplay,
-  consumeFreshLogin,
-  markFreshLogin,
-} from './data/sessionReset.js';
+import { consumeFreshLogin } from './data/sessionReset.js';
 import {
   bootstrapStudentProgress,
   resolveLobbyProgress,
@@ -77,6 +73,7 @@ import {
   hasFarmRun,
   loadFarmRun,
   mergeFarmRun,
+  shouldApplyRemoteSnapshot,
   saveFarmRun,
   answeredFromRun,
 } from './data/farmRunStore.js';
@@ -88,8 +85,8 @@ import {
   isLearningPathLinked,
   newlyUnlockedLabels,
   ownedUnlockLabels,
+  openAuthenticatedHome,
   openLearningPathHome,
-  openScipathLogout,
   parkFarmProgressAtCompletedLevel,
   returnToLearningPath,
 } from './data/chapterPath.js';
@@ -191,65 +188,90 @@ export default function App() {
   }, []);
 
   const [lessonResume, setLessonResume] = useState(null);
+  const [resumeSettled, setResumeSettled] = useState(false);
   useEffect(() => {
     const id = student?.id;
-    if (!id) return undefined;
+    if (!id) {
+      setResumeSettled(true);
+      return undefined;
+    }
+    setResumeSettled(false);
     let cancel = false;
-    fetchLessonResume(id, getChapterLaunch().lessonId).then((resume) => {
-      if (cancel) return;
-      setLessonResume(resume);
-      if (resume?.levelTargetCompletionMs) {
-        rememberLevelDuration(resume.levelTargetCompletionMs);
-      }
-      if (Array.isArray(resume?.ownedUnlocks) && resume.ownedUnlocks.length) {
-        mergeRemoteUnlocks(resume.ownedUnlocks);
-        ForestGameBridge.emit(FARM_EVENTS.OWNED_UNLOCKS_LOADED);
-      }
-      if (!resume?.levelNumber) return;
-      const levelNumber = Math.max(1, Number(resume.levelNumber) || 1);
-      const answered = Math.max(0, Number(resume.lastCompletedQuestionIndex) || 0);
-      saveFarmProgress({
-        currentLevelId: levelNumber,
-        highestCompletedLevel: Math.max(0, levelNumber - 1),
-        levelSource: 'engagement',
+    fetchLessonResume(id, getChapterLaunch().lessonId)
+      .then((resume) => {
+        if (cancel) return;
+        setLessonResume(resume);
+        if (resume?.levelTargetCompletionMs) {
+          rememberLevelDuration(resume.levelTargetCompletionMs);
+        }
+        if (Array.isArray(resume?.ownedUnlocks) && resume.ownedUnlocks.length) {
+          mergeRemoteUnlocks(resume.ownedUnlocks);
+          ForestGameBridge.emit(FARM_EVENTS.OWNED_UNLOCKS_LOADED);
+        }
+        if (Array.isArray(resume?.questionHistory) && resume.questionHistory.length) {
+          mergeRemoteMindMaps(resume.questionHistory);
+        }
+        const snapshot = resume?.farmSnapshot;
+        const localRun = loadFarmRun();
+        const rowLevel = Math.max(1, Number(resume?.levelNumber) || 1);
+        const useRemote = Boolean(snapshot && shouldApplyRemoteSnapshot(localRun, snapshot));
+        if (!useRemote && localRun) return;
+        const levelNumber = useRemote
+          ? Math.max(1, Number(snapshot.levelId) || rowLevel)
+          : rowLevel;
+        const answered = useRemote
+          ? Math.max(
+              Number(snapshot.questionsAnswered) || 0,
+              Number(resume?.lastCompletedQuestionIndex) || 0,
+            )
+          : Math.max(0, Number(resume?.lastCompletedQuestionIndex) || 0);
+        if (!resume?.levelNumber && !useRemote) return;
+        if (useRemote) {
+          saveFarmProgress({
+            currentLevelId: levelNumber,
+            highestCompletedLevel: Math.max(0, levelNumber - 1),
+            cash: Number(snapshot.currentMoney) || 0,
+            levelSource: 'engagement',
+          });
+          const restored = saveFarmRun(
+            {
+              ...snapshot,
+              levelId: levelNumber,
+              questionsAnswered: answered,
+            },
+            { remote: false },
+          );
+          setSavedRun(farmRunSummary(restored));
+        } else if (resume?.levelNumber) {
+          saveFarmProgress({
+            currentLevelId: levelNumber,
+            highestCompletedLevel: Math.max(0, levelNumber - 1),
+            levelSource: 'engagement',
+          });
+        }
+        const snapCash = Number(useRemote ? snapshot.currentMoney : undefined);
+        setFarm((prev) => ({
+          ...prev,
+          levelId: levelNumber,
+          questionsAnswered: Math.max(prev.questionsAnswered || 0, answered),
+          earnings: Math.max(
+            prev.earnings || 0,
+            Number(resume?.pointsEarned) || 0,
+            Number.isFinite(snapCash) ? snapCash : 0,
+          ),
+        }));
+        setLobbyProgress((prev) => ({
+          ...(prev || {}),
+          phase: prev?.phase === 'needs_aptitude' ? prev.phase : 'returning',
+          levelId: levelNumber,
+          currentLevelNumber: levelNumber,
+          progressCountLabel:
+            answered > 0 ? `${answered} questions saved` : `Level ${levelNumber}`,
+        }));
+      })
+      .finally(() => {
+        if (!cancel) setResumeSettled(true);
       });
-      if (resume.farmSnapshot) {
-        const restored = saveFarmRun(
-          {
-            ...resume.farmSnapshot,
-            levelId: levelNumber,
-            questionsAnswered: Math.max(
-              answered,
-              Number(resume.farmSnapshot.questionsAnswered) || 0,
-            ),
-          },
-          { remote: false },
-        );
-        setSavedRun(farmRunSummary(restored));
-      }
-      if (Array.isArray(resume.questionHistory) && resume.questionHistory.length) {
-        mergeRemoteMindMaps(resume.questionHistory);
-      }
-      const snapCash = Number(resume.farmSnapshot?.currentMoney);
-      setFarm((prev) => ({
-        ...prev,
-        levelId: levelNumber,
-        questionsAnswered: Math.max(prev.questionsAnswered || 0, answered),
-        earnings: Math.max(
-          prev.earnings || 0,
-          Number(resume.pointsEarned) || 0,
-          Number.isFinite(snapCash) ? snapCash : 0,
-        ),
-      }));
-      setLobbyProgress((prev) => ({
-        ...(prev || {}),
-        phase: prev?.phase === 'needs_aptitude' ? prev.phase : 'returning',
-        levelId: levelNumber,
-        currentLevelNumber: levelNumber,
-        progressCountLabel:
-          answered > 0 ? `${answered} questions saved` : `Level ${levelNumber}`,
-      }));
-    });
     return () => {
       cancel = true;
     };
@@ -615,7 +637,7 @@ export default function App() {
         earnings: run.currentMoney ?? prev.earnings,
         currentMoney: run.currentMoney ?? prev.currentMoney,
         questionsAnswered: Math.max(prev.questionsAnswered || 0, answered),
-        maxQuestions: run.maxQuestions || prev.maxQuestions,
+        maxQuestions: DDA_CONFIG.maxQuestions,
         cropChallengeList: Array.isArray(run.cropChallengeList)
           ? run.cropChallengeList
           : prev.cropChallengeList,
@@ -708,21 +730,11 @@ export default function App() {
       if (boot.farmPatch) {
         setFarm({ ...createInitialFarm(), ...boot.farmPatch });
       }
-      const fresh = consumeFreshLogin(nextStudent.id);
-      if (fresh) {
-        clearFarmRun();
-        saveFarmProgress({
-          currentLevelId: 1,
-          highestCompletedLevel: 0,
-          cash: 0,
-          levelSource: 'fresh',
-        });
-      }
+      consumeFreshLogin(nextStudent.id);
       syncStudentLogin(nextStudent, {
-        startLevel: fresh ? 1 : boot.lobby?.levelId ?? resolveCurrentLevelId(),
-        freshSession: fresh,
+        startLevel: boot.lobby?.levelId ?? resolveCurrentLevelId(),
       });
-      if (!fresh) applySavedRunToUi(loadFarmRun());
+      applySavedRunToUi(loadFarmRun());
     },
     [resetSessionUi, applySavedRunToUi],
   );
@@ -749,9 +761,19 @@ export default function App() {
           walletBalance: farm.earnings,
         });
       }
-      if (inFarm) emitSaveFarmRun();
+      persistLeaveProgress();
       const pending = await flushPendingEngagement();
-      const run = loadFarmRun();
+      const run =
+        loadFarmRun() ||
+        (student?.id
+          ? {
+              levelId: farm.levelId || 1,
+              currentMoney: farm.earnings ?? farm.currentMoney ?? 0,
+              questionsAnswered: farm.questionsAnswered || 0,
+              frustrationScore: telemetrySession.frustrationScore || 0,
+              frustrationLevel: telemetrySession.frustrationLevel || 'low',
+            }
+          : null);
       let farmSaved = { ok: true };
       if (student?.id && run) {
         farmSaved = await flushFarmProgress(
@@ -768,7 +790,7 @@ export default function App() {
         );
       }
       const sessionSaved = await syncStudentLogout({
-        endLevel: farm.levelId,
+        endLevel: run?.levelId || farm.levelId,
         quizCorrect: farm.questionsAnswered || 0,
         quizIncorrect: run?.quizIncorrect,
       });
@@ -783,21 +805,16 @@ export default function App() {
       setLoggingOut(false);
       return;
     }
-    if (student?.id) {
-      clearStudentLocalGameplay(student.id);
-      markFreshLogin(student.id);
-    }
-    clearFarmRun();
-    logoutStudent();
-    const leaveToUserManagement = Boolean(
+    const leaveToHome = Boolean(
       student?.fromPlatform ||
         student?.sessionId ||
         isLearningPathLinked(),
     );
-    if (leaveToUserManagement) {
-      openScipathLogout();
+    if (leaveToHome) {
+      openAuthenticatedHome();
       return;
     }
+    logoutStudent();
     resetSessionUi();
     setStudent(null);
     setLoggingOut(false);
@@ -807,10 +824,13 @@ export default function App() {
     farm.levelId,
     farm.questionsAnswered,
     farm.earnings,
+    farm.currentMoney,
     rpEarned,
     student,
     inFarm,
     persistLeaveProgress,
+    telemetrySession.frustrationScore,
+    telemetrySession.frustrationLevel,
   ]);
 
   const maxQuestions = farm.maxQuestions ?? DDA_CONFIG.maxQuestions;
@@ -925,6 +945,7 @@ export default function App() {
   ]);
 
   const handleLobbyStart = useCallback(() => {
+    if (!resumeSettled) return;
     const run = loadFarmRun();
     if (run) {
       setPauseOpen(false);
@@ -942,7 +963,7 @@ export default function App() {
       startingMoney: cash,
     });
     ForestGameBridge.emit(FARM_EVENTS.MENU_START);
-  }, [farm.levelId, farm.earnings]);
+  }, [farm.levelId, farm.earnings, resumeSettled]);
 
   const handleLobbyStartOver = useCallback(() => {
     clearFarmRun();
@@ -1936,6 +1957,7 @@ export default function App() {
               onStart={handleLobbyStart}
               onStartOver={handleLobbyStartOver}
               savedRun={savedRun}
+              resumeReady={resumeSettled}
               resumeQuestion={lessonResume?.resumeQuestionIndex}
               onLeaderboard={handleLobbyLeaderboard}
               onToggleMusic={handleLobbyToggleMusic}
@@ -2102,7 +2124,7 @@ export default function App() {
             challenges={challenges}
             goalText={farm.goalText}
             questionsAnswered={farm.questionsAnswered ?? 0}
-            maxQuestions={farm.maxQuestions ?? 15}
+            maxQuestions={DDA_CONFIG.maxQuestions}
             harvestTarget={farm.harvestTarget ?? 24}
             cropsHarvestedTotal={farm.cropsHarvestedTotal ?? 0}
             cropsSoldThisChallenge={farm.cropsSoldThisChallenge ?? 0}

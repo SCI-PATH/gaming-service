@@ -1,7 +1,7 @@
 ﻿/**
  * Unified challenge library: all vegetable, animal, and cleaning jobs.
  * Each farm level is assigned a slice of this library so the 200 jobs
- * play as a multi-level game. Science questions stay in DDA (15 / level).
+ * play as a multi-level game. Science questions stay in DDA (10 / level).
  */
 import { CROP_CHALLENGES, CROP_CHALLENGE_COUNT } from './cropChallenges.js';
 import {

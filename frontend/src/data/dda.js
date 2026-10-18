@@ -18,9 +18,9 @@ export const DDA_BANDS = {
 
 export const DDA_CONFIG = {
   /** Science questions per farm level — then the unlock shop opens. */
-  maxQuestions: 15,
+  maxQuestions: 10,
   /** @deprecated alias — level completes after this many questions */
-  minQuestions: 15,
+  minQuestions: 10,
 
   /**
    * Average response-time targets (ms) by band when no prior level exists.

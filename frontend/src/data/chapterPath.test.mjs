@@ -4,8 +4,18 @@ import {
   chapterFarmCursor,
   displayFarmLevel,
   farmLevelFromLessonId,
+  getAuthenticatedHomeUrl,
+  getScipathLogoutUrl,
   readChapterLaunchFromSearch,
 } from './chapterPath.js';
+
+describe('exit navigation', () => {
+  it('returns to the signed-in dashboard and leaves system logout alone', () => {
+    assert.match(getAuthenticatedHomeUrl(), /\/dashboard$/);
+    assert.match(getScipathLogoutUrl(), /\/logout$/);
+    assert.notEqual(getAuthenticatedHomeUrl(), getScipathLogoutUrl());
+  });
+});
 
 describe('lesson level indexing', () => {
   it('starts Lesson 14 at relative Level 1', () => {

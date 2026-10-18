@@ -123,7 +123,7 @@ export default function GameShellHeader({
           disabled={loggingOut}
           aria-busy={loggingOut}
         >
-          {loggingOut ? 'Signing out…' : 'Log out'}
+          {loggingOut ? 'Saving…' : 'Exit game'}
         </button>
       </div>
     </header>

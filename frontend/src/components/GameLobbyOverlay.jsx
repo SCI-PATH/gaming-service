@@ -36,6 +36,7 @@ export default function GameLobbyOverlay({
   musicEnabled = true,
   gameReady = false,
   savedRun = null,
+  resumeReady = true,
   resumeQuestion = null,
   onStart,
   onStartOver,
@@ -52,6 +53,7 @@ export default function GameLobbyOverlay({
 
   useEffect(() => {
     const onKey = (event) => {
+      if (!resumeReady) return;
       if (event.code !== 'Enter' && event.code !== 'NumpadEnter') return;
       if (event.repeat) return;
       event.preventDefault();
@@ -60,7 +62,7 @@ export default function GameLobbyOverlay({
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onStart]);
+  }, [onStart, resumeReady]);
   const currentLevelNumber = Math.max(
     1,
     Number(progress.currentLevelNumber ?? progress.levelId) || 1,
@@ -144,10 +146,12 @@ export default function GameLobbyOverlay({
             type="button"
             className="game-lobby-play"
             onClick={onStart}
-            disabled={!gameReady}
+            disabled={!gameReady || !resumeReady}
           >
             <IconPlay size={18} />
-            {isGuide
+            {!resumeReady
+              ? 'Restoring your farm…'
+              : isGuide
               ? 'Enter the Farm'
               : savedRun || progress.phase === 'returning' || resumeQuestion > 1
                 ? 'Continue'

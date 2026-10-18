@@ -5,8 +5,7 @@
  *   http://localhost:5173/?studentId=abc&username=alex&displayName=Alex&sessionId=sess_xyz&topicId=plant_biology&grade=7&source=sci-path
  */
 import { loginStudentFromPlatform } from './mockStudents.js';
-import { applyRemoteFarmProgress, applyChapterFarmLevel, saveFarmProgress } from './farmProgress.js';
-import { clearFarmRun } from './farmRunStore.js';
+import { applyRemoteFarmProgress, applyChapterFarmLevel } from './farmProgress.js';
 import { consumeFreshLogin } from './sessionReset.js';
 import {
   applyChapterLaunch,
@@ -130,22 +129,13 @@ export function resolvePlatformLaunch() {
       ? chapter.startLevel
       : launch.startLevel;
 
-  const fresh = student ? consumeFreshLogin(student.id) : false;
-  if (fresh) {
-    clearFarmRun();
-    saveFarmProgress({
-      currentLevelId: 1,
-      highestCompletedLevel: 0,
-      cash: Math.max(0, Number(launch.cash) || 0),
-      levelSource: 'fresh',
-    });
-  }
-  if (student && startLevel != null && !fresh) {
+  if (student) consumeFreshLogin(student.id);
+  if (student && startLevel != null) {
     applyChapterFarmLevel(startLevel, launch.cash, chapter.lessonId);
     if (chapter.rewardItem || chapter.lessonId) {
       grantLearningPathReward(startLevel, chapter.rewardItem);
     }
-  } else if (!fresh && student && (launch.startLevel != null || launch.cash != null)) {
+  } else if (student && (launch.startLevel != null || launch.cash != null)) {
     applyRemoteFarmProgress({
       currentLevel: launch.startLevel,
       highestCompletedLevel:

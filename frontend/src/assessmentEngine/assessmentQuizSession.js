@@ -531,7 +531,7 @@ export function exportAssessmentSession() {
   };
 }
 
-/** Restore a saved Assessment Engine session instead of starting a new 15-question quiz. */
+/** Restore a saved Assessment Engine session instead of starting a new 10-question quiz. */
 export function restoreAssessmentSession(saved) {
   const sid = String(saved?.sessionId || saved?.session_id || '').trim();
   if (!sid) return false;

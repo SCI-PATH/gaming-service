@@ -488,11 +488,6 @@ export default class GameScene extends Phaser.Scene {
   captureRunSnapshot() {
     if (this.forestUnlocked) return null;
     const answered = this.questionsAnswered();
-    if (!this.player && answered <= 0) {
-      const plantedIds = this.cropPlantedSet?.size || 0;
-      const soldAny = Object.values(this.cropSoldMap || {}).some((n) => Number(n) > 0);
-      if (!planted.length && plantedIds <= 0 && !soldAny) return null;
-    }
     const planted = (this.plantedCrops || [])
       .filter((crop) => crop?.active && crop.cropState !== 'harvested')
       .map((crop) => ({
@@ -502,6 +497,11 @@ export default class GameScene extends Phaser.Scene {
         cropType: crop.cropType,
         cropState: crop.cropState,
       }));
+    if (!this.player && answered <= 0) {
+      const plantedIds = this.cropPlantedSet?.size || 0;
+      const soldAny = Object.values(this.cropSoldMap || {}).some((n) => Number(n) > 0);
+      if (!planted.length && plantedIds <= 0 && !soldAny) return null;
+    }
     return {
       levelId: this.levelId,
       currentMoney: this.currentMoney,
@@ -4485,7 +4485,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // One plant type per bed — cannot replant the same crop on another bed
-    // Extra quizzes still count until the 15-question quota
+    // Extra quizzes still count until the 10-question quota
     if (this.cropPlantedSet?.has(bedCropId)) {
       if (this.needsQuestionQuota()) {
         if (this.blockNewQuestion()) {
@@ -4554,7 +4554,7 @@ export default class GameScene extends Phaser.Scene {
     }));
   }
 
-  /** Extra science quiz on an already-planted bed until the 15-question quota. */
+  /** Extra science quiz on an already-planted bed until the 10-question quota. */
   openPracticeScienceQuiz(bedDef = {}) {
     if (this.farmInputLocked || this.forestUnlocked || !this.needsQuestionQuota()) {
       return;
