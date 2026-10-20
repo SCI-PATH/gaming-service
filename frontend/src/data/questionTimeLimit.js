@@ -27,6 +27,7 @@ export const QUESTION_TYPE_CLAMP_MS = Object.freeze({
   ShortAnswer: Object.freeze({ min: 28000, max: 90000 }),
 });
 
+/** Weak students get a longer window; Smart students a slightly shorter one. */
 const BAND_TIME_MULT = Object.freeze({
   weak: 1.22,
   medium: 1,
@@ -39,6 +40,7 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+/** Map a question or a type string onto TrueFalse, MCQ, MultiBlank, or ShortAnswer. */
 export function resolveQuizQuestionType(questionOrType) {
   if (typeof questionOrType === 'string') {
     return farmQuestionType({ questionType: questionOrType }) || 'MCQ';
@@ -77,10 +79,12 @@ export function getQuestionTimeLimit(
   return clamp(ms, bounds.min, bounds.max);
 }
 
+/** sessionStorage key so a reload keeps the same countdown. */
 export function questionDeadlineStorageKey(questionId) {
   return `${DEADLINE_PREFIX}${String(questionId || '').trim()}`;
 }
 
+/** Remember the absolute deadline the first time this question is shown. */
 export function rememberQuestionDeadline(questionId, deadlineAt) {
   const id = String(questionId || '').trim();
   const at = Number(deadlineAt);
@@ -92,6 +96,7 @@ export function rememberQuestionDeadline(questionId, deadlineAt) {
   }
 }
 
+/** Deadline saved for this question, or null if the clock was never frozen. */
 export function readQuestionDeadline(questionId) {
   const id = String(questionId || '').trim();
   if (!id) return null;
@@ -104,6 +109,7 @@ export function readQuestionDeadline(questionId) {
   }
 }
 
+/** Drop the frozen clock after the question is answered or skipped. */
 export function clearQuestionDeadline(questionId) {
   const id = String(questionId || '').trim();
   if (!id) return;

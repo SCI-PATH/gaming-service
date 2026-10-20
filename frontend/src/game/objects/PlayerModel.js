@@ -1,6 +1,11 @@
+/**
+ * Combat stats the hero still carries from the forest loop:
+ * health, facing, kills, shots, and the old score formula.
+ */
 import { DIRECTIONS } from '../config/constants';
 
 export default class PlayerModel {
+  /** Start facing down with full health and a zero score. */
   constructor({
     health = 3,
     score = 0,

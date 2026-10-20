@@ -28,6 +28,7 @@ export default function GameShellHeader({
 }) {
   const isDashboard = mode === 'dashboard';
   const isPlaying = mode === 'playing';
+  /** Dashboard replaces the canvas view; Exit Game is App's logout, which saves before leaving. */
   const isOverlay = isDashboard;
 
   return (

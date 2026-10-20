@@ -16,6 +16,7 @@ function pickTickIndices(n) {
   return ticks;
 }
 
+/** Frustration over the questions played in this farm session. */
 export function FrustrationLineChart({ series = [], height = 220 }) {
   const width = 640;
   const pad = { l: 40, r: 64, t: 16, b: 36 };
@@ -126,6 +127,7 @@ export function FrustrationLineChart({ series = [], height = 220 }) {
   );
 }
 
+/** Average frustration by science chapter, from the dashboard's saved history. */
 export function TopicBarChart({ rows = [] }) {
   if (!rows.length) {
     return (
@@ -163,6 +165,7 @@ export function TopicBarChart({ rows = [] }) {
   );
 }
 
+/** Session accuracy ring. Counts come from the research snapshot App passes in. */
 export function AccuracyRing({ correct = 0, incorrect = 0 }) {
   const c = Number(correct) || 0;
   const w = Number(incorrect) || 0;
@@ -192,6 +195,7 @@ export function AccuracyRing({ correct = 0, incorrect = 0 }) {
   );
 }
 
+/** Per-question rows: type, prompt, mood, and right/wrong, merged with live Sage history. */
 export function FrustrationPerformanceChart({
   points = [],
   misconceptions = [],

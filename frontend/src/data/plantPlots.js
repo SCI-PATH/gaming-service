@@ -55,27 +55,33 @@ export function isTileInPlot(gridX, gridY, plot) {
   );
 }
 
+/** Which tillable bed contains this tile, if any. */
 export function findPlotAt(gridX, gridY) {
   return PLANT_PLOTS.find((plot) => isTileInPlot(gridX, gridY, plot)) ?? null;
 }
 
+/** True only on the eight fixed plant beds — paths and the shop are not tillable. */
 export function isPlantableTile(gridX, gridY) {
   return Boolean(findPlotAt(gridX, gridY));
 }
 
+/** Legacy name for the unload tile. The dock is the farm shop. */
 export function isLoadingTile(gridX, gridY) {
   // Unload is at the Farm Shop stall (no separate blue dock)
   return isTileInPlot(gridX, gridY, FARM_SHOP_ZONE);
 }
 
+/** True on the centre stall where harvest is unloaded for customers. */
 export function isFarmShopTile(gridX, gridY) {
   return isTileInPlot(gridX, gridY, FARM_SHOP_ZONE);
 }
 
+/** Pixel center of the old dock name — same point as the farm shop. */
 export function loadingZoneCenter(tileSize = 16) {
   return farmShopZoneCenter(tileSize);
 }
 
+/** Pixel center of the farm shop, used to walk the player to unload. */
 export function farmShopZoneCenter(tileSize = 16) {
   return {
     x: (FARM_SHOP_ZONE.x + FARM_SHOP_ZONE.w / 2) * tileSize,
@@ -105,6 +111,7 @@ export function farmShopQueueSlots(count = 4, tileSize = 16) {
   return slots;
 }
 
+/** Every tile in a bed, in row-major order, with pixel centers for sprites. */
 export function cellsInPlot(plot, tileSize = 16) {
   const cells = [];
   for (let row = 0; row < plot.h; row += 1) {
@@ -140,6 +147,7 @@ function openCellsInPlot(plot, { occupiedKeys, collidesAt, tileSize = 16 } = {})
   });
 }
 
+/** Open soil in the bed under this tile, skipping occupied or colliding cells. */
 export function freeCellsInPlotAt(
   originGridX,
   originGridY,
@@ -179,6 +187,7 @@ export function coveringCellsInPlot(
 
   if (picked.length / open.length >= ratio - 0.08) return picked;
 
+  // The stride skipped too many tiles — add extras until the bed reaches the fill ratio.
   const target = Math.max(1, Math.round(open.length * ratio));
   const extra = [];
   for (const cell of open) {

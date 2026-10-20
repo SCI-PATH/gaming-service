@@ -114,9 +114,14 @@ const PRODUCE = {
   kf_wheat_plant: 'kf_wheat',
 };
 
+/**
+ * Kenney tile for a world-challenge sprite key.
+ * Collect and arrange show the harvested item instead of the growing plant.
+ */
 export function realFarmSprite(key, action = '') {
   if (!key) return key;
   let mapped = key.startsWith('kf_') ? key : FARM_SPRITE_REAL[key] || key;
+  // Harvest and tidy actions swap the plant tile for its produce tile.
   if (
     (action === 'collect' || action === 'arrange') &&
     PRODUCE[mapped]

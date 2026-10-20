@@ -15,6 +15,7 @@ import {
   patienceMood,
 } from '../../data/farmCustomerShop.js';
 import { customerMoodState } from '../../data/customerMood.js';
+import { isDemoAutoplay } from '../../data/demoScenarios.js';
 import { getBubbleItemVisual } from '../../data/farmShopCatalog.js';
 import {
   pickCustomerSprite,
@@ -24,6 +25,7 @@ import {
 
 const CUSTOMER_DEPTH = 12;
 
+/** Rounded order bubble with a tail pointing at the customer. */
 function drawSpeechBubble(graphics, width, height, fill = 0xffffff) {
   const w = width;
   const h = height;
@@ -58,6 +60,7 @@ function drawSpeechBubble(graphics, width, height, fill = 0xffffff) {
 }
 
 export default class FarmShopLayer {
+  /** Stall plus a map of queue customers. Nothing is drawn until spawn. */
   constructor(scene) {
     this.scene = scene;
     this.zone = FARM_SHOP_ZONE;
@@ -70,6 +73,7 @@ export default class FarmShopLayer {
     this.slots = farmShopQueueSlots(4, TILE_SIZE);
   }
 
+  /** Build the stall, the E-unload hint, and a click target for the shop. */
   spawn() {
     this.clear();
     this.slots = farmShopQueueSlots(4, TILE_SIZE);
@@ -127,6 +131,7 @@ export default class FarmShopLayer {
     });
   }
 
+  /** Use the stall sprite, or the counter image if the stall is missing. */
   createShopBuilding(scene, center, pw, _ph) {
     const shop = scene.add.container(center.x, center.y + 8);
 
@@ -148,10 +153,12 @@ export default class FarmShopLayer {
     return shop;
   }
 
+  /** True for tiles that belong to the farm shop zone. */
   isShopTile(gridX, gridY) {
     return isFarmShopTile(gridX, gridY);
   }
 
+  /** True when the hero is close enough to unload, including the queue side. */
   isNear(worldX, worldY, padTiles = 1.25) {
     const z = this.zone;
     const minX = (z.x - padTiles) * TILE_SIZE;
@@ -161,6 +168,7 @@ export default class FarmShopLayer {
     return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
   }
 
+  /** Match visible customers to the live queue and drop anyone who left. */
   sync(shop) {
     if (!this.root) this.spawn();
     const living = (shop?.customers || []).filter(
@@ -191,6 +199,7 @@ export default class FarmShopLayer {
     }
   }
 
+  /** Body, order bubble, patience bar, mood face, and a small bob. */
   createCustomerVisual(customer, slot, queueIndex) {
     const scene = this.scene;
     const depth = CUSTOMER_DEPTH + queueIndex * 0.01;
@@ -256,6 +265,7 @@ export default class FarmShopLayer {
     };
   }
 
+  /** Redraw the bubble chips for the items this customer still wants. */
   rebuildOrderRow(entry, lines) {
     const scene = this.scene;
     entry.orderRow.removeAll(true);
@@ -324,6 +334,7 @@ export default class FarmShopLayer {
     return { width: totalW, height: 20 };
   }
 
+  /** Move the customer to their queue slot and refresh patience and mood. */
   updateCustomerVisual(entry, customer, slot, { isFront, queueIndex }) {
     const scene = this.scene;
     const mood = customerMoodState(customer);
@@ -370,15 +381,21 @@ export default class FarmShopLayer {
     if (mood.key !== entry.moodKey) {
       entry.moodKey = mood.key;
       const line = String(customer.speech || '').replace(/^[^\w😊😐😟😡😞🙂😠]+/, '') || mood.reason;
-      if (entry.talk && line && (mood.rank >= 2 || mood.key === 'happy' || mood.key === 'left')) {
-        entry.talk.setText(line.slice(0, 42));
+      const showMood = isDemoAutoplay() || mood.rank >= 2 || mood.key === 'happy' || mood.key === 'left';
+      if (entry.talk && line && showMood) {
+        const spoken = isDemoAutoplay()
+          ? `${mood.face} ${mood.label} — ${mood.reason}`.slice(0, 48)
+          : line.slice(0, 42);
+        entry.talk.setText(spoken);
         entry.talk.setAlpha(1);
-        scene.tweens.add({
-          targets: entry.talk,
-          alpha: 0,
-          delay: 2200,
-          duration: 400,
-        });
+        if (!isDemoAutoplay()) {
+          scene.tweens.add({
+            targets: entry.talk,
+            alpha: 0,
+            delay: 2200,
+            duration: 400,
+          });
+        }
       }
     }
 
@@ -402,6 +419,7 @@ export default class FarmShopLayer {
     }
   }
 
+  /** Stop the bob and remove the customer container. */
   destroyCustomerVisual(entry) {
     stopCustomerQueueWalk(entry.walkTween);
     try {
@@ -411,6 +429,7 @@ export default class FarmShopLayer {
     }
   }
 
+  /** Tile positions of queued customers for the farm map HUD. */
   getMapPins() {
     const pins = [];
     for (const [id, entry] of this.customers) {
@@ -426,6 +445,7 @@ export default class FarmShopLayer {
     return pins;
   }
 
+  /** Swap the order bubble to a smile after the order is filled. */
   flashThanks(customerId) {
     const entry = this.customers.get(customerId);
     if (!entry) return;
@@ -436,6 +456,7 @@ export default class FarmShopLayer {
     drawSpeechBubble(entry.bubbleBg, 28, 22);
   }
 
+  /** Remove customers and the stall. */
   clear() {
     for (const entry of this.customers.values()) {
       this.destroyCustomerVisual(entry);
@@ -452,6 +473,7 @@ export default class FarmShopLayer {
     this.building = null;
   }
 
+  /** Clear the stall when the layer is torn down. */
   destroy() {
     this.clear();
   }

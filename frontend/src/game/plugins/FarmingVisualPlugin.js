@@ -14,20 +14,24 @@ import { SITUATIONS } from '../../storyline/storylineSituations.js';
 import { resolveUnlockDisplayScale } from '../../data/unlockShop.js';
 
 export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
+  /** Tracks painted beds and the last farm condition. */
   constructor(scene, pluginManager, pluginKey) {
     super(scene, pluginManager, pluginKey);
     this.beds = new Map();
     this.condition = null;
   }
 
+  /** Clear sprites when the scene is destroyed. */
   boot() {
     this.systems.events.once('destroy', this.shutdown, this);
   }
 
+  /** Drop every bed sprite. */
   shutdown() {
     this.clear();
   }
 
+  /** Destroy bed sprites and forget their plot ids. */
   clear() {
     for (const bed of this.beds.values()) {
       for (const sprite of bed.sprites || []) {
@@ -38,6 +42,7 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     this.beds.clear();
   }
 
+  /** Wilt or healthy beds from the performance band and frustration, then recover plots already solved. */
   paintFromStudent({
     performanceBand,
     gameplayBand,
@@ -70,6 +75,7 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     return this.condition;
   }
 
+  /** Find a bed in the matching bad state and grow it back to healthy. */
   recoverForSituation(situationId, { instant = false } = {}) {
     const want = plotStateForSituation(situationId);
     const match = [...this.beds.values()].find(
@@ -84,6 +90,7 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     return true;
   }
 
+  /** Tween a bed down, swap it to the healthy spec, then pop it back. */
   recoverPlot(plotId, { instant = false } = {}) {
     const bed = this.beds.get(plotId);
     if (!bed || bed.recovered) return;
@@ -119,6 +126,7 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     }
   }
 
+  /** A short row of condition sprites along the bottom of a plot. */
   spawnBedCrops(plot, state) {
     const spec = this.specForState(state);
     const sprites = [];
@@ -134,12 +142,14 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     return sprites;
   }
 
+  /** Healthy uses the situation after-art. Other states use the before-art. */
   specForState(state) {
     const situationId = situationForPlotState(state);
     const def = SITUATIONS[situationId] || SITUATIONS.wilted_flower;
     return state === 'healthy' ? def.after : def.before;
   }
 
+  /** Image for a bed sprite, or a brown rectangle if the texture is missing. */
   addCrop(x, y, spec, depth = 3) {
     const key = spec?.textureKey;
     let sprite;
@@ -153,6 +163,7 @@ export default class FarmingVisualPlugin extends Phaser.Plugins.ScenePlugin {
     return sprite;
   }
 
+  /** Apply texture, tint, angle, and tile scale from a situation spec. */
   applySpec(sprite, spec) {
     if (!sprite || !spec) return 1;
     const key = spec.textureKey;

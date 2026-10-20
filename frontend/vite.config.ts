@@ -30,6 +30,14 @@ export default defineConfig(({ mode }) => {
       timeout: 60000,
       rewrite: (p: string) => p.replace(/^\/assessment-api/, ''),
     },
+    // Lesson engine (Component 1). Demo recordings set the grade here before
+    // the assessment engine asks which chapter to use.
+    '/lesson-api': {
+      target: 'http://54.253.38.67:8000',
+      changeOrigin: true,
+      timeout: 20000,
+      rewrite: (p: string) => p.replace(/^\/lesson-api/, ''),
+    },
     '/api': {
       target: gamingTarget,
       changeOrigin: true,

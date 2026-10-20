@@ -35,6 +35,7 @@ function unlockCatalogMap() {
 }
 
 /**
+ * One instructor snapshot: mastery, gameplay band, frustration journey, and owned unlocks.
  * @param {{
  *   farm?: object,
  *   telemetrySession?: object,
@@ -219,6 +220,7 @@ export function buildResearchDashboardSnapshot(live = {}) {
   };
 }
 
+/** Download the snapshot as JSON for an instructor or research export. */
 export function downloadResearchJson(snapshot, filename) {
   const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
     type: 'application/json',
@@ -230,6 +232,7 @@ export function downloadResearchJson(snapshot, filename) {
   );
 }
 
+/** Download lesson rows plus the frustration-over-play history as CSV. */
 export function downloadResearchCsv(snapshot, filename) {
   const lessonRows = [
     [

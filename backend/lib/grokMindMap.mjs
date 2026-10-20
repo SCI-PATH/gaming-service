@@ -36,6 +36,7 @@ function groqConfig() {
   };
 }
 
+/** xAI when its key is set, otherwise Groq. grokJson tries Groq first anyway. */
 export function getGrokConfig() {
   return xaiConfig() || groqConfig();
 }
@@ -67,6 +68,7 @@ async function completeOnce(cfg, body) {
   let text = '';
   if (!res.ok) {
     text = await res.text().catch(() => '');
+    // Some models reject json_object mode. Retry the same prompt as plain text.
     if (/response_format|json_object/i.test(text) && payload.response_format) {
       delete payload.response_format;
       res = await fetchWithTimeout(
@@ -98,6 +100,7 @@ async function completeOnce(cfg, body) {
   return { content: String(content), provider: cfg.provider, model: cfg.model };
 }
 
+/** JSON chat for mind maps. Groq is tried first; xAI is the backup. */
 export async function grokJson({ system, user, temperature = 0.2, maxTokens = 900 } = {}) {
   // Groq is the farm's working LLM. Try it first; xAI is optional backup.
   const configs = [groqConfig(), xaiConfig()].filter(Boolean);

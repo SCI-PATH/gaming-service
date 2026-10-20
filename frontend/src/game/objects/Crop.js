@@ -11,6 +11,7 @@ export const CROP_STATE = {
 /** Grown plant size — fills its tile with a little soil showing between plants. */
 const READY_SIZE_PX = TILE_SIZE * 1.22;
 
+/** Sprout, grown, and produce textures for this vegetable, with fallbacks. */
 function resolveTextures(scene, cropType) {
   const keys = getCropTextures(cropType);
   const sprout = scene.textures.exists(keys.sprout)
@@ -26,6 +27,7 @@ function resolveTextures(scene, cropType) {
   return { sprout, ready, produce, tint: keys.tint || null };
 }
 
+/** Source image size used to scale the plant onto its tile. */
 function texturePx(scene, key) {
   const img = scene.textures.get(key)?.getSourceImage?.();
   return {
@@ -34,6 +36,7 @@ function texturePx(scene, key) {
   };
 }
 
+/** Uniform scale that fits the texture inside the target pixel size. */
 function scaleToFit(scene, key, targetPx) {
   const { w, h } = texturePx(scene, key);
   return targetPx / Math.max(w, h);
@@ -107,6 +110,7 @@ export default class Crop extends Phaser.GameObjects.Image {
     });
   }
 
+  /** Swap to the grown texture once the timer finishes. */
   markReady() {
     if (!this.active || this.cropState === CROP_STATE.READY) return;
 
@@ -129,10 +133,12 @@ export default class Crop extends Phaser.GameObjects.Image {
     });
   }
 
+  /** True after the plant has finished growing and is still on the map. */
   isReady() {
     return this.active && this.cropState === CROP_STATE.READY;
   }
 
+  /** Pop the plant upward and destroy it after the pickup tween. */
   playHarvestFx() {
     this.cropState = CROP_STATE.HARVESTED;
     if (this._growTimer) this._growTimer.remove(false);
@@ -153,6 +159,7 @@ export default class Crop extends Phaser.GameObjects.Image {
     });
   }
 
+  /** Cancel the grow timer so a removed plant cannot become ready later. */
   destroy(fromScene) {
     if (this._growTimer) this._growTimer.remove(false);
     this.scene?.tweens?.killTweensOf(this);

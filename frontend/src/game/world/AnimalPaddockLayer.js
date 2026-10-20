@@ -6,6 +6,7 @@ import { TILE_SIZE } from '../config/constants.js';
 import { ANIMAL_PADDOCK } from '../../data/animalChallenges.js';
 
 export default class AnimalPaddockLayer {
+  /** Empty paddock until a challenge calls spawn. */
   constructor(scene) {
     this.scene = scene;
     this.animals = [];
@@ -19,6 +20,7 @@ export default class AnimalPaddockLayer {
     this.pad = ANIMAL_PADDOCK;
   }
 
+  /** First loaded texture from the candidate list. */
   firstKey(keys) {
     const textures = this.scene?.textures;
     if (!textures) return null;
@@ -28,6 +30,7 @@ export default class AnimalPaddockLayer {
     return null;
   }
 
+  /** Draw the pen, fence, and a wandering herd for this animal challenge. */
   spawn(challenge) {
     this.clear();
     this.challenge = challenge;
@@ -86,6 +89,7 @@ export default class AnimalPaddockLayer {
     }
   }
 
+  /** Stamp fence sprites around the pen, or skip if the art is missing. */
   placeFence(x, y, w, h) {
     const key = this.firstKey(['kf_fence', 'kf_fence_farm']);
     if (!key) return [];
@@ -110,6 +114,7 @@ export default class AnimalPaddockLayer {
     return pieces;
   }
 
+  /** Scale a texture so its width matches the target pixel size. */
   spriteScale(key, targetPx) {
     const tex = this.scene.textures.get(key);
     const src = tex?.getSourceImage?.();
@@ -117,6 +122,7 @@ export default class AnimalPaddockLayer {
     return targetPx / w;
   }
 
+  /** One animal with a random wander target inside the pen. */
   spawnAnimal(key, bounds, index) {
     if (!key) return;
     const scene = this.scene;
@@ -143,6 +149,7 @@ export default class AnimalPaddockLayer {
     this.animals.push(entry);
   }
 
+  /** After a correct tend quiz, drop hay and collectable produce. */
   tend() {
     if (this.tended) return false;
     this.tended = true;
@@ -170,6 +177,7 @@ export default class AnimalPaddockLayer {
     return true;
   }
 
+  /** Scatter milk, eggs, or the challenge produce for the hero to pick up. */
   spawnProduce() {
     const scene = this.scene;
     const key = this.firstKey([
@@ -207,6 +215,7 @@ export default class AnimalPaddockLayer {
     }
   }
 
+  /** Pick up produce the hero is standing close to. */
   collectNear(playerX, playerY, reach) {
     const hit = [];
     for (const item of this.produce) {
@@ -238,10 +247,12 @@ export default class AnimalPaddockLayer {
     return hit.length;
   }
 
+  /** How many collectable pieces are still in the pen. */
   remainingProduce() {
     return this.produce.filter((p) => p.collectable && p.visual?.active).length;
   }
 
+  /** True when a world point is inside the paddock, with a small pad. */
   isNear(worldX, worldY, extra = 12) {
     const pad = this.pad;
     const x = pad.x * TILE_SIZE - extra;
@@ -251,6 +262,7 @@ export default class AnimalPaddockLayer {
     return worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h;
   }
 
+  /** Wander, rest, and bob each animal. */
   update(time) {
     const scene = this.scene;
     if (!scene) return;
@@ -282,6 +294,7 @@ export default class AnimalPaddockLayer {
     }
   }
 
+  /** Remove the herd, produce, fence, and label. */
   clear() {
     const scene = this.scene;
     for (const entry of this.animals) {

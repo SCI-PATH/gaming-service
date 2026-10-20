@@ -4,6 +4,10 @@
  * Next lesson vs retry is decided later from student performance.
  */
 
+/**
+ * True when every crop on this level has been sold up to its harvest target.
+ * An empty crop list counts as ready. The live shop gate no longer waits on this.
+ */
 export function farmObjectivesReadyForShop({
   levelCrops = [],
   cropSoldMap = {},
@@ -12,6 +16,7 @@ export function farmObjectivesReadyForShop({
 } = {}) {
   if (levelCropComplete) return true;
   const crops = Array.isArray(levelCrops) ? levelCrops : [];
+  // No crop jobs this level — nothing left to sell before a shop check.
   if (crops.length === 0) return true;
   return crops.every((c) => {
     const target = Math.max(

@@ -42,6 +42,7 @@ export function createGameConfig(parent) {
         },
       ],
     },
+    // Boot, load, menu, guide, the live farm, then the game-over backdrop.
     scene: [
       BootScene,
       LoadScene,

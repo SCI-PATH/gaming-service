@@ -6,6 +6,7 @@ import Phaser from 'phaser';
  */
 export const ForestGameBridge = new Phaser.Events.EventEmitter();
 
+/** Older name for the same emitter. */
 export const EventBus = ForestGameBridge;
 
 export const FARM_EVENTS = {
@@ -83,8 +84,11 @@ export const FARM_EVENTS = {
   /** React → Phaser: write the in-progress farm run to localStorage */
   SAVE_FARM_RUN: 'SAVE_FARM_RUN',
   SYNC_STUDENT_STATE: 'SYNC_STUDENT_STATE',
+  /** React → Phaser: demo recording asks for the next real science question. */
+  DEMO_OPEN_QUIZ: 'DEMO_OPEN_QUIZ',
 };
 
+/** Short names for the quiz result and ready channels. */
 export const SCIENCE_EVENTS = {
   CORRECT: FARM_EVENTS.SCIENCE_CORRECT,
   INCORRECT: FARM_EVENTS.SCIENCE_INCORRECT,

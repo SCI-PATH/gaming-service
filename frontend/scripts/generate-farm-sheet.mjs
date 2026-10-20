@@ -46,6 +46,7 @@ const P = {
   straw: [214, 178, 74, 255],
 };
 
+/** PNG chunk checksum. This script writes tiles without an image library. */
 function crc32(buf) {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i += 1) {
@@ -55,6 +56,7 @@ function crc32(buf) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
+/** Write one RGBA buffer as a PNG under public/assets/farm-sheet. */
 function writePNG(file, w, h, rgba) {
   const raw = Buffer.alloc((w * 4 + 1) * h);
   for (let y = 0; y < h; y += 1) {
@@ -85,6 +87,7 @@ function writePNG(file, w, h, rgba) {
   fs.writeFileSync(file, png);
 }
 
+/** Blank pixel buffer. Transparent unless a fill color is given. */
 function canvas(w, h, fill = [0, 0, 0, 0]) {
   const data = Buffer.alloc(w * h * 4);
   if (fill[3]) {
@@ -93,17 +96,20 @@ function canvas(w, h, fill = [0, 0, 0, 0]) {
   return { w, h, data };
 }
 
+/** Set one pixel, ignoring draws that fall outside the 16×16 tile. */
 function setPx(img, x, y, c) {
   if (x < 0 || y < 0 || x >= img.w || y >= img.h || !c) return;
   img.data.set(c, (y * img.w + x) * 4);
 }
 
+/** Filled rectangle used for soil, stems, crates, and animal bodies. */
 function rect(img, x, y, w, h, c) {
   for (let yy = 0; yy < h; yy += 1) {
     for (let xx = 0; xx < w; xx += 1) setPx(img, x + xx, y + yy, c);
   }
 }
 
+/** Filled circle for fruit, flowers, tree crowns, and produce. */
 function disk(img, cx, cy, r, c) {
   const r2 = r * r;
   for (let y = -r; y <= r; y += 1) {
@@ -113,6 +119,7 @@ function disk(img, cx, cy, r, c) {
   }
 }
 
+/** Dark edge around opaque pixels so tiles read on the farm map. */
 function outline(img) {
   const copy = Buffer.from(img.data);
   const ink = P.ink;
@@ -136,11 +143,13 @@ function outline(img) {
   }
 }
 
+/** Shared soil strip at the bottom of crop tiles. */
 function soilBed(img) {
   rect(img, 2, 12, 12, 3, P.soil);
   rect(img, 3, 12, 10, 1, P.soilD);
 }
 
+/** Stem, leaves, and an optional fruit sitting in the soil bed. */
 function plantBase(img, fruit, leaf = P.leaf) {
   soilBed(img);
   rect(img, 7, 6, 2, 7, P.stem);
@@ -149,6 +158,7 @@ function plantBase(img, fruit, leaf = P.leaf) {
   if (fruit) disk(img, 8, 8, 3, fruit);
 }
 
+/** Onion-style crop: leaves up, bulb in the soil. */
 function bulb(img, color) {
   soilBed(img);
   rect(img, 6, 4, 1, 4, P.leaf);
@@ -156,6 +166,7 @@ function bulb(img, color) {
   disk(img, 8, 10, 3, color);
 }
 
+/** Flower crop used by plant, water, and tend activities. */
 function flower(img, petal, center = P.yellow) {
   soilBed(img);
   rect(img, 7, 8, 2, 5, P.stem);
@@ -163,6 +174,7 @@ function flower(img, petal, center = P.yellow) {
   disk(img, 8, 6, 1, center);
 }
 
+/** Leafy herb cluster for mint, basil, and similar crops. */
 function herb(img, color) {
   soilBed(img);
   rect(img, 5, 6, 2, 7, color);
@@ -170,6 +182,7 @@ function herb(img, color) {
   rect(img, 11, 7, 2, 6, color);
 }
 
+/** Trunk and canopy. Fruit pixels mark a fruit tree tile. */
 function tree(img, fruit = null) {
   rect(img, 7, 10, 2, 5, P.woodD);
   disk(img, 8, 7, 5, P.leaf);
@@ -181,11 +194,13 @@ function tree(img, fruit = null) {
   }
 }
 
+/** Harvested crop icon, drawn without the soil bed. */
 function produce(img, color, extra) {
   disk(img, 8, 9, 5, color);
   extra?.(img);
 }
 
+/** Crate for collected produce in harvest activities. */
 function crate(img, fill) {
   rect(img, 3, 6, 10, 8, P.wood);
   rect(img, 3, 6, 10, 1, P.woodD);
@@ -193,6 +208,7 @@ function crate(img, fill) {
   if (fill) rect(img, 5, 4, 6, 3, fill);
 }
 
+/** Side-view animal body shared by the herd and bird tiles. */
 function animal(img, body, spots) {
   rect(img, 4, 7, 9, 5, body);
   rect(img, 11, 5, 4, 4, body);
@@ -308,10 +324,12 @@ const TILES = [
 
 const ANIMALS = new Set(['cow', 'calf', 'chicken', 'duck', 'sheep', 'goat', 'kid', 'bird']);
 
+/** One farm activity row: region, verb, sprite, and optional tool. */
 function A(n, region, action, sprite, after, cluster, tool = null) {
   return { n, region, action, sprite: `fs_${sprite}`, after: after ? `fs_${after}` : null, cluster, tool: tool ? `fs_${tool}` : null };
 }
 
+/** Same crop action repeated across a run of crop names. */
 function cropGroup(start, names, action, tool, cluster = 4) {
   return names.map((name, i) => A(start + i, 'crops', action, name, name, cluster, tool));
 }
@@ -776,6 +794,7 @@ const ACTIVITIES = [
   A(500, 'weather', 'arrange', 'broom', 'sign', 1),
 ];
 
+/** Copy a tile onto a sheet, skipping transparent pixels. */
 function blit(dst, src, x, y) {
   for (let sy = 0; sy < src.h; sy += 1) {
     for (let sx = 0; sx < src.w; sx += 1) {
@@ -786,6 +805,7 @@ function blit(dst, src, x, y) {
   }
 }
 
+/** Integer scale so 16×16 art stays crisp on the preview sheets. */
 function scaleNearest(src, factor) {
   const dst = canvas(src.w * factor, src.h * factor);
   for (let y = 0; y < dst.h; y += 1) {
@@ -797,6 +817,7 @@ function scaleNearest(src, factor) {
   return dst;
 }
 
+/** 3×5 digit used to number tiles on the activity sheets. */
 function glyph(img, ch, x, y, color) {
   const G = {
     0: '111101101101111',
@@ -817,11 +838,13 @@ function glyph(img, ch, x, y, color) {
   }
 }
 
+/** Paint a three-digit activity number under a tile. */
 function labelNum(img, n, x, y, color) {
   const s = String(n).padStart(3, '0');
   for (let i = 0; i < s.length; i += 1) glyph(img, s[i], x + i * 4, y, color);
 }
 
+/** Run a tile painter, then outline it. */
 function makeTile(draw) {
   const img = canvas(SIZE, SIZE);
   draw(img);
@@ -829,6 +852,7 @@ function makeTile(draw) {
   return img;
 }
 
+/** Write tile PNGs, preview sheets, and the farm activity module. */
 function main() {
   if (ACTIVITIES.length !== 500) {
     throw new Error(`Expected 500 activities, got ${ACTIVITIES.length}`);

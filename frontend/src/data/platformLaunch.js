@@ -131,6 +131,7 @@ export function resolvePlatformLaunch() {
 
   const fresh = student ? consumeFreshLogin(student.id) : false;
   let farmStartLevel = requestedLevel != null ? Math.max(1, Number(requestedLevel) || 1) : 1;
+  // Learning-path chapter sets the farm level and may grant that chapter’s reward.
   if (student && requestedLevel != null) {
     const progress = applyChapterFarmLevel(
       requestedLevel,
@@ -142,6 +143,7 @@ export function resolvePlatformLaunch() {
       grantLearningPathReward(farmStartLevel, chapter.rewardItem);
     }
   } else if (student && (launch.startLevel != null || launch.cash != null)) {
+    // No chapter payload — apply the parent app’s level and wallet directly.
     const progress = applyRemoteFarmProgress({
       currentLevel: launch.startLevel,
       highestCompletedLevel:
@@ -195,6 +197,7 @@ export function resolvePlatformLaunch() {
     student,
     sessionId: launch.sessionId,
     topicId: launch.topicId,
+    // A fresh login ignores the requested level and starts this chapter at Level 1.
     startLevel: fresh ? 1 : farmStartLevel,
     cash: launch.cash,
     lessonId: chapter.lessonId || launch.lessonId,

@@ -22,6 +22,7 @@ function readAll() {
     const data = JSON.parse(raw);
     const index = Number(data?.index);
     if (!Number.isFinite(index) || index < 0) return emptyState();
+    // A stale save still lands on a real herd.
     return { index: Math.floor(index) % ANIMAL_CHALLENGE_COUNT };
   } catch {
     return emptyState();
@@ -36,10 +37,12 @@ function writeAll(data) {
   }
 }
 
+/** Next paddock job for this student. */
 export function getAnimalChallengeIndex() {
   return readAll().index;
 }
 
+/** Store a wrapped index so a bad value cannot walk off the herd list. */
 export function setAnimalChallengeIndex(index) {
   const next =
     ((Number(index) || 0) % ANIMAL_CHALLENGE_COUNT + ANIMAL_CHALLENGE_COUNT) %
@@ -48,6 +51,7 @@ export function setAnimalChallengeIndex(index) {
   return next;
 }
 
+/** Move to the next herd after this one is finished. */
 export function advanceAnimalChallengeIndex() {
   return setAnimalChallengeIndex(getAnimalChallengeIndex() + 1);
 }

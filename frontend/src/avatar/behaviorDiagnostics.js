@@ -5,6 +5,8 @@
  *   Performance issue → Name trigger → Problem-focused A–D probe
  *   → Analyze chosen reason → Appropriate support
  * Science content only when the reason is concept-related (or trigger is concept struggle).
+ * Sage asks why the farm question felt hard before she teaches the science.
+ * A concept-gap answer is what unlocks the in-game mind map.
  */
 
 import {
@@ -301,6 +303,7 @@ export function getBehaviorProbe(code, evidence = {}) {
   };
 }
 
+/** Spoken A–D list so Sage can read the choices without dumping codes. */
 export function formatDiagnosticText(probe) {
   if (!probe?.prompt) return '';
   const lines = [probe.prompt, ''];
@@ -435,6 +438,7 @@ function freeTextReason(lower) {
   return null;
 }
 
+/** Concept-gap reasons may open science talk. Timing and distraction stay off the map. */
 export function needsScienceSupport(reasonKey, code = '') {
   if (CONCEPT_REASONS.has(reasonKey)) return true;
   const c = String(code || '').toUpperCase();
@@ -608,6 +612,7 @@ export function buildBehaviorSupportReply({
   );
 }
 
+/** Mind map only when the student says the science idea itself is the problem. */
 export function reasonNeedsMindMap(reasonKey) {
   return (
     reasonKey === REASON_KEYS.CONCEPT_GAP ||

@@ -25,6 +25,11 @@ function accuracyFromCounts(correctAnswers, incorrectAnswers) {
   return correct / total;
 }
 
+/**
+ * This run is mastered when quiz accuracy is at least 65%.
+ * With no answers, the stored mastery number is used instead.
+ * A mastery record under 0.4 still blocks advance.
+ */
 export function conceptMasteredFromRun({
   correctAnswers = 0,
   incorrectAnswers = 0,
@@ -33,6 +38,7 @@ export function conceptMasteredFromRun({
   const accuracy = accuracyFromCounts(correctAnswers, incorrectAnswers);
   const m = Number(mastery);
   if (accuracy == null) {
+    // No quiz answers this run — trust the stored mastery number.
     return Number.isFinite(m) ? m >= LESSON_MASTERY_PASS : false;
   }
   if (accuracy < LESSON_MASTERY_PASS) return false;
@@ -54,6 +60,7 @@ export function decideFarmLessonProgression({
   incorrectAnswers = 0,
   mastery = null,
 } = {}) {
+  // High or very-high frustration sends the student back to the same lesson.
   if (
     shouldRetryLessonAfterFarm(frustrationScore) ||
     shouldRetryLessonAfterFarm(frustrationLevel)
@@ -64,6 +71,7 @@ export function decideFarmLessonProgression({
       reason: 'very_high_or_high_frustration',
     };
   }
+  // Accuracy or mastery is still short of the pass bar.
   if (
     !conceptMasteredFromRun({
       correctAnswers,

@@ -1061,6 +1061,7 @@ for (const topic of CURRICULUM_TOPICS) {
   }
 }
 
+/** Chapter record for a skill id or a chapter id such as G7_C3. */
 export function getChapterMeta(topicIdOrChapterId) {
   const id = String(topicIdOrChapterId || "").trim();
   if (!id) return null;
@@ -1074,10 +1075,12 @@ export function getChapterMeta(topicIdOrChapterId) {
       grade: topic.grade,
     };
   }
+  // A bare chapter id (G6_C7) is accepted even when it is not a skill id.
   const chapterId = chapterIdFromTopicId(id) || (/^G[6-9]_C\d+$/i.test(id) ? id.toUpperCase() : "");
   return chapterId ? CHAPTER_BY_ID.get(chapterId) || null : null;
 }
 
+/** Chapter record matched on the official title, ignoring case. */
 export function getChapterMetaByTitle(chapterName) {
   const key = String(chapterName || "")
     .trim()
@@ -1130,6 +1133,7 @@ export function resolveChapterFromEngine(source = {}) {
   };
 }
 
+/** True for a skill id or a grade 6–9 chapter id from the SCI-PATH catalog. */
 export function isCurriculumTopicId(value) {
   const id = String(value || "").trim();
   if (TOPIC_BY_ID.has(id)) return true;
@@ -1137,16 +1141,19 @@ export function isCurriculumTopicId(value) {
   return Boolean(id.match(/^G[6-9]_C\d+(_[A-Z0-9]+)+$/i));
 }
 
+/** Full skill row, including grade and chapter title, or undefined. */
 export function getCurriculumTopic(topicId) {
   return TOPIC_BY_ID.get(String(topicId || "").trim());
 }
 
+/** Card title such as "Ch.1: Characteristics of organisms". Unknown ids pass through. */
 export function getCurriculumTitle(topicId) {
   const id = String(topicId || "").trim();
   if (!id) return "";
   return TOPIC_BY_ID.get(id)?.curriculumTitle ?? id;
 }
 
+/** Drop the grade prefix so a skill id fits a short farm label. */
 export function compactTopicLabel(topicId) {
   return String(topicId || "").replace(/^G\d+_/, "");
 }
@@ -1161,6 +1168,7 @@ export function pickCanonicalTopicId(...candidates) {
   return "";
 }
 
+/** Curriculum title for a skill, or the fallback when the id is not in the catalog. */
 export function topicDisplayName(topicId, fallback = "") {
   const id = String(topicId || "").trim();
   if (!id) return fallback;

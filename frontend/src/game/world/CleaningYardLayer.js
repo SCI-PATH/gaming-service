@@ -6,6 +6,7 @@ import { TILE_SIZE } from '../config/constants.js';
 import { CLEANING_YARD } from '../../data/cleaningChallenges.js';
 
 export default class CleaningYardLayer {
+  /** Empty yard until a cleaning challenge calls spawn. */
   constructor(scene) {
     this.scene = scene;
     this.mess = [];
@@ -17,6 +18,7 @@ export default class CleaningYardLayer {
     this.yard = CLEANING_YARD;
   }
 
+  /** First loaded texture from the candidate list. */
   firstKey(keys) {
     const textures = this.scene?.textures;
     if (!textures) return null;
@@ -26,6 +28,7 @@ export default class CleaningYardLayer {
     return null;
   }
 
+  /** Scale a mess sprite so its width matches the target size. */
   spriteScale(key, targetPx) {
     const tex = this.scene.textures.get(key);
     const src = tex?.getSourceImage?.();
@@ -33,6 +36,7 @@ export default class CleaningYardLayer {
     return targetPx / w;
   }
 
+  /** Draw the yard and scatter clutter that is not sweepable yet. */
   spawn(challenge) {
     this.clear();
     this.challenge = challenge;
@@ -78,6 +82,7 @@ export default class CleaningYardLayer {
     this.scatterMess(challenge, x, y, pw, ph);
   }
 
+  /** Fill the yard with weeds or rocks. They cannot be cleared until start. */
   scatterMess(challenge, x, y, pw, ph) {
     const scene = this.scene;
     const keys = (challenge?.messKeys || ['kf_weed']).filter(
@@ -127,6 +132,7 @@ export default class CleaningYardLayer {
     }
   }
 
+  /** After a correct quiz, tint comes off and every piece can be swept. */
   start() {
     if (this.started) return false;
     this.started = true;
@@ -147,6 +153,7 @@ export default class CleaningYardLayer {
     return true;
   }
 
+  /** Remove clutter the hero runs over. */
   sweepNear(playerX, playerY, reach) {
     const hit = [];
     for (const item of this.mess) {
@@ -175,10 +182,12 @@ export default class CleaningYardLayer {
     return hit.length;
   }
 
+  /** How many sweepable pieces are still in the yard. */
   remainingMess() {
     return this.mess.filter((m) => m.collectable && m.visual?.active).length;
   }
 
+  /** True when a world point is inside the yard, with a small pad. */
   isNear(worldX, worldY, extra = 12) {
     const yard = this.yard;
     const x = yard.x * TILE_SIZE - extra;
@@ -188,6 +197,7 @@ export default class CleaningYardLayer {
     return worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h;
   }
 
+  /** Bob the clutter only after sweeping has been unlocked. */
   update(time) {
     if (!this.started) return;
     for (const item of this.mess) {
@@ -197,6 +207,7 @@ export default class CleaningYardLayer {
     }
   }
 
+  /** Remove the yard, mess, and label. */
   clear() {
     const scene = this.scene;
     for (const item of this.mess) {

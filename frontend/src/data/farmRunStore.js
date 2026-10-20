@@ -1,3 +1,8 @@
+/**
+ * In-progress farm snapshot for one student.
+ * Stores level, cash, question counts, and frustration so a refresh can resume.
+ * A copy is also posted as an in_progress lesson checkpoint.
+ */
 import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { DDA_CONFIG } from './dda.js';
 import { getChapterLaunch } from './chapterPath.js';
@@ -11,12 +16,14 @@ function storageKey() {
   return studentStorageKey(BASE_KEY);
 }
 
+/** Saved mid-level run, or null when missing, corrupt, or from an older version. */
 export function loadFarmRun() {
   try {
     const raw = localStorage.getItem(storageKey());
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object') return null;
+    // Older snapshot shapes are dropped rather than half-applied.
     if (Number(data.version) !== VERSION) return null;
     const levelId = Math.max(1, Number(data.levelId) || 0);
     if (!levelId) return null;
@@ -26,6 +33,7 @@ export function loadFarmRun() {
   }
 }
 
+/** True when a resumable mid-level snapshot is in localStorage. */
 export function hasFarmRun() {
   return Boolean(loadFarmRun());
 }
@@ -89,6 +97,7 @@ export async function flushFarmProgress(snapshot, student = getCurrentStudent())
   );
 }
 
+/** Write the live run locally and, unless remote is false, push the checkpoint. */
 export function saveFarmRun(snapshot, options = {}) {
   if (!snapshot || !Number(snapshot.levelId)) return null;
   const record = {
@@ -106,6 +115,7 @@ export function saveFarmRun(snapshot, options = {}) {
   return record;
 }
 
+/** Drop the local snapshot after the level ends or the student leaves. */
 export function clearFarmRun() {
   try {
     localStorage.removeItem(storageKey());
@@ -114,6 +124,7 @@ export function clearFarmRun() {
   }
 }
 
+/** Questions used this run. Falls back to correct + incorrect when the count is missing. */
 export function answeredFromRun(snapshot) {
   if (!snapshot) return 0;
   const explicit = Number(snapshot.questionsAnswered);
@@ -124,6 +135,7 @@ export function answeredFromRun(snapshot) {
   );
 }
 
+/** Patch the saved run and keep its level id. Returns null if no level is known. */
 export function mergeFarmRun(patch = {}) {
   const prev = loadFarmRun() || {};
   const levelId = Math.max(1, Number(patch.levelId ?? prev.levelId) || 0);
@@ -131,6 +143,7 @@ export function mergeFarmRun(patch = {}) {
   return saveFarmRun({ ...prev, ...patch, levelId });
 }
 
+/** Short resume label: level, questions left, cash, and the live frustration score. */
 export function farmRunSummary(snapshot = loadFarmRun()) {
   if (!snapshot) return null;
   const levelId = Math.max(1, Number(snapshot.levelId) || 1);

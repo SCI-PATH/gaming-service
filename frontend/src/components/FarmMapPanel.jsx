@@ -399,9 +399,10 @@ export default function FarmMapPanel({
   );
 }
 
+/** Customer and enemy callouts drawn on the minimap beside the farm canvas. */
 function buildMapAlerts(enemies = [], customers = [], customerAlerts = []) {
   const alerts = [];
-  const unread = (customerAlerts || []).filter((a) => !a.read);
+  const unread = (customerAlerts || []).filter((a) => !a.read).slice(0, 1);
   for (const a of unread) {
     alerts.push({
       id: a.id,
@@ -430,7 +431,7 @@ function buildMapAlerts(enemies = [], customers = [], customerAlerts = []) {
   }
   for (const c of customers) {
     if (unread.some((a) => a.customerId === c.id)) continue;
-    if ((c.rank || 0) < 2) continue;
+    if ((c.rank || 0) < 3) continue;
     alerts.push({
       id: `cust-live-${c.id}`,
       tone: c.rank >= 3 ? 'danger' : 'warn',
@@ -442,6 +443,7 @@ function buildMapAlerts(enemies = [], customers = [], customerAlerts = []) {
   return alerts.sort((a, b) => b.rank - a.rank);
 }
 
+/** Move the YOU pin from Phaser tile coords. App throttles those coords on a frame. */
 function movePin(pinEl, guideEl, x, y, mapW, mapH) {
   if (pinEl) {
     pinEl.style.left = `${(x / mapW) * 100}%`;
@@ -456,6 +458,7 @@ function movePin(pinEl, guideEl, x, y, mapW, mapH) {
   }
 }
 
+/** Nearest plant bed, shop, pen, or yard — the guide line on the minimap. */
 function nearestTarget(tileX, tileY, mapMarkers = null) {
   const beds = mapMarkers?.beds?.length
     ? mapMarkers.beds

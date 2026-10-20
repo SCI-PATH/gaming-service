@@ -34,6 +34,7 @@ function sessionStore() {
   }
 }
 
+/** Flag this student so the next platform launch starts the chapter at Level 1. */
 export function markFreshLogin(studentId) {
   const id = String(studentId || '').trim();
   const store = localStore();
@@ -41,6 +42,7 @@ export function markFreshLogin(studentId) {
   store.setItem(`${FRESH_PREFIX}${id}`, '1');
 }
 
+/** True while a fresh-login flag is set and has not been consumed. */
 export function peekFreshLogin(studentId) {
   const id = String(studentId || '').trim();
   const store = localStore();
@@ -48,6 +50,7 @@ export function peekFreshLogin(studentId) {
   return store.getItem(`${FRESH_PREFIX}${id}`) === '1';
 }
 
+/** Read and clear the fresh-login flag. Platform launch uses this once. */
 export function consumeFreshLogin(studentId) {
   const id = String(studentId || '').trim();
   const store = localStore();
@@ -67,6 +70,7 @@ export function clearStudentLocalGameplay(studentId) {
     store.removeItem(`${base}__${id}`);
   }
   const shopKeys = [];
+  // Frozen shop prices put the student id in the middle of the key, not as a simple suffix.
   for (let i = 0; i < store.length; i += 1) {
     const key = store.key(i);
     if (!key) continue;
@@ -79,6 +83,7 @@ export function clearStudentLocalGameplay(studentId) {
   const session = sessionStore();
   if (!session) return;
   const clocks = [];
+  // Question countdown keys live in sessionStorage and are not named per student.
   for (let i = 0; i < session.length; i += 1) {
     const key = session.key(i);
     if (!key) continue;

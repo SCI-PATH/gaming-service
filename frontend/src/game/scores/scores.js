@@ -1,3 +1,7 @@
+/**
+ * Local leaderboard. Scores stay in localStorage, highest first,
+ * and are capped so the list cannot grow without bound.
+ */
 const STORAGE_KEY = 'forestrpg-leaderboard';
 const MAX_STORED_SCORES = 50;
 

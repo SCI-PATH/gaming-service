@@ -196,6 +196,10 @@ export const FARM_LEVELS = [
   },
 ];
 
+/**
+ * Level record for the plant → harvest → load loop.
+ * Ids past the local bank reuse an earlier crop with a new level number.
+ */
 export function getFarmLevel(levelId = 1) {
   const id = Math.max(1, Number(levelId) || 1);
   const found = FARM_LEVELS.find((l) => l.id === id);
@@ -215,6 +219,7 @@ export function getFarmLevel(levelId = 1) {
  * Prefer mode-matched banks; fall back to a wider pool so offline practice never crashes.
  */
 export function pickScienceQuestion(level, avoidId, mode = 'plant') {
+  // Dock, unload, and sell quizzes prefer the load bank when this level has one.
   const loadLike = mode === 'load' || mode === 'unload' || mode === 'sell';
   let source =
     loadLike && level?.loadQuestions?.length
@@ -243,6 +248,7 @@ export function pickScienceQuestion(level, avoidId, mode = 'plant') {
   }
 
   if (!Array.isArray(source) || source.length < 1) {
+    // Last resort so offline practice still has a grade 6–9 life-science prompt.
     return {
       id: 'fallback-science',
       topic: 'Life Science',

@@ -788,6 +788,8 @@ export const MOTIVATIONAL_SKETCHES = Object.freeze([
 ]);
 
 /**
+ * Pick one sketch for this frustration band.
+ * The same student, farm level, and score always get the same story.
  * @param {{
  *   frustrationScore?: number,
  *   frustrationLevel?: string,
@@ -805,6 +807,7 @@ export function suggestMotivationalVideo(opts = {}) {
   const pool = MOTIVATIONAL_SKETCHES.filter((v) =>
     v.frustrationLevels.includes(level),
   );
+  // This band has no sketch — use the full catalog.
   const list = pool.length ? pool : MOTIVATIONAL_SKETCHES.slice();
   const seed = hashSeed(
     `${opts.studentId || 'student'}|${opts.levelId || 0}|${level}|${score}`,
@@ -819,6 +822,7 @@ export function suggestMotivationalVideo(opts = {}) {
   };
 }
 
+/** Older name for the same sketch catalog. */
 export const MOTIVATIONAL_VIDEOS = MOTIVATIONAL_SKETCHES;
 
 function hashSeed(str) {

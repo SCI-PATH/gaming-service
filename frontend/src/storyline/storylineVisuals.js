@@ -36,6 +36,7 @@ function pickFromPool(role, used) {
 }
 
 function pickCreature({ stage, storyline, role, used }) {
+  // Prefer an explicit creature, then the storyline visual, then words in the beat, then the role pool.
   if (isCreatureId(stage?.creatureId)) return stage.creatureId;
   const visuals = storyline?.visuals || DEFAULT_VISUALS;
   const fromVisuals =
@@ -104,6 +105,9 @@ function makeChallenge({
   };
 }
 
+/**
+ * Only the first unfinished beat stays playable. Later beats stay locked until it is done.
+ */
 export function applyStorylineLockState(challenges = []) {
   let unlocked = false;
   for (const c of challenges) {
@@ -111,6 +115,7 @@ export function applyStorylineLockState(challenges = []) {
       c.locked = false;
       continue;
     }
+    // First open beat is playable; every beat after it waits.
     if (!unlocked) {
       c.locked = false;
       unlocked = true;
@@ -221,11 +226,13 @@ export function buildStorylineWorld(storyline, { completedIds = [] } = {}) {
   return { challenges, decor: [], visuals };
 }
 
+/** Creature texture for a storyline challenge sprite. */
 export function getStorylineTexture(challenge) {
   const creature = getCreature(challenge?.creatureId);
   return creature || null;
 }
 
+/** Prop texture used beside a story beat. */
 export function getStorylineProp(propId) {
   return getProp(propId);
 }

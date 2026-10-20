@@ -5,14 +5,17 @@ import { ForestGameBridge, FARM_EVENTS } from '../ForestGameBridge.js';
  * Cinematic backdrop only — React GameOverOverlay renders the UI.
  */
 export default class GameOverScene extends Phaser.Scene {
+  /** Phaser key GameOverScene. */
   constructor() {
     super({ key: 'GameOverScene' });
   }
 
+  /** Keep the run stats React will show on its overlay. */
   init(data = {}) {
     this.runData = data;
   }
 
+  /** Darken the title art, emit game over, and return to the menu when React asks. */
   create() {
     ForestGameBridge.emit(FARM_EVENTS.FARM_SCENE_ACTIVE, { active: false });
     ForestGameBridge.emit(FARM_EVENTS.GAME_PHASE, { phase: 'gameover' });

@@ -61,6 +61,7 @@ export const CHALLENGE_LIBRARY = [
   })),
 ];
 
+/** Which slice of the shared library this farm level plays. Wraps after the crop list. */
 export function librarySlotForLevel(levelId = 1) {
   const level = Math.max(1, Number(levelId) || 1);
   return (level - 1) % LIBRARY_LEVEL_COUNT;
@@ -166,6 +167,7 @@ export function getGradeLevelChallengePlan(levelId = 1, grade = 6) {
  */
 export function getLevelChallengePlan(levelId = 1, grade = null) {
   const normalizedGrade = normalizeStudentGrade(grade);
+  // Grades 6–9 use exclusive crop, animal, and cleaning sets.
   if (normalizedGrade != null) {
     return getGradeLevelChallengePlan(levelId, normalizedGrade);
   }
@@ -209,12 +211,14 @@ export function getLevelChallengePlan(levelId = 1, grade = null) {
   };
 }
 
+/** Farm level that owns this vegetable index in the shared (non-grade) library. */
 export function libraryLevelForCropIndex(index = 0) {
   return (
     Math.floor(Math.max(0, Number(index) || 0) / LIBRARY_CROPS_PER_LEVEL) + 1
   );
 }
 
+/** Farm level for an animal or cleaning index. Wraps with the crop-slot count. */
 export function libraryLevelForTrackIndex(index = 0) {
   return (Math.max(0, Number(index) || 0) % LIBRARY_LEVEL_COUNT) + 1;
 }

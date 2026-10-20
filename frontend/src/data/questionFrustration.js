@@ -20,6 +20,7 @@ export { averageLevelFrustration, priceFromAverageFrustration };
 
 const claimed = new Set();
 
+/** Reject missing or negative times. Cap at two hours so a stuck clock cannot dominate CSF. */
 export function validateResponseMs(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
@@ -39,17 +40,21 @@ export function smoothFrustration(previous, next, alpha = 0.35) {
   return Math.round(prev * (1 - a) + clamped * a);
 }
 
+/** Claim a quiz attempt once per page load so the same answer is not scored twice. */
 export function claimAttemptKey(key) {
   const id = String(key || '').trim();
+  // Already scored, or an empty key — the caller should ignore this attempt.
   if (!id || claimed.has(id)) return false;
   claimed.add(id);
   return true;
 }
 
+/** Drop one claim so a retried question can be scored again. */
 export function releaseAttemptKey(key) {
   claimed.delete(String(key || '').trim());
 }
 
+/** Clear every in-memory attempt claim (new level or tests). */
 export function resetAttemptClaims() {
   claimed.clear();
 }
@@ -59,6 +64,7 @@ export function resetAttemptClaims() {
  */
 export function scoreQuestionAttempt(input = {}) {
   const responseTimeMs = validateResponseMs(input.responseTimeMs);
+  // No usable clock — do not invent a frustration score for this answer.
   if (responseTimeMs == null) {
     return { ok: false, error: 'invalid_response_time' };
   }
@@ -103,6 +109,7 @@ function shopPriceStorageKey(levelId, sessionId) {
  */
 export function freezeShopOffer({ levelId, sessionId, scores } = {}) {
   const existing = readShopOffer(levelId, sessionId);
+  // Already frozen for this level session — a refresh must not reprice the shop.
   if (existing?.prices && Object.keys(existing.prices).length) return existing;
   const avgFrustration = averageLevelFrustration(scores);
   const prices = {};
@@ -128,6 +135,7 @@ export function freezeShopOffer({ levelId, sessionId, scores } = {}) {
   return snapshot;
 }
 
+/** Read the frozen shop prices for this level, or null if none were saved. */
 export function readShopOffer(levelId, sessionId) {
   const sid = sessionId || getEngagementSessionId() || null;
   try {

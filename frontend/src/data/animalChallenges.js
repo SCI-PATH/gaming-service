@@ -158,6 +158,7 @@ export const ANIMAL_CHALLENGES = ROUND_COUNTS.flatMap((collectCount, round) =>
 
 export const ANIMAL_CHALLENGE_COUNT = ANIMAL_CHALLENGES.length;
 
+/** Herd job at this index. The index wraps so the paddock never runs out. */
 export function getAnimalChallenge(index = 0) {
   const i =
     ((Number(index) || 0) % ANIMAL_CHALLENGE_COUNT + ANIMAL_CHALLENGE_COUNT) %
@@ -165,14 +166,20 @@ export function getAnimalChallenge(index = 0) {
   return ANIMAL_CHALLENGES[i];
 }
 
+/**
+ * How much produce to collect. Strong mastery asks for two extra.
+ * Emerging mastery keeps the round's base count.
+ */
 export function animalCollectTarget(challenge, mastery) {
   const base = Math.max(3, Number(challenge?.collectCount) || 4);
   const band = bandFromMastery(mastery);
   if (band === DDA_BANDS.STRONG) return base + 2;
+  // Emerging students are not asked for more than the round already requires.
   if (band === DDA_BANDS.EMERGING) return base;
   return base + 1;
 }
 
+/** Quest line: feed or shear, collect produce, sell at the shop. */
 export function animalGoalText(challenge, collectTarget) {
   const animals = challenge?.animalName || 'animals';
   const produce = challenge?.produceName || 'produce';
@@ -181,6 +188,7 @@ export function animalGoalText(challenge, collectTarget) {
   return `${verb} the ${animals} · collect ${n} ${produce} · sell at the shop`;
 }
 
+/** True when a grid cell is inside the fenced paddock south of spawn. */
 export function isInsideAnimalPaddock(gridX, gridY, pad = ANIMAL_PADDOCK) {
   return (
     gridX >= pad.x &&

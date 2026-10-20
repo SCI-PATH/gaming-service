@@ -16,6 +16,8 @@ import {
 } from '../data/curriculumTopics.js';
 import { readGradeIsCorrect } from './gradeFlag.js';
 import { assessQuestionGradeScope } from './questionGradeScope.js';
+import { isDemoAutoplay } from '../data/demoScenarios.js';
+import { demoKeyFromRaw } from '../data/demoAutoplay.js';
 
 const FETCH_TIMEOUT_MS = 15000;
 /** Short answers wait on Groq; keep under the Vite proxy 60s cap. */
@@ -73,6 +75,7 @@ function shouldStripKey(key) {
   return false;
 }
 
+/** Drop answer keys before a question is handed to ScienceQuizModal. */
 function stripSecrets(value) {
   if (Array.isArray(value)) {
     return value.map(stripSecrets);
@@ -446,6 +449,15 @@ export function mapAssessmentQuestion(rawQuestion) {
     remoteGrade: true,
     source: 'assessment_engine',
   };
+  if (isDemoAutoplay()) {
+    const key = demoKeyFromRaw(rawQuestion, options, optionLetters, questionType);
+    if (key.index != null) mapped.demoKeyIndex = key.index;
+    if (key.text) mapped.demoKeyText = key.text;
+    if (key.texts?.length) {
+      mapped.demoKeyTexts = key.texts;
+      if (questionType === 'MultiBlank') mapped.blanks = key.texts.length;
+    }
+  }
   aeLog('mapped /next → quiz UI', {
     id: mapped.id,
     questionType: mapped.questionType,
@@ -455,6 +467,7 @@ export function mapAssessmentQuestion(rawQuestion) {
   return mapped;
 }
 
+/** Remember the session id so logout or refresh can resume the same quiz. */
 function persistRuntime() {
   try {
     if (typeof sessionStorage === 'undefined') return;
@@ -476,6 +489,7 @@ function persistRuntime() {
   }
 }
 
+/** Restore the session id written by persistRuntime. */
 function hydrateRuntimeFromStore() {
   if (sessionId) return true;
   try {
@@ -594,6 +608,7 @@ function basesToTry() {
   return getAssessmentBaseCandidates();
 }
 
+/** Call the sticky host after post-lesson. Walk every candidate only on first contact. */
 async function fetchWithBases(pathBuilder, { method = 'GET', body, label, timeoutMs } = {}) {
   const bases = basesToTry();
   const timeout = Number(timeoutMs) > 0 ? Number(timeoutMs) : FETCH_TIMEOUT_MS;
@@ -662,9 +677,40 @@ async function fetchWithBases(pathBuilder, { method = 'GET', body, label, timeou
   return { ok: false, status: 0, data: null, lastError };
 }
 
+/**
+ * The lesson engine creates an unknown demo id on Grade 6 chapter 1.
+ * Recordings set the demo grade first so Grade 7–9 get that grade's chapter,
+ * and the assessment engine then serves that grade's questions.
+ */
+async function alignDemoLessonGrade(student) {
+  if (!student?.isDemoSession) return;
+  const grade = normalizeGrade(student);
+  if (grade == null || !student.id) return;
+  try {
+    const res = await fetch('/lesson-api/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: String(student.id),
+        action: 'set_grade',
+        grade,
+      }),
+    });
+    if (!res.ok) {
+      aeWarn('demo lesson grade was not saved', { status: res.status, grade });
+      return;
+    }
+    aeLog('demo lesson grade saved', { student_id: student.id, grade });
+  } catch (err) {
+    aeWarn('demo lesson grade request failed', String(err?.message || err));
+  }
+}
+
+/** Start the quiz: student id, grade, and chapter, then store session_id. */
 async function postLesson(student) {
   const studentId = student?.id;
   if (!studentId) return null;
+  await alignDemoLessonGrade(student);
 
   /** @type {Record<string, unknown>} */
   const body = { student_id: String(studentId) };
@@ -710,6 +756,7 @@ async function postLesson(student) {
   return sessionId;
 }
 
+/** One in-flight post-lesson. Parallel farm quiz triggers share it. */
 async function ensureSession() {
   if (nextStopped || sessionComplete) return null;
   hydrateRuntimeFromStore();
@@ -739,6 +786,7 @@ async function ensureSession() {
   return ensurePromise;
 }
 
+/** One /next call. 404 drops the session; 409 or is_complete stops the quiz. */
 async function fetchNextOnce() {
   const sid = sessionId;
   if (!sid) return { status: 'empty' };
@@ -800,6 +848,7 @@ async function fetchNextOnce() {
   return { status: 'ok', question: mapped };
 }
 
+/** Hand the warmed /next item to the quiz, or fetch one. Skips items the modal cannot render. */
 async function fetchNextMapped() {
   if (nextStopped || sessionComplete) return null;
   if (!sessionId && !cachedQuestion) return null;
@@ -826,6 +875,7 @@ async function fetchNextMapped() {
   return nextPromise;
 }
 
+/** ensureSession, then /next. resolveScienceQuestion is the call the farm uses. */
 async function takeEngineQuestion() {
   const sid = await ensureSession();
   if (!sid) return null;

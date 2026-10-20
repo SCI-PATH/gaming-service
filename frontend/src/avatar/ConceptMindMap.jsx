@@ -1,6 +1,8 @@
 /**
  * Concept mind map: assessment-engine knowledge, no student wrong answers.
  * Highlights only the word currently being spoken by Sage (reading-flow sync).
+ * The in-game farm map. Frustration can simplify the wording. This component
+ * does not render the learning-path engine map.
  */
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAiMindMap } from './fetchAiMindMap.js';
@@ -30,6 +32,7 @@ const COLORS = [
   { stroke: '#5a6570', fill: '#e8ecef', bar: '#5a6570' },
 ];
 
+/** Miss rows already on the map, else one row per misconception attempt. */
 function attemptsFromProps(map, misconceptions) {
   if (Array.isArray(map?.sourceAttempts) && map.sourceAttempts.length) {
     return map.sourceAttempts;
@@ -59,6 +62,7 @@ function attemptsFromProps(map, misconceptions) {
   return [];
 }
 
+/** Local farm map used before the AI route returns, and when it fails. */
 function localMapFromAttempts(attempts, misconceptions, frustration = {}) {
   if (attempts.length) {
     return buildPersonalizedMindMap({
@@ -92,6 +96,7 @@ function explanationText(text, correctAnswer) {
   return raw;
 }
 
+/** Hide duplicate cards that repeat the same farm question. */
 function uniqueQuestionBranches(branches) {
   const seen = new Set();
   const out = [];
@@ -220,6 +225,7 @@ function ConceptMindMap({
   segmentText = '',
   frustrationScore = null,
   frustrationLevel = null,
+  autoShowcase = false,
 }) {
   const seedAttempts = useMemo(
     () => attemptsFromProps(seedMap, misconceptions),
@@ -255,6 +261,7 @@ function ConceptMindMap({
 
   useEffect(() => {
     let cancelled = false;
+    // Prefer a map that is already a concept layout; otherwise build one locally.
     const fallback =
       seedMap?.layout === 'concept-map' || seedMap?.layout === 'all-misses-ai'
         ? seedMap
@@ -269,6 +276,7 @@ function ConceptMindMap({
       return undefined;
     }
 
+    // History drawer passes enableAi false so a saved farm map is not rebuilt.
     if (fallback && !enableAi) {
       setLiveMap(fallback);
       setStatus('ready');
@@ -286,6 +294,7 @@ function ConceptMindMap({
     }
 
     setStatus('loading');
+    // AI structures textbook lines. The engine key is still the source of truth.
     setNote('Writing a short explanation from textbooks…');
 
     (async () => {
@@ -319,6 +328,7 @@ function ConceptMindMap({
         setStatus('ready');
       } catch (err) {
         if (cancelled) return;
+        // Keep the local farm map on screen if the textbook request fails.
         if (fallback || seedMap) setLiveMap(fallback || seedMap);
         setNote(
           softProviderNote(err?.message) ||
@@ -359,6 +369,31 @@ function ConceptMindMap({
 
   const map = liveMap || seedMap;
   const branches = toDisplayBranches(map);
+  const downloadedRef = useRef(false);
+  const downloadPayloadRef = useRef({ map, branches });
+  downloadPayloadRef.current = { map, branches };
+
+  useEffect(() => {
+    if (!autoShowcase || status === 'loading' || !branches.length || downloadedRef.current) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      if (downloadedRef.current) return;
+      downloadedRef.current = true;
+      const current = downloadPayloadRef.current;
+      const currentBranches = current.branches || [];
+      setDownloadState('saving');
+      void (currentBranches.some((b) => b.keyExplain)
+        ? downloadExplanationMindMap(currentBranches)
+        : downloadMindMap(current.map, currentBranches))
+        .then(() => setDownloadState('done'))
+        .catch(() => {
+          downloadedRef.current = false;
+          setDownloadState('idle');
+        });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [autoShowcase, status, branches.length]);
 
   // Reading timeline for the content Sage is currently addressing
   const readingFields = useMemo(() => {

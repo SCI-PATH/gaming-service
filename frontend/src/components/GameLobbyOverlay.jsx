@@ -54,6 +54,7 @@ export default function GameLobbyOverlay({
   const progress = lobbyProgress || {};
   const canStart = Boolean(gameReady && resumeReady && !starting);
 
+  /** Enter starts the farm once Phaser is ready and the lesson resume has settled. */
   useEffect(() => {
     const onKey = (event) => {
       if (!canStart) return;

@@ -1,6 +1,8 @@
 /**
  * Lesson concept catalog for Grade 6–9 mind maps.
  * Topics align with farm quiz `topic` fields + common science units.
+ * Keyword nodes for the in-game Sage map (flowers, monocots, charge).
+ * Separate from the learning-path engine's chapter graph.
  */
 export const CONCEPT_CATALOG = {
   'Plant Biology': {
@@ -569,6 +571,7 @@ export function kidConceptLabel(evidence = {}) {
   return 'this science idea';
 }
 
+/** Student's mix-up in plain words, for the behavior probe rather than the map. */
 export function mixUpLabel(evidence = {}) {
   const stem = String(
     evidence.farm_question || evidence.questionText || evidence.prompt || '',

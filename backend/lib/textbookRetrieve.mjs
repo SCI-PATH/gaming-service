@@ -27,10 +27,12 @@ const DEFAULT_CHUNK_FILES = [
 
 let cachedChunks = null;
 
+/** Test hook: swap the chunk list without reading the JSON file. */
 export function setTextbookChunks(chunks) {
   cachedChunks = chunks == null ? null : Array.isArray(chunks) ? chunks : [];
 }
 
+/** Local textbook chunks used when Sage needs a chapter excerpt without Chroma. */
 export function loadTextbookChunks() {
   if (cachedChunks !== null) return cachedChunks;
   const override = process.env.TEXTBOOK_CHUNKS_PATH;
@@ -69,6 +71,7 @@ function overlapScore(chunk, query) {
   return n;
 }
 
+/** Rank chunks for this miss, preferring the resolved Grade 6–9 chapter. */
 export function retrieveTextbookChunks(miss = {}, { limit = 3 } = {}) {
   const chunks = loadTextbookChunks();
   if (!chunks.length) return [];
@@ -99,6 +102,7 @@ export function retrieveTextbookChunks(miss = {}, { limit = 3 } = {}) {
     .map((row) => row.chunk);
 }
 
+/** Concept graph from textbook sentences. Rejected if it fails the miss check. */
 export function graphFromTextbookChunks(miss = {}, chunks = []) {
   if (!chunks.length) return null;
   const teach = { ...miss, studentAnswer: '', missedBlanks: [] };
@@ -124,11 +128,13 @@ function textbookExcerpt(miss, chunks) {
   return String(chunks[0].text).replace(/\s+/g, ' ').trim().slice(0, 700);
 }
 
+/** Short textbook quote attached to the Sage prompt for this farm question. */
 export function excerptForQuestion(miss = {}) {
   const chunks = retrieveTextbookChunks(miss, { limit: 2 });
   return textbookExcerpt(miss, chunks);
 }
 
+/** Add chapter id and a textbook line onto one mind-map branch. */
 export function attachTextbookGrounding(branch, attempt) {
   const teach = { ...attempt, studentAnswer: '', missedBlanks: [] };
   const chunks = retrieveTextbookChunks(teach, { limit: 3 });
@@ -147,6 +153,7 @@ export function attachTextbookGrounding(branch, attempt) {
   };
 }
 
+/** How many curriculum chapters and local chunks are loaded. */
 export function catalogSize() {
   return {
     chapters: CURRICULUM_CHAPTERS.length,

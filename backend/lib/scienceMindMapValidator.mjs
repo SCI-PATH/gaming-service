@@ -4,6 +4,7 @@
 
 const FENCE = /```(?:json)?\s*([\s\S]*?)```/i;
 
+/** Parse model JSON, including a fenced block or text wrapped around one object. */
 export function extractJsonObject(raw) {
   let text = String(raw || '').trim();
   if (!text) throw new Error('empty model output');
@@ -89,9 +90,11 @@ function paragraphFrom(data, branches) {
   return points.slice(0, 3).join(' ').trim();
 }
 
+/** Normalize a model reply into the paragraph payload the farm stores on a miss. */
 export function validateMindMap(raw) {
   const data = typeof raw === 'string' ? extractJsonObject(raw) : { ...raw };
   let status = String(data.status || 'success').toLowerCase();
+  // Several model phrasings mean the same thing: no textbook facts to teach from.
   if (['insufficient', 'insufficient_context', 'not_enough', 'no_context'].includes(status)) {
     status = 'insufficient_context';
   } else {

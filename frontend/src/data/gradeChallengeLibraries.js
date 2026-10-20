@@ -63,6 +63,7 @@ export const GRADE_LIBRARY_DEFS = Object.freeze({
   }),
 });
 
+/** Grades 6–9 only. Anything else is unsupported and yields null. */
 export function normalizeStudentGrade(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
@@ -70,6 +71,7 @@ export function normalizeStudentGrade(raw) {
   return SUPPORTED_GRADES.includes(grade) ? grade : null;
 }
 
+/** Curriculum topics whose grade matches, used to bind science challenges. */
 export function topicsForGrade(grade) {
   const g = normalizeStudentGrade(grade);
   if (g == null) return [];
@@ -122,6 +124,7 @@ function buildFarmEntries(grade) {
     };
   });
   const animals = def.animalIds.map((animalId, index) => {
+    // Offset into the topic list so animals do not all share the first crop’s topic.
     const topic = topics[(index + 2) % Math.max(1, topics.length)];
     return {
       challengeId: `g${grade}_animal_${animalId}`,
@@ -142,6 +145,7 @@ function buildFarmEntries(grade) {
     };
   });
   const cleans = def.cleanIds.map((cleanId, index) => {
+    // Further offset so yard jobs rotate onto still other topics.
     const topic = topics[(index + 4) % Math.max(1, topics.length)];
     return {
       challengeId: `g${grade}_clean_${cleanId}`,
@@ -183,6 +187,7 @@ function buildLibrary(grade) {
   });
 }
 
+/** Farm jobs plus one science challenge per curriculum topic, built once per grade. */
 export const GRADE_CHALLENGE_LIBRARIES = Object.freeze({
   6: buildLibrary(6),
   7: buildLibrary(7),
@@ -190,17 +195,20 @@ export const GRADE_CHALLENGE_LIBRARIES = Object.freeze({
   9: buildLibrary(9),
 });
 
+/** Full challenge library for a supported grade, or null. */
 export function getGradeChallengeLibrary(grade) {
   const g = normalizeStudentGrade(grade);
   if (g == null) return null;
   return GRADE_CHALLENGE_LIBRARIES[g];
 }
 
+/** Every challenge id in that grade’s library. */
 export function listGradeChallengeIds(grade) {
   const lib = getGradeChallengeLibrary(grade);
   return lib ? lib.challenges.map((c) => c.challengeId) : [];
 }
 
+/** True for this grade’s id prefix (`g6_`) or an id listed in its library. */
 export function challengeBelongsToGrade(challengeId, grade) {
   const g = normalizeStudentGrade(grade);
   const id = String(challengeId || '').trim().toLowerCase();
@@ -209,6 +217,7 @@ export function challengeBelongsToGrade(challengeId, grade) {
   return listGradeChallengeIds(g).includes(id);
 }
 
+/** Guard used before serving a challenge: unsupported grade, or id from another grade. */
 export function assertChallengeBelongsToGrade(challengeId, grade) {
   const g = normalizeStudentGrade(grade);
   if (g == null) {
@@ -232,6 +241,7 @@ function setsAreExclusive(pickIds) {
   return true;
 }
 
+/** Crop, animal, and cleaning ids must not be shared across Grades 6–9. */
 export function librariesAreGradeExclusive() {
   return (
     setsAreExclusive((def) => def.cropIds) &&
@@ -240,6 +250,7 @@ export function librariesAreGradeExclusive() {
   );
 }
 
+/** Short summary for research or admin views — counts and a few science topics. */
 export function describeGradeLibrary(grade) {
   const lib = getGradeChallengeLibrary(grade);
   if (!lib) return null;
@@ -261,6 +272,7 @@ export function describeGradeLibrary(grade) {
   };
 }
 
+/** One crop, one animal, one cleaning job, and the first science challenge. */
 export function featuredChallengesForGrade(grade) {
   const lib = getGradeChallengeLibrary(grade);
   if (!lib) return [];
@@ -271,6 +283,7 @@ export function featuredChallengesForGrade(grade) {
   return [crop, animal, clean, science].filter(Boolean);
 }
 
+/** Curriculum topic bound to a grade challenge id, searching Grades 6–9. */
 export function resolveTopicForGradeChallenge(challengeId) {
   for (const g of SUPPORTED_GRADES) {
     const hit = GRADE_CHALLENGE_LIBRARIES[g].challenges.find(

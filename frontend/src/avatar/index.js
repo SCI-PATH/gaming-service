@@ -1,6 +1,11 @@
 /**
  * Avatar Assistant — personalized learning companion (Groq Cloud).
  */
+/**
+ * Farm-lesson barrel for Sage. She speaks beside the quiz, softens her
+ * pace when frustration is high, and walks the in-game mind map of misses.
+ * That map is built in this folder. It is not the learning-path engine map.
+ */
 export { default as AvatarAssistantModal } from './AvatarAssistantModal.jsx';
 export { default as ConceptMindMap } from './ConceptMindMap.jsx';
 export {
@@ -39,6 +44,7 @@ export {
 } from './learningPreferences.js';
 export { requestAvatarChat, streamAvatarChat } from './avatarChatClient.js';
 export { fetchAiMindMap } from './fetchAiMindMap.js';
+/** Portrait, browser speech, and the student's microphone. */
 export { default as SageAvatar } from './SageAvatar.jsx';
 export {
   createSpeechEngine,
@@ -88,6 +94,7 @@ export {
   resolvePerformanceReply,
   GUIDANCE_LEVELS,
 } from './mentorConversationSession.js';
+/** Tutor loop: frustration tone, then a spoken turn locked to the farm miss. */
 export {
   composeTutorTurn,
   compactTeachingState,

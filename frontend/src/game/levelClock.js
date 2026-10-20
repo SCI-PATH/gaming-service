@@ -7,6 +7,7 @@ export const LEVEL_DURATION_MS = Object.freeze({
 
 const DURATION_KEY = 'scipath_level_target_ms';
 
+/** High frustration gets the long clock, low frustration the short one. Unknown scores use the middle band. */
 export function levelDurationMsFromFrustration(score) {
   if (score == null || score === '') return LEVEL_DURATION_MS.medium;
   const raw = Number(score);
@@ -17,6 +18,7 @@ export function levelDurationMsFromFrustration(score) {
   return LEVEL_DURATION_MS.low;
 }
 
+/** Store the planned level length so a refresh keeps the same clock. */
 export function rememberLevelDuration(ms) {
   const n = Number(ms);
   if (!(n > 0)) return 0;
@@ -28,6 +30,7 @@ export function rememberLevelDuration(ms) {
   return Math.round(n);
 }
 
+/** Last planned duration in milliseconds, or 0 when nothing was stored. */
 export function readLevelDuration() {
   try {
     const n = Number(sessionStorage.getItem(DURATION_KEY));

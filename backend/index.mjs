@@ -40,6 +40,7 @@ loadDotEnv();
 const PORT = Number(process.env.AVATAR_PORT || process.env.PORT || 8002);
 const HOST = process.env.HOST || '0.0.0.0';
 
+/** Read the HTTP body as JSON. An empty body is {}. */
 function readJson(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -60,6 +61,7 @@ function readJson(req) {
   });
 }
 
+/** JSON reply with open CORS so the farm UI on another port can call this API. */
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -79,6 +81,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Liveness plus Postgres privileges and whether the engagement schema is ready.
   if (req.method === 'GET' && url.pathname === '/api/health') {
     const { dbPath } = await import('./lib/db.mjs');
     const { getPgStatus, isPostgresEnabled, query } = await import('./lib/pg.mjs');
@@ -128,6 +131,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Farm rankings for today or all time. A bad DATABASE_URL still returns a local message.
   if (req.method === 'GET' && url.pathname === '/api/engagement/leaderboard') {
     try {
       const eng = await import('./lib/engagementDb.mjs');
@@ -146,6 +150,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Open farm level and question index so a reload can continue the same lesson.
   if (
     req.method === 'GET' &&
     (url.pathname === '/api/engagement/resume' || url.pathname === '/api/game/resume')
@@ -170,6 +175,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Launch card: current level, wallet, and whether this student has played before.
   if (req.method === 'GET' && url.pathname === '/api/engagement/student') {
     try {
       const eng = await import('./lib/engagementDb.mjs');
@@ -210,6 +216,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Grade 6–9 farm and science challenges. A challengeId is accepted only for that grade.
   if (req.method === 'GET' && url.pathname === '/api/challenges') {
     try {
       const gradeLib = await import('./lib/gradeChallenges.mjs');
@@ -229,6 +236,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Latest 0–100 frustration snapshot. Other services poll this after the farm writes one.
   if (req.method === 'GET' && url.pathname === '/api/engagement/frustration') {
     try {
       const studentId = url.searchParams.get('studentId') || '';
@@ -276,11 +284,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Persist farm play: sessions, quizzes, shop unlocks, frustration, mentor turns, scores.
   if (req.method === 'POST' && url.pathname.startsWith('/api/engagement/')) {
     try {
       const body = await readJson(req);
       const eng = await import('./lib/engagementDb.mjs');
       const route = url.pathname.replace('/api/engagement/', '');
+      // Scores still land in the JSON file when Neon is off. Other writes need Postgres.
       if (!eng.engagementAvailable() && route !== 'leaderboard/score') {
         sendJson(res, 200, {
           ok: false,
@@ -350,6 +360,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Stored storyline from the local JSON file. New generation is not served here.
   if (req.method === 'GET' && url.pathname === '/api/storyline') {
     try {
       const studentId = url.searchParams.get('studentId') || '';
@@ -365,6 +376,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Old clients still POST here; generation was removed, so the route stays an explicit refusal.
   if (req.method === 'POST' && url.pathname === '/api/storyline') {
     sendJson(res, 410, {
       ok: false,
@@ -374,6 +386,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Mind map from an explanation that already exists. Does not rewrite the lesson.
   if (req.method === 'POST' && url.pathname === '/api/explanation-mindmap') {
     try {
       const body = await readJson(req);
@@ -391,6 +404,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Mind map for missed farm quiz items, using textbook chunks and the scored key.
   if (req.method === 'POST' && url.pathname === '/api/mind-map') {
     try {
       const body = await readJson(req);
@@ -408,6 +422,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Grade-filtered textbook retrieval, then a short paragraph capped by frustration.
   if (req.method === 'POST' && url.pathname === '/api/mindmap/generate') {
     try {
       const body = await readJson(req);
@@ -426,6 +441,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Which Grade 6–9 Science textbooks are already in the Chroma collection.
   if (req.method === 'GET' && url.pathname === '/api/textbooks') {
     try {
       const chroma = await import('./lib/chromaService.mjs');
@@ -441,6 +457,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Chunk one textbook PDF into Chroma so later mind maps can quote that chapter.
   if (req.method === 'POST' && url.pathname === '/api/textbooks/ingest') {
     try {
       const body = await readJson(req);
@@ -456,6 +473,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Index the bundled EduPub science PDFs. force rebuilds chunks that already exist.
   if (req.method === 'POST' && url.pathname === '/api/textbooks/ingest-defaults') {
     try {
       const body = await readJson(req);
@@ -471,6 +489,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Re-chunk one textbook even when a previous ingest is already stored.
   if (req.method === 'POST' && url.pathname === '/api/textbooks/reprocess') {
     try {
       const body = await readJson(req);
@@ -486,6 +505,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Similarity search over textbook chunks for a farm science question.
   if (req.method === 'POST' && url.pathname === '/api/rag/retrieve') {
     try {
       const body = await readJson(req);
@@ -501,6 +521,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Sage mentor turn. stream=1 or text/event-stream returns tokens as SSE.
   if (req.method === 'POST' && url.pathname === '/api/avatar-chat') {
     try {
       const body = await readJson(req);
@@ -568,6 +589,7 @@ server.listen(PORT, HOST, () => {
   console.log(
     `[backend] DATABASE_URL=${process.env.DATABASE_URL ? 'set (Neon engagement sync ON)' : 'missing (engagement sync skipped)'}`,
   );
+  // Optional boot path: index the default textbooks without a separate ingest call.
   if (process.env.CHROMA_INGEST_ON_START === '1') {
     import('./lib/chromaService.mjs')
       .then((chroma) => chroma.ingestDefaultTextbooks(false))

@@ -1,6 +1,7 @@
 /**
  * Adaptive mentor follow-ups for real conversational flow:
  * Avatar question → student answer → evaluate understanding → guidance / next question.
+ * After Sage asks why a farm question felt hard, these replies stay on that reason.
  */
 
 import { CONCEPT_CATALOG, inferConceptFromText, resolveTopicKey } from './conceptMaps.js';

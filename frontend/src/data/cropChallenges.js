@@ -78,16 +78,19 @@ TEXTURE_BY_ID.flowers = {
   produce: 'crop_flower',
 };
 
+/** Vegetable job at this index. The index wraps the 100-challenge list. */
 export function getCropChallenge(index = 0) {
   const i = ((Number(index) || 0) % CROP_CHALLENGE_COUNT + CROP_CHALLENGE_COUNT)
     % CROP_CHALLENGE_COUNT;
   return CROP_CHALLENGES[i];
 }
 
+/** Sprout, ready, and produce tiles for a crop. Unknown ids use tomato. */
 export function getCropTextures(cropId) {
   return TEXTURE_BY_ID[cropId] || TEXTURE_BY_ID.tomato;
 }
 
+/** Vegetable definition by id. Unknown ids fall back to the first crop. */
 export function vegById(cropId) {
   return VEGETABLE_TYPES.find((veg) => veg.id === cropId) || VEGETABLE_TYPES[0];
 }
@@ -141,8 +144,10 @@ export function cropIdForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
   return challenge?.cropId || 'tomato';
 }
 
+/** Full bed definition. A bed with no assigned crop is marked inactive. */
 export function cropDefForPlot(plotId, challenge, levelPlan, plotIndex = 0) {
   const cropId = cropIdForPlot(plotId, challenge, levelPlan, plotIndex);
+  // No crop for this bed — the plot stays empty instead of repeating tomato.
   if (!cropId) {
     return {
       cropId: null,
@@ -171,10 +176,12 @@ export function pickCountForChallenge(challenge, mastery) {
   const base = Math.max(3, Number(challenge?.harvestCount) || 4);
   const band = bandFromMastery(mastery);
   if (band === DDA_BANDS.STRONG) return base + 2;
+  // Emerging students are not asked for more than the round already requires.
   if (band === DDA_BANDS.EMERGING) return base;
   return base + 1;
 }
 
+/** Quest line for a single gold bed: plant, pick, sell. */
 export function vegetableGoalText(challenge, harvestTarget) {
   const name = challenge?.cropName || 'crops';
   const n = Math.max(1, Number(harvestTarget) || challenge?.harvestCount || 4);

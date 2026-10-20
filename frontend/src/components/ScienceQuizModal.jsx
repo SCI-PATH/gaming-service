@@ -23,6 +23,7 @@ const TYPE_LABELS = {
   MultiBlank: 'Fill in the blanks',
 };
 
+/** Write this answer into the lesson checkpoint the lobby resume effect reads. */
 function persistAnswerCheckpoint(questionData, isCorrect) {
   const player = getCurrentStudent();
   if (!player?.id || !questionData?.id) return;
@@ -40,6 +41,7 @@ function persistAnswerCheckpoint(questionData, isCorrect) {
   });
 }
 
+/** Map engine / local question types onto the four layouts this modal renders. */
 function resolveQuestionType(questionData) {
   const typed =
     asQuestionType(questionData?.questionType) ||
@@ -218,6 +220,11 @@ export default function ScienceQuizModal({
   onClose,
   onAnswerAttempt,
   onHintUsed = null,
+  demoSubmit = null,
+  demoHighlightIndex = null,
+  demoDraft = '',
+  demoShowHint = false,
+  suppressAutoHint = false,
 }) {
   const clockRef = useRef(null);
   const finishedRef = useRef(false);
@@ -330,6 +337,7 @@ export default function ScienceQuizModal({
     return () => window.clearTimeout(t);
   }, [loading, isChoiceType, questionData?.id, questionType]);
 
+  /** Tell Phaser the action succeeded or failed, then ask App to close the overlay. */
   const finish = (isCorrect, responseTimeMs) => {
     if (isCorrect) {
       ForestGameBridge.emit('SCIENCE_CORRECT', {
@@ -350,6 +358,7 @@ export default function ScienceQuizModal({
   };
 
   const gradeAndFinishRef = useRef(null);
+  /** Assessment items wait on /answer. Local items use isCorrectLocal. Both notify App for Sage. */
   const gradeAndFinish = async ({
     isCorrectLocal,
     selectedIndex,
@@ -548,8 +557,77 @@ export default function ScienceQuizModal({
   };
   gradeAndFinishRef.current = gradeAndFinish;
 
+  const demoSentRef = useRef(null);
+  const demoHintSentRef = useRef(null);
   useEffect(() => {
-    if (loading || !hintText || hintLevel === 'minimal' || hintLevel === 'more') {
+    if (!demoShowHint || loading || !questionData?.id) return;
+    if (demoHintSentRef.current === questionData.id) return;
+    demoHintSentRef.current = questionData.id;
+    setShowHint(true);
+    onHintUsed?.();
+  }, [demoShowHint, loading, questionData?.id, onHintUsed]);
+  useEffect(() => {
+    if (!demoSubmit || loading || finishedRef.current) return undefined;
+    const token = `${questionData?.id || ''}:${demoSubmit.kind}:${demoSubmit.index ?? ''}:${demoSubmit.text || ''}`;
+    if (demoSentRef.current === token) return undefined;
+    const options = Array.isArray(questionData?.options) ? questionData.options : [];
+    const letters = Array.isArray(questionData?.optionLetters) ? questionData.optionLetters : [];
+    if (demoSubmit.kind === 'text') {
+      const text = String(demoSubmit.text || '').trim();
+      if (!text) return undefined;
+      const texts = Array.isArray(demoSubmit.texts) ? demoSubmit.texts : null;
+      demoSentRef.current = token;
+      void gradeAndFinishRef.current?.({
+        isCorrectLocal: false,
+        selectedIndex: -1,
+        selectedText: text,
+        studentAnswer:
+          questionData?.questionType === 'MultiBlank' && texts?.length ? texts : text,
+        timedOut: false,
+      });
+      return undefined;
+    }
+    if (demoSubmit.index == null) return undefined;
+    const opt = options[demoSubmit.index];
+    const text = typeof opt === 'string' ? opt : opt?.text ?? null;
+    const letter = letters[demoSubmit.index] ?? null;
+    const remote = Boolean(questionData?.remoteGrade);
+    const isCorrectLocal = remote
+      ? false
+      : Boolean(
+          (opt && typeof opt === 'object' && opt.isCorrect) ||
+            demoSubmit.index === questionData?.correctIndex,
+        );
+    const studentAnswer =
+      letter && /^[A-D]$/i.test(String(letter)) ? String(letter) : text;
+    demoSentRef.current = token;
+    void gradeAndFinishRef.current?.({
+      isCorrectLocal,
+      selectedIndex: demoSubmit.index,
+      selectedText: text,
+      studentAnswer,
+      timedOut: false,
+    });
+    return undefined;
+  }, [demoSubmit, loading, questionData]);
+
+  useEffect(() => {
+    if (!demoDraft || result) return;
+    if (questionType === 'MultiBlank') {
+      const parts = String(demoDraft).split(' | ');
+      const next = Array.from({ length: blankCount }, (_, idx) => parts[idx] || '');
+      blanksRef.current = next;
+      setBlanks(next);
+      return;
+    }
+    if (questionType === 'ShortAnswer') {
+      shortTextRef.current = demoDraft;
+      setShortText(demoDraft);
+    }
+  }, [demoDraft, questionType, blankCount, result]);
+
+  useEffect(() => {
+    if (suppressAutoHint || loading || !hintText || hintLevel === 'minimal' || hintLevel === 'more') {
       return undefined;
     }
     if (hintLevel === 'limited') {
@@ -561,7 +639,7 @@ export default function ScienceQuizModal({
       return () => window.clearTimeout(mid);
     }
     return undefined;
-  }, [hintText, hintLevel, questionData?.id, onHintUsed, loading]);
+  }, [hintText, hintLevel, questionData?.id, onHintUsed, loading, suppressAutoHint]);
 
   const cropLabel = String(cropName || '').trim().toLowerCase();
 
@@ -821,6 +899,27 @@ export default function ScienceQuizModal({
         </div>
 
         <p className="science-quiz-prompt">{promptText}</p>
+        {demoDraft ? (
+          <p className="science-quiz-answer-typed" aria-live="polite">
+            Answer typed: {demoDraft}
+          </p>
+        ) : null}
+        {(() => {
+          if (demoDraft) return null;
+          const pickedIndex =
+            result?.selectedIndex >= 0 ? result.selectedIndex : demoHighlightIndex;
+          if (pickedIndex == null || pickedIndex < 0) return null;
+          const picked = options[pickedIndex];
+          const letter = choiceLetters?.[pickedIndex];
+          const text = picked?.text || '';
+          if (!text && !letter) return null;
+          return (
+            <p className="science-quiz-answer-typed" aria-live="polite">
+              Answer typed: {letter && /^[A-D]$/i.test(String(letter)) ? `${letter} · ` : ''}
+              {text}
+            </p>
+          );
+        })()}
 
         {showHint && hintText && !result && (
           <p className="science-quiz-hint" aria-live="polite">
@@ -856,15 +955,18 @@ export default function ScienceQuizModal({
           <div className="science-quiz-options">
             {options.map((option, idx) => {
               let tone = '';
+              const pickedIndex =
+                result?.selectedIndex >= 0 ? result.selectedIndex : demoHighlightIndex;
               if (result && !result.pending) {
                 if (idx === revealedCorrectIndex) tone = 'is-correct';
                 else if (idx === result.selectedIndex) tone = 'is-wrong';
               }
+              const typed = pickedIndex === idx && (result?.pending || demoHighlightIndex === idx);
               return (
                 <button
                   key={`${option.text}-${idx}`}
                   type="button"
-                  className={`science-quiz-option ${tone}`}
+                  className={`science-quiz-option ${tone}${typed ? ' is-demo-pick' : ''}`}
                   disabled={Boolean(result) || busy}
                   onClick={() => handleChoice(idx)}
                 >
@@ -887,7 +989,7 @@ export default function ScienceQuizModal({
           >
             {questionType === 'ShortAnswer' && (
               <input
-                className="science-quiz-input"
+                className={`science-quiz-input${demoDraft ? ' is-demo-pick' : ''}`}
                 type="text"
                 value={shortText}
                 disabled={Boolean(result) || busy}
@@ -910,7 +1012,7 @@ export default function ScienceQuizModal({
                 <label key={idx} className="science-quiz-blank">
                   <span>Blank {idx + 1}</span>
                   <input
-                    className="science-quiz-input"
+                    className={`science-quiz-input${demoDraft ? ' is-demo-pick' : ''}`}
                     type="text"
                     value={blank}
                     disabled={Boolean(result) || busy}

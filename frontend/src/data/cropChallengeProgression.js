@@ -42,6 +42,7 @@ export function cropChallengeStatusLabel(status) {
   return labels[status] || String(status || '');
 }
 
+/** Check mark once the crop's sell target is met. Every other state stays playable. */
 export function cropChallengeStatusIcon(status) {
   if (status === CROP_CHALLENGE_STATUS.COMPLETED) return '✓';
   return '▶';
@@ -64,11 +65,13 @@ export function deriveCropChallengeStatus(cropId, runtime = {}) {
   const planted = Boolean(plantedSet.has ? plantedSet.has(cropId) : plantedSet[cropId]);
   const pendingQuizCropId = runtime.pendingQuizCropId || null;
 
+  // First matching stage wins: sold target, partial sale, then stock at the stall.
   if (sold >= harvestTarget) return CROP_CHALLENGE_STATUS.COMPLETED;
   if (sold > 0) return CROP_CHALLENGE_STATUS.ITEM_SOLD;
   if (shopQty > 0) return CROP_CHALLENGE_STATUS.ITEM_DELIVERED;
   if (harvested > 0) return CROP_CHALLENGE_STATUS.ACTIVITY_COMPLETED;
   if (planted) return CROP_CHALLENGE_STATUS.ACTIVITY_COMPLETED;
+  // Quiz open on this crop, otherwise the bed is free to start.
   if (pendingQuizCropId === cropId) return CROP_CHALLENGE_STATUS.IN_PROGRESS;
   return CROP_CHALLENGE_STATUS.AVAILABLE;
 }

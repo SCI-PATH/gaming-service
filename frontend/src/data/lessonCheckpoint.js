@@ -10,6 +10,10 @@ async function readResume(path, params) {
   return data.resume;
 }
 
+/**
+ * Last saved lesson for this student.
+ * Tries the game resume route, then the engagement route.
+ */
 export async function fetchLessonResume(studentId, lessonId = '') {
   const id = String(studentId || '').trim();
   if (!id) return null;
@@ -25,6 +29,10 @@ export async function fetchLessonResume(studentId, lessonId = '') {
   }
 }
 
+/**
+ * Store the active lesson. Level number is always 1 — progress is per lesson,
+ * not a global farm-level index.
+ */
 export function saveLessonCheckpoint(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) return Promise.resolve({ ok: false });

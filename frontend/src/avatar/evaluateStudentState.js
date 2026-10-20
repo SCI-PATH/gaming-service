@@ -2,6 +2,8 @@
  * Intelligent intervention rule engine.
  * Auto-opens mentor only with clear multi-metric need — never a single wrong.
  * Four total incorrect attempts (or four on one concept) is a hard open signal.
+ * Frustration score can open Sage before the hard miss count. Mind maps
+ * stay off for bored and milestone farm play.
  */
 import {
   AVATAR_THRESHOLDS,
@@ -123,6 +125,7 @@ export function evaluateStudentState(metrics = {}, opts = {}) {
   } = collectSupportIndicators(metrics, opts, t);
 
   const frustration = calculateFrustrationScore(metrics);
+  // High frustration on the farm opens support even before the miss-count gates.
   if (shouldOpenFrustrationAgent(frustration) && (forceEval || totalAnswers >= 2)) {
     return {
       intervention_mode: INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD,

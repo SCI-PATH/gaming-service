@@ -3,6 +3,7 @@
  * @param {Phaser.Scene} scene
  */
 export function createGameAnimations(scene) {
+  // Hero, mole, and treant each have back, front, and side walk cycles.
   const definitions = [
     { key: 'walk-back', prefix: 'walk/hero-walk-back/hero-walk-back-' },
     { key: 'walk-front', prefix: 'walk/hero-walk-front/hero-walk-front-' },

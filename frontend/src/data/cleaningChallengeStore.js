@@ -22,6 +22,7 @@ function readAll() {
     const data = JSON.parse(raw);
     const index = Number(data?.index);
     if (!Number.isFinite(index) || index < 0) return emptyState();
+    // A stale save still lands on a real yard job.
     return { index: Math.floor(index) % CLEANING_CHALLENGE_COUNT };
   } catch {
     return emptyState();
@@ -36,10 +37,12 @@ function writeAll(data) {
   }
 }
 
+/** Next cleaning-yard job for this student. */
 export function getCleaningChallengeIndex() {
   return readAll().index;
 }
 
+/** Store a wrapped index so a bad value cannot walk off the mess list. */
 export function setCleaningChallengeIndex(index) {
   const next =
     ((Number(index) || 0) % CLEANING_CHALLENGE_COUNT +
@@ -49,6 +52,7 @@ export function setCleaningChallengeIndex(index) {
   return next;
 }
 
+/** Move to the next mess after this yard is cleared. */
 export function advanceCleaningChallengeIndex() {
   return setCleaningChallengeIndex(getCleaningChallengeIndex() + 1);
 }

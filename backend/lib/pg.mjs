@@ -4,6 +4,7 @@
  */
 let lastError = null;
 
+/** Strip quotes and jdbc/postgres+driver prefixes so Neon HTTP accepts the URL. */
 export function normalizeDatabaseUrl(raw) {
   let s = String(raw || '').trim();
   if (
@@ -18,6 +19,7 @@ export function normalizeDatabaseUrl(raw) {
   return s;
 }
 
+/** True when the string is a postgresql URL with a host (Neon SQL-over-HTTP). */
 export function isNeonConnectionString(raw) {
   const s = normalizeDatabaseUrl(raw);
   if (!/^postgresql:\/\//i.test(s)) return false;
@@ -29,10 +31,12 @@ export function isNeonConnectionString(raw) {
   }
 }
 
+/** Engagement persistence is on only when DATABASE_URL is a usable Neon string. */
 export function isPostgresEnabled() {
   return isNeonConnectionString(process.env.DATABASE_URL);
 }
 
+/** Neon serves SQL at https://<host>/sql, not a TCP Postgres port. */
 function sqlHttpEndpoint(connectionString) {
   const u = new URL(normalizeDatabaseUrl(connectionString));
   if (!u.hostname) {
@@ -125,10 +129,12 @@ export async function query(text, params = []) {
   return { rows: [], rowCount: 0, fields: [], raw: data };
 }
 
+/** Stand-in for a pg pool. Callers only need to know Neon HTTP is available. */
 export function getPool() {
   return isPostgresEnabled() ? { kind: 'neon-http' } : null;
 }
 
+/** Health payload: driver name and the last Neon error, if a query failed. */
 export function getPgStatus() {
   return {
     enabled: isPostgresEnabled(),

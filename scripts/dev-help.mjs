@@ -1,3 +1,7 @@
+/**
+ * Printed by the repo root dev script.
+ * The farm API and the game UI are separate processes and must be started apart.
+ */
 console.error(`SCI_PATH runs as two processes. Start them in separate terminals:
 
   npm run backend     API + database   http://127.0.0.1:8002

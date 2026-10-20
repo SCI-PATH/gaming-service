@@ -88,9 +88,13 @@ import {
 import {
   demoShopPerformance,
   installDemoLaunch,
+  isDemoAutoplay,
+  readActiveDemoLaunch,
   readDemoAdaptationSeed,
   readDemoLaunch,
 } from './data/demoScenarios.js';
+import { useDemoAutoplay } from './demo/useDemoAutoplay.js';
+import DemoRecordBanner from './components/DemoRecordBanner.jsx';
 import { normalizeStudentGrade } from './data/gradeChallengeLibraries.js';
 import {
   getChapterLaunch,
@@ -104,13 +108,19 @@ import {
 } from './data/chapterPath.js';
 import { fetchLessonResume } from './data/lessonCheckpoint.js';
 import { rememberLevelDuration } from './game/levelClock.js';
-import { mergeRemoteUnlocks } from './data/unlockShop.js';
+import { clearOwnedUnlocks, mergeRemoteUnlocks } from './data/unlockShop.js';
 import { mergeRemoteMindMaps } from './avatar/mindMapHistoryStore.js';
 import {
   clearAssessmentSession,
   exportAssessmentSession,
 } from './assessmentEngine/assessmentQuizSession.js';
 
+/**
+ * React shell around the Phaser farm.
+ * StudentLogin gates entry. ForestRPGCanvas hosts the game. This file opens
+ * the quiz, unlock shop, Sage, research dashboard, and demo banner from
+ * canvas events, and locks Phaser input while those overlays have focus.
+ */
 // One-time wipe when progress generation bumps — all students start fresh
 ensureFreshStudentProgress();
 
@@ -127,6 +137,7 @@ if (demoBoot.launch?.isolated) clearAssessmentSession();
 const DEFAULT_LEVEL = getFarmLevel(1);
 const DEFAULT_TIME_TARGET_MS = DDA_CONFIG.midTargetMs;
 
+/** Keep house and storyline tasks when the level's crop bank is rebuilt. */
 function isStorylineChallenge(c) {
   return (
     c?.source === 'house' ||
@@ -136,6 +147,7 @@ function isStorylineChallenge(c) {
   );
 }
 
+/** HUD defaults until a saved run or platform launch supplies level and cash. */
 function createInitialFarm() {
   return {
     earnings: 0,
@@ -186,6 +198,7 @@ export default function App() {
   );
   const [lastQuizAttempt, setLastQuizAttempt] = useState(null);
 
+  /** Tell engagement which student is playing: demo seed, platform launch, or a saved login. */
   useEffect(() => {
     const current = getCurrentStudent();
     if (current?.isDemoSession) {
@@ -237,6 +250,7 @@ export default function App() {
     }
   }, []);
 
+  /** Lesson checkpoint used by lobby Continue: level, cash, unlocks, mind maps. */
   const [lessonResume, setLessonResume] = useState(null);
   const [resumeSettled, setResumeSettled] = useState(false);
   useEffect(() => {
@@ -327,6 +341,7 @@ export default function App() {
     };
   }, [student?.id]);
 
+  /** Overlay flags. The canvas stays mounted; these decide which React panel is on top. */
   const [gameReady, setGameReady] = useState(false);
   const [farm, setFarm] = useState(() => {
     const initialStudent = platformLaunchRef?.student || getCurrentStudent();
@@ -395,6 +410,7 @@ export default function App() {
   const storylineChallengesRef = useRef([]);
   const pendingResumeRef = useRef(false);
 
+  /** Load aptitude progress for the lobby card. A later focus refresh skips farm patches mid-level. */
   useEffect(() => {
     if (!student?.id) {
       setLobbyProgress(resolveLobbyProgress(null));
@@ -450,6 +466,7 @@ export default function App() {
 
   const quizMode = quizPayload?.mode || quizPayload?.challenge || 'plant';
 
+  /** Sage session. Quiz attempts and farm misses open AvatarAssistantModal via telemTrigger. */
   const {
     trigger: telemTrigger,
     session: telemetrySession,
@@ -464,6 +481,7 @@ export default function App() {
     recordAnswer: recordAvatarAnswer,
     recordHintUsed: recordAvatarHint,
     requestHelp: openAvatarHelp,
+    presentDemoSage,
     updateLearningPreferences,
     showMindMapForTopic,
   } = useBehavioralTelemetry({
@@ -488,12 +506,14 @@ export default function App() {
     topicId: student?.topicId || student?.topic_id || null,
   });
 
+  /** Open Sage when telemetry asks. handleAvatarClose clears the trigger. */
   useEffect(() => {
     if (!telemTrigger) return;
     setAvatarTrigger(telemTrigger);
     setAvatarOpen(true);
   }, [telemTrigger]);
 
+  /** Push frustration into Phaser, and show a short grove line when the band changes. */
   useEffect(() => {
     emitSyncStudentState({
       frustrationScore: telemetrySession.frustrationScore || 0,
@@ -618,6 +638,7 @@ export default function App() {
     remediationOpen,
   ]);
 
+  /** Clear overlays and HUD on student change. The canvas remounts on student.id. */
   const resetSessionUi = useCallback(() => {
     setGameReady(false);
     setFarm(createInitialFarm());
@@ -656,6 +677,7 @@ export default function App() {
     storylineChallengesRef.current = [];
   }, [resetAvatarTelemetry]);
 
+  /** Save the farm run plus Sage telemetry and the Assessment Engine session id. */
   const persistLeaveProgress = useCallback(() => {
     if (inFarm) emitSaveFarmRun();
     const run = loadFarmRun();
@@ -686,6 +708,7 @@ export default function App() {
     captureAvatarTelemetry,
   ]);
 
+  /** Paint a stored run onto the HUD and restore Sage's answer history. */
   const applySavedRunToUi = useCallback(
     (run) => {
       if (!run) return;
@@ -757,6 +780,7 @@ export default function App() {
     setSavedRun(farmRunSummary());
   }, [avatarOpen, inFarm]);
 
+  /** Forward each graded attempt into Sage telemetry and the research overlay's last answer. */
   const handleQuizAnswerAttempt = useCallback(
     (attempt = {}) => {
       if (attempt.isCorrect) {
@@ -788,6 +812,7 @@ export default function App() {
     recordAvatarHint();
   }, [recordAvatarHint]);
 
+  /** Local name login. Platform and demo boots skip this screen and sync on mount. */
   const handleLogin = useCallback(
     (nextStudent) => {
       resetSessionUi();
@@ -806,6 +831,7 @@ export default function App() {
     [resetSessionUi, applySavedRunToUi],
   );
 
+  /** Flush leaderboard, farm, and engagement, then go home or back to StudentLogin. */
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -1055,6 +1081,7 @@ export default function App() {
     rpEarned,
   ]);
 
+  /** Lobby Play. A demo recording starts level 1 clean; otherwise resume the saved run. */
   const handleLobbyStart = useCallback(() => {
     if (!resumeSettled || !gameReady) return;
     if (lobbyStartInFlightRef.current) return;
@@ -1063,6 +1090,21 @@ export default function App() {
     setLobbyStartError(null);
     setPauseOpen(false);
     try {
+      if (isDemoAutoplay()) {
+        clearFarmRun();
+        clearAssessmentSession();
+        rememberLevelDuration(22 * 60 * 1000);
+        const payload = {
+          levelId: 1,
+          startingMoney: 0,
+          resume: false,
+          fromLobby: true,
+        };
+        lobbyStartPayloadRef.current = payload;
+        emitSetFarmResume({ levelId: 1, startingMoney: 0 });
+        emitStartFarmLevel(payload);
+        return;
+      }
       const run = loadFarmRun();
       if (run) {
         const payload = {
@@ -1180,6 +1222,7 @@ export default function App() {
     ForestGameBridge.emit(FARM_EVENTS.MENU_TOGGLE_MUSIC);
   }, []);
 
+  /** Escape / Pause. Refuses to open while a quiz, shop, Sage, or game-over overlay has focus. */
   const handlePause = useCallback(() => {
     if (
       !inFarm ||
@@ -1264,6 +1307,7 @@ export default function App() {
     emitReturnToMenu();
   }, []);
 
+  /** Leave the canvas for the research dashboard. A farm run is saved so Back can resume it. */
   const handleOpenResearchDashboard = useCallback(() => {
     if (inFarm) {
       emitSaveFarmRun();
@@ -1301,11 +1345,7 @@ export default function App() {
   // Auto-unfurl quest scroll whenever the student enters a new farm level
   // (no button required). Skips if this level's scroll was already shown.
   useEffect(() => {
-    if (
-      !inFarm ||
-      shopOpen ||
-      quizPayload
-    ) {
+    if (!inFarm || shopOpen || quizPayload) {
       return;
     }
     const level = Math.max(1, Number(farm.levelId) || 1);
@@ -1329,6 +1369,7 @@ export default function App() {
     [],
   );
 
+  /** Copy Phaser farm state into React for the header, map, and quest scroll. */
   const handleFarmState = useCallback((state) => {
     setFarm((prev) => {
       const next = {
@@ -1386,11 +1427,13 @@ export default function App() {
     }
   }, [handlePlayerMapPos, student]);
 
+  /** Phaser asked for a science quiz. The quest scroll closes so the modal can take the keyboard. */
   const handleTriggerQuiz = useCallback((payload) => {
     setQuestScrollOpen(false);
     setQuizPayload(payload);
   }, []);
 
+  /** Level quota met. Ask for a progression decision, then open the unlock shop. */
   const handleTargetReached = useCallback((payload) => {
     setQuizPayload(null);
     ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_DISMISS);
@@ -1598,6 +1641,7 @@ export default function App() {
     telemetrySession.frustrationLevel,
   ]);
 
+  /** Phaser interaction hints: plant, harvest, shop sales, challenges, and blocked actions. */
   const handleInteraction = useCallback((detail) => {
     if (detail?.type === 'plant_success' && detail.rp) {
       setRpEarned((n) => n + detail.rp);
@@ -1933,6 +1977,7 @@ export default function App() {
     }
   }, [farm.levelId, refreshChallenges]);
 
+  /** Drop the quiz overlay and tell Phaser the pending quiz mode is clear. */
   const handleQuizClose = useCallback(() => {
     setQuizPayload(null);
     // Ensure Phaser clears pendingQuizMode even if SCIENCE_CORRECT already ran
@@ -1997,9 +2042,11 @@ export default function App() {
     ],
   );
 
+  /** Leave the unlock shop: return to the learning path, or start the next or same farm level. */
   const leaveShopAfterLevel = useCallback(
-    () => {
-    if (isLearningPathLinked()) {
+    (opts = {}) => {
+    const forceAdvance = opts.forceAdvance === true;
+    if (isLearningPathLinked() && !forceAdvance) {
       handleReturnToLearningPath({
         levelId: farm.levelId,
         currentMoney: farm.earnings ?? farm.currentMoney,
@@ -2008,10 +2055,11 @@ export default function App() {
     }
     const decided = levelDecisionRef.current;
     // Always honor frustration / mastery from level-outcome — never force advance.
-    const retryLesson =
-      decided?.retryLesson === true ||
-      shopPerformance?.retryLesson === true ||
-      remediation?.retryLesson === true;
+    const retryLesson = forceAdvance
+      ? false
+      : decided?.retryLesson === true ||
+        shopPerformance?.retryLesson === true ||
+        remediation?.retryLesson === true;
     levelDecisionRef.current = null;
     const completedLevelId = Math.max(1, farm.levelId || 1);
     const nextLevelId = retryLesson
@@ -2088,6 +2136,10 @@ export default function App() {
     leaveShopAfterLevel();
   }, [leaveShopAfterLevel]);
 
+  const handleDemoShopContinue = useCallback(() => {
+    leaveShopAfterLevel({ forceAdvance: true });
+  }, [leaveShopAfterLevel]);
+
   const handleShopRetryLesson = useCallback(() => {
     leaveShopAfterLevel();
   }, [leaveShopAfterLevel]);
@@ -2133,15 +2185,64 @@ export default function App() {
     };
   }, [handleReturnToLearningPath]);
 
+  const closeDemoAvatar = useCallback(() => setAvatarOpen(false), []);
+  const closeDemoQuest = useCallback(() => setQuestScrollOpen(false), []);
+  const prepareDemoRun = useCallback(() => {
+    clearFarmRun();
+    clearAssessmentSession();
+    resetAvatarTelemetry();
+    if (readActiveDemoLaunch()?.act === 'shop') clearOwnedUnlocks();
+    questScrollLevelRef.current = null;
+    setQuestScrollOpen(false);
+    setShopPreview(false);
+    setAvatarOpen(false);
+    setFarm((prev) => ({
+      ...prev,
+      levelId: 1,
+      questionsAnswered: 0,
+      forestUnlocked: false,
+    }));
+  }, [resetAvatarTelemetry]);
+  /** Scripted demo. It starts the farm and can close Sage, the quest, and open the dashboard. */
+  const demoAutoplay = useDemoAutoplay({
+    enabled: isDemoAutoplay(),
+    shopRun: readActiveDemoLaunch()?.act === 'shop',
+    profileId: demoLaunchRef.current?.profile || null,
+    gameReady,
+    resumeSettled,
+    inFarm,
+    appView,
+    quizPayload,
+    questOpen: questScrollOpen,
+    shopOpen,
+    avatarOpen,
+    frustrationLevel: farm.frustrationLevel || telemetrySession.frustrationLevel || 'low',
+    frustrationScore: farm.frustrationScore ?? telemetrySession.frustrationScore ?? 0,
+    startFarm: handleLobbyStart,
+    closeQuest: closeDemoQuest,
+    closeAvatar: closeDemoAvatar,
+    openDashboard: handleOpenResearchDashboard,
+    onPrepare: prepareDemoRun,
+    presentSage: presentDemoSage,
+  });
+
   const chapterLaunch = getChapterLaunch();
   const pathLinked = isLearningPathLinked();
 
+  /** Unsigned visitors see only the login card. The canvas mounts after onLogin. */
   if (!student) {
     return <StudentLogin onLogin={handleLogin} />;
   }
 
   return (
     <div className="app-shell forest-app">
+      {/* Recording chrome over the same overlays a student uses. */}
+      {demoAutoplay.active ? (
+        <DemoRecordBanner
+          score={farm.frustrationScore ?? telemetrySession.frustrationScore ?? 0}
+          status={demoAutoplay.status}
+        />
+      ) : null}
       <GameShellHeader
         mode={
           appView === 'dashboard'
@@ -2163,6 +2264,7 @@ export default function App() {
       />
 
       {appView === 'dashboard' ? (
+        {/* Same telemetry the farm and Sage already record, as a full-page view. */}
         <ResearchDashboard
           key={student?.id}
           student={student}
@@ -2177,6 +2279,7 @@ export default function App() {
       ) : (
       <div className="forest-play-layout">
         <div className="forest-stage-wrap">
+          {/* Phaser farm. Callbacks above turn canvas events into quiz, shop, and HUD updates. */}
           <ForestRPGCanvas
             key={student.id}
             resumeLevelId={farm.levelId}
@@ -2194,6 +2297,7 @@ export default function App() {
           {!gameReady && appView === 'farm' && <GameCanvasLoading />}
 
           {!inFarm && gameReady && (gamePhase === 'menu' || gamePhase === 'guide') && (
+            {/* Covers the menu until Play emits a farm-level start. */}
             <GameLobbyOverlay
               mode={gamePhase === 'guide' ? 'guide' : 'menu'}
               student={student}
@@ -2270,7 +2374,7 @@ export default function App() {
           </div>
           )}
 
-          {inFarm && !gameOverPayload && !motivationOpen && !pauseOpen && !avatarOpen && (
+          {inFarm && !gameOverPayload && !motivationOpen && !pauseOpen && !avatarOpen && !demoAutoplay.active && (
             <PlayWizard
               step={wizardStep}
               hidden={Boolean(questScrollOpen)}
@@ -2290,6 +2394,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Assessment quiz over the canvas. Grades go to Sage and back to Phaser. */}
           {quizPayload && (
             <ScienceQuizModal
               questionData={quizPayload.questionData || quizPayload.question}
@@ -2308,9 +2413,15 @@ export default function App() {
               onAnswerAttempt={handleQuizAnswerAttempt}
               onHintUsed={handleQuizHint}
               onClose={handleQuizClose}
+              demoSubmit={demoAutoplay.active ? demoAutoplay.demoSubmit : null}
+              demoDraft={demoAutoplay.active ? demoAutoplay.demoDraft : ''}
+              demoHighlightIndex={demoAutoplay.active ? demoAutoplay.highlightIndex : null}
+              demoShowHint={demoAutoplay.demoShowHint}
+              suppressAutoHint={demoAutoplay.active}
             />
           )}
 
+          {/* Post-level unlock shop. Buys emit into Phaser; closing advances level or path. */}
           <UnlockShopModal
             open={shopOpen || shopPreview}
             preview={shopPreview && !shopOpen}
@@ -2332,14 +2443,23 @@ export default function App() {
               }
               handleShopClose();
             }}
-            onContinueNext={shopPreview && !shopOpen ? null : handleShopContinueNext}
-            onRetryLesson={shopPreview && !shopOpen ? null : handleShopRetryLesson}
-            returnToLearningPath={pathLinked}
-            retryLesson={
-              shopPerformance?.retryLesson === true ||
-              levelDecisionRef.current?.retryLesson === true ||
-              remediation?.retryLesson === true
+            onContinueNext={
+              shopPreview && !shopOpen
+                ? null
+                : demoAutoplay.shopRun
+                  ? handleDemoShopContinue
+                  : handleShopContinueNext
             }
+            onRetryLesson={shopPreview && !shopOpen ? null : handleShopRetryLesson}
+            returnToLearningPath={pathLinked && !demoAutoplay.shopRun}
+            retryLesson={
+              demoAutoplay.shopRun
+                ? false
+                : shopPerformance?.retryLesson === true ||
+                  levelDecisionRef.current?.retryLesson === true ||
+                  remediation?.retryLesson === true
+            }
+            demoPurchase={Boolean(demoAutoplay.shopRun && shopOpen)}
             chapterTitle={chapterLaunch.chapterTitle}
             nextChapterTitle={chapterLaunch.nextChapterTitle}
           />
@@ -2380,8 +2500,9 @@ export default function App() {
             onContinue={handleMotivationContinue}
           />
 
+          {/* Shown when the launch set researchOverlay. Hidden while a scripted recording is playing. */}
           <DdaResearchOverlay
-            open={researchOverlayOpen}
+            open={researchOverlayOpen && !demoAutoplay.active}
             grade={
               normalizeStudentGrade(student?.grade) ??
               demoLaunchRef.current?.grade ??
@@ -2389,6 +2510,10 @@ export default function App() {
             }
             demoProfile={demoLaunchRef.current?.profile || null}
             demoPinned={Boolean(readDemoAdaptationSeed()?.pinned)}
+            autoplay={demoAutoplay.active}
+            autoplayStatus={demoAutoplay.status}
+            liveScore={telemetrySession.frustrationScore}
+            liveLevel={telemetrySession.frustrationLevel}
             onPreviewShop={() => {
               setShopPreview(true);
               emitUiInputLock(true, { freezeCombat: true });
@@ -2451,6 +2576,7 @@ export default function App() {
             cleanSoldThisChallenge={farm.cleanSoldThisChallenge ?? 0}
             cleanStarted={Boolean(farm.cleanStarted)}
             levelCleanComplete={Boolean(farm.levelCleanComplete)}
+            autoTour={demoAutoplay.active}
             onClose={() => setQuestScrollOpen(false)}
           />
         </div>
@@ -2479,7 +2605,8 @@ export default function App() {
             <CustomerMoodHud
               customers={shopHud.customers}
               alerts={customerAlerts}
-              showToasts={false}
+              pinned={demoAutoplay.active}
+              showToasts={demoAutoplay.active}
               onDismissAlert={(id) =>
                 setCustomerAlerts((prev) =>
                   prev.map((a) => (a.id === id ? { ...a, read: true } : a)),
@@ -2491,8 +2618,12 @@ export default function App() {
       </div>
       )}
 
+      {/* Sage tutor. Telemetry opens it; the input-lock effect freezes the farm while it is up. */}
       <AvatarAssistantModal
         open={avatarOpen}
+        showToneBanner={demoAutoplay.active}
+        demoShowcase={demoAutoplay.active}
+        toneScore={farm.frustrationScore}
         student={student}
         farm={farm}
         gameplay={gameplay}
@@ -2504,6 +2635,7 @@ export default function App() {
           avatarTrigger?.scenario || telemetrySession.scenario || null
         }
         offerMindMap={Boolean(
+          demoAutoplay.active ||
           avatarTrigger?.offerMindMap ||
             avatarTrigger?.generate_mind_map ||
             avatarTrigger?.intervention_focus?.require_mind_map ||

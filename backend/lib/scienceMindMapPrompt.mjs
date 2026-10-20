@@ -4,6 +4,7 @@
  * The student-facing field is one plain paragraph.
  */
 
+/** Shape Grok must return: one paragraph, no mind-map markup. */
 export const JSON_SCHEMA_HINT = `Return ONLY valid JSON:
 {
   "status": "success" | "insufficient_context",
@@ -65,6 +66,7 @@ export function validateExplanation(generatedText, correctAnswer) {
   return { ok, keywords, coverage, similarity };
 }
 
+/** If the paragraph never states the keyed answer, append one sentence that does. */
 export function ensureExplanationTeachesAnswer(text, correctAnswer, conceptSummary = '') {
   const paragraph = plainParagraph(text);
   const answer = String(correctAnswer || '').replace(/\s+/g, ' ').trim();
@@ -82,6 +84,7 @@ export function ensureExplanationTeachesAnswer(text, correctAnswer, conceptSumma
   };
 }
 
+/** Frustration band for sentence length only. It does not change the science facts. */
 export function presentationBand(score) {
   const n = Math.max(0, Math.min(100, Number(score) || 0));
   if (n <= 20) return 'VERY_LOW';
@@ -91,6 +94,7 @@ export function presentationBand(score) {
   return 'VERY_HIGH';
 }
 
+/** System prompt: teach the miss from textbook context, in one plain paragraph. */
 export function systemPrompt() {
   return [
     'You are an educational AI assistant helping a school student who answered a Science question incorrectly.',
@@ -115,6 +119,7 @@ export function systemPrompt() {
   ].join('\n');
 }
 
+/** User prompt: the farm question, both answers, frustration band, and retrieved chunks. */
 export function userPrompt({
   grade,
   question,
@@ -184,10 +189,12 @@ export function plainParagraph(raw) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+/** Ask the model to rewrap a bad reply as JSON without adding new facts. */
 export function repairPrompt(raw) {
   return `The previous response was not valid JSON for the paragraph schema. Convert it into the required JSON object only. Do not add new scientific facts.\n\n${String(raw).slice(0, 12000)}`;
 }
 
+/** Numbered textbook chunks. These are the only facts the paragraph may use. */
 export function formatContext(chunks = []) {
   return chunks
     .map(

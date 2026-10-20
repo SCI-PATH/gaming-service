@@ -4,6 +4,8 @@
  * After an avatar intervention closes:
  * - Improving students: suppress unnecessary re-triggers.
  * - Continued struggle/stall: fire ESCALATED_SCAFFOLDING.
+ * After Sage helps on a farm question, a better streak stays quiet.
+ * Another hard miss can still reopen her.
  */
 
 import { NON_WRONG_SCENARIOS } from './nonWrongBehaviorMonitor.js';
@@ -144,6 +146,7 @@ export function createInterventionManager(opts = {}) {
     return { outcome: INTERVENTION_OUTCOMES.ALLOW };
   }
 
+  /** Block a soft reopen during grace; hard wrongs and escalations pass. */
   function gateIntervention({ isEscalation = false, hardStruggle = false } = {}) {
     const now = Date.now();
     if (isEscalation || hardStruggle) {
@@ -158,10 +161,12 @@ export function createInterventionManager(opts = {}) {
     return { allow: true, escalate: false, suppress: false };
   }
 
+  /** Snapshot for telemetry; callers must not mutate the live counters. */
   function getState() {
     return { ...state };
   }
 
+  /** New farm session: forget prior help so Sage can open again. */
   function reset() {
     state.postHelpActive = false;
     state.answersSinceHelp = 0;

@@ -3,6 +3,8 @@
  *   YOUR ANSWER → CORRECT ANSWER → SCIENTIFIC COMPARISON → KEY CONNECTION → QUICK CHECK
  * Wrong-for-this-question is not the same as scientifically false.
  * Never invent a function or example. Never dump a one-line key.
+ * Lessons Sage can say about a farm miss. Frustration band shortens them.
+ * The text feeds the in-game mind map. It does not build the learning-path engine map.
  */
 import { CONCEPT_CATALOG, resolveTopicKey } from './conceptMaps.js';
 import { isTypedAnswerQuestionType } from './normalizeSageMindMapInput.js';
@@ -151,6 +153,7 @@ export function looksLikeSymbolicTypedAnswer(text) {
   return parts.every((part) => isSymbolicTypedPart(part));
 }
 
+/** How long and how rich a spoken lesson may be for this frustration band. */
 export function voiceBand(voice = {}) {
   const level = String(voice.frustrationLevel || voice.level || 'moderate').toLowerCase();
   const tone = String(voice.tone || 'practice').toLowerCase();
@@ -168,6 +171,7 @@ function bandClip(band) {
   return 360;
 }
 
+/** True when the sentence explains a cause, not only names a word. */
 export function hasCausalLanguage(text) {
   return /because|so that|which means|named for|prefix|is for\b|job of|does not (fit|answer|make|do|mean|produce)|mix-?up|would mean|in nature|happens when|works by|defined as|stands for|not the same|different job|asking about|the claim|seed leaf|cotyledon|process of|function of|male part|female part|makes pollen|take in|released as|transfer of pollen|balloons|react|raw material/i.test(
     String(text || ''),
@@ -181,6 +185,7 @@ export function looksLikeGraderMeta(text) {
   );
 }
 
+/** True for empty, grader talk, or a line that only restates who picked what. */
 export function looksLikeAnswerKeyRestatement(text, wrong = '', right = '') {
   const raw = String(text || '').trim();
   if (!raw) return true;
@@ -258,6 +263,7 @@ function stemIntent(prompt) {
   };
 }
 
+/** Known farm claim (dicot, photosynthesis, charge) pulled from the stem. */
 export function unpackScienceClaim(prompt, topic = '') {
   const blob = `${prompt} ${topic}`;
   if (/dicotyledon|dicot|\btwo seed|\btwo cotyledon|seed lobes?/i.test(blob)) {
@@ -816,6 +822,7 @@ const STUDENT_WORLD_IDEAS = [
   },
 ];
 
+/** Everyday meaning of a typical wrong pick, such as helium or orbit. */
 export function lookupStudentIdea(wrong) {
   const t = lower(wrong);
   if (!t) return null;
@@ -1125,6 +1132,7 @@ function catalogForAttempt(attempt) {
   return key && CONCEPT_CATALOG[key] ? CONCEPT_CATALOG[key] : null;
 }
 
+/** What this farm question is actually asking, in one teachable job. */
 export function questionJob(attempt = {}) {
   const prompt = norm(attempt.prompt || attempt.question || '');
   const right = norm(attempt.correctAnswer);
@@ -1341,6 +1349,7 @@ export function questionJob(attempt = {}) {
   };
 }
 
+/** A student sentence we can teach from, not a blank, code, or grader line. */
 export function isUsableStudentIdea(sentence, attempt = {}) {
   const s = norm(sentence);
   const wrong = attempt.studentAnswer || attempt.student_answer || '';
@@ -1479,6 +1488,7 @@ function splitFillInTokens(text) {
     .filter(Boolean);
 }
 
+/** Which fill-in pattern this stem is (plant parts, gases, and similar). */
 export function classifyFillInPrompt(prompt = '') {
   const p = lower(prompt);
   if (!p) return null;
@@ -1935,6 +1945,7 @@ function statementScience(attempt, band) {
  * Ground a scientific description in verified curriculum facts.
  * Do not guess a function or example for an unknown option.
  */
+/** True when we can name a real scientific job for this text on this question. */
 export function canDescribeScientifically(text, attempt = {}, side = 'student') {
   const raw = norm(text);
   if (!raw) return false;
@@ -1959,6 +1970,7 @@ function descriptionCard(title, idea, body, band) {
 
 const VAGUE_SCIENCE = /\b(one is about|the other is about|this thing|that concept|the former|the latter)\b/i;
 
+/** True for empty or generic lines that never name a science job. */
 export function isVagueOrIncomplete(text) {
   const s = norm(text);
   if (!s) return true;
@@ -2118,6 +2130,7 @@ function completeConcept(text, attempt, side, band) {
   };
 }
 
+/** Lesson is usable only when both ideas and the comparison are present. */
 export function validateStructuredLesson(lesson) {
   if (!lesson || lesson.insufficientKnowledge) return false;
   const student = lesson.studentAnswer;
@@ -2302,6 +2315,7 @@ function countPhrase(haystack, needle) {
   return count;
 }
 
+/** Join the five sections into the paragraph Sage can speak. */
 export function formatLessonSpeech(lesson) {
   if (!lesson?.sections?.length) return lesson?.fullText || '';
   return lesson.sections
@@ -2545,6 +2559,7 @@ function composeTutorMiss(attempt, voice) {
     isNoPick(wrong) ||
     looksLikeSymbolicTypedAnswer(wrong)
   ) {
+    // No student idea to compare, so Sage only describes the correct farm idea.
     return explainCorrectIdea(attempt, voice);
   }
 
@@ -2553,6 +2568,7 @@ function composeTutorMiss(attempt, voice) {
   return '';
 }
 
+/** Spoken why for a miss. Blank or symbol answers skip the comparison. */
 export function explainWhyWrong(attempt = {}, voice = {}) {
   return composeTutorMiss(attempt, voice);
 }
@@ -2595,6 +2611,7 @@ export function teachingLessonFromMiss(input = {}, voice = {}) {
   return lesson;
 }
 
+/** Optional model sentence, kept only when it is a real student idea. */
 export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {
   const fromField = norm(ai.studentIdea || ai.student_idea_in_the_world || '');
   const fromWhy = norm(String(ai.whyWrong || ai.why_wrong || '').split(/(?<=[.!?])\s+/)[0] || '');
@@ -2604,6 +2621,7 @@ export function composeWhyWithOptionalAiMeet(attempt, voice, ai = {}) {
   return explainWhyWrong({ ...attempt, extraMeet }, voice);
 }
 
+/** Fold a usable AI sentence into the local why; otherwise keep the local lesson. */
 export function preferConceptualText(aiText, localText, attempt = {}, voice = {}) {
   return composeWhyWithOptionalAiMeet(attempt, voice, { whyWrong: aiText }) || localText;
 }

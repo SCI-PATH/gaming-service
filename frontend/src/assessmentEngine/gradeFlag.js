@@ -3,6 +3,7 @@
  * Boolean("false") is true, which marked wrong answers correct and hid real misses.
  */
 
+/** ScienceQuizModal and submitAssessmentAnswer share this so the string "false" stays a miss. */
 export function readGradeIsCorrect(grade, data = null) {
   const source = grade && typeof grade === 'object' ? grade : null;
   const raw =

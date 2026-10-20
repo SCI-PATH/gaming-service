@@ -6,6 +6,7 @@
 export function cropCarryScale(width, height, fallback = 0.7, tileSize = 16) {
   const w = Number(width) || 32;
   const h = Number(height) || 32;
+  // Tiny tiles are boosted. Large harvest art is fit to about one tile.
   const maxDim = Math.max(w, h);
   if (maxDim <= 20) return fallback * 1.7;
   return (tileSize * 1.2) / maxDim;

@@ -9,6 +9,7 @@
  */
 export function canOpenShopAfterOutcome(decision) {
   if (!decision || typeof decision !== 'object') return false;
+  // Offline or skipped database still opens the shop from the local decision.
   if (decision.skipped === true || decision.offline === true) return true;
   if (decision.persisted === true) return true;
   if (decision.outcome) return true;
@@ -21,6 +22,7 @@ export function canOpenShopAfterOutcome(decision) {
  * or offline progression decision is available.
  */
 export function levelSaveNeedsWarning(decision, cashSaved) {
+  // Hard fail only when the server rejected the save and left no local decision.
   const outcomeHardFail =
     decision?.persisted === false &&
     decision?.skipped !== true &&

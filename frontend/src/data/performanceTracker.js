@@ -4,6 +4,7 @@
 import { classifyPerformanceCategory } from './performanceCategories.js';
 import { calculateFrustrationScore } from './frustrationModel.js';
 
+/** Blank per-question row before telemetry fills correctness, time, and mouse signals. */
 export function createEmptyQuestionRecord() {
   return {
     questionId: null,
@@ -22,6 +23,7 @@ export function createEmptyQuestionRecord() {
   };
 }
 
+/** Neutral rolling stats before any answer. Accuracy starts at 100 and frustration at low. */
 export function createEmptyAggregate() {
   return {
     accuracy: 100,
@@ -55,6 +57,7 @@ function median(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/** Roll question rows into accuracy, a frustration score, and a Weak / Medium / Smart category. */
 export function summarizeRecords(records = [], extras = {}) {
   const list = Array.isArray(records) ? records : [];
   const times = list.map((r) => Number(r.answerTimeMs) || 0).filter((t) => t > 0);
@@ -69,6 +72,7 @@ export function summarizeRecords(records = [], extras = {}) {
 
   let consecutiveIncorrect = 0;
   let consecutiveCorrect = 0;
+  // Current streak only — a correct answer ends an incorrect run, and the reverse.
   for (let i = list.length - 1; i >= 0; i -= 1) {
     if (list[i].skipped) continue;
     if (list[i].correct) {

@@ -335,19 +335,23 @@ function writeOwned(owned) {
   writeStore(store);
 }
 
+/** This student’s owned unlock ids. */
 export function getOwnedUnlockIds() {
   return readOwned();
 }
 
+/** Purchase level, chapter, and challenge progress for one owned item. */
 export function getUnlockMeta(itemId) {
   const store = readStore();
   return store.meta[itemId] || null;
 }
 
+/** Placement meta for every owned unlock. */
 export function getAllUnlockMeta() {
   return { ...readStore().meta };
 }
 
+/** True when this student already bought the item. */
 export function isUnlocked(itemId) {
   return readOwned().includes(itemId);
 }
@@ -500,6 +504,7 @@ export function advanceChallengeProgress(itemId, stageId, { stepIndex, done, pla
   return meta.stageProgress[stageId];
 }
 
+/** Quiz progress for one unlock stage, or a fresh step when none is saved. */
 export function getChallengeProgress(itemId, stageId) {
   const meta = getUnlockMeta(itemId);
   return (
@@ -567,11 +572,13 @@ export function priceMultiplier(perf = {}) {
   return clamp(mult, 0.4, 1.7);
 }
 
+/** Shelf price: base times the live multiplier, rounded to 5, at least 10 coins. */
 export function priceForItem(item, perf = {}) {
   const mult = priceMultiplier(perf);
   return Math.max(10, Math.round((item.basePrice * mult) / 5) * 5);
 }
 
+/** Shop heading for a Weak / Medium / Smart price band. */
 export function bandPriceLabel(band) {
   switch (normalizePerformanceCategory(band)) {
     case PERFORMANCE_CATEGORIES.SMART:
@@ -583,6 +590,7 @@ export function bandPriceLabel(band) {
   }
 }
 
+/** Shop heading from the frustration discount, including “about N% off”. */
 export function frustrationPriceLabel(perf = {}) {
   const score = Number(perf.frustrationScore);
   const level = String(perf.frustrationLevel || '').toLowerCase();
@@ -600,7 +608,7 @@ export function frustrationPriceLabel(perf = {}) {
 }
 
 /**
- * Build priced catalog for the shop UI.
+ * Remove one owned unlock and its placement meta for this student.
  */
 export function revokeUnlock(itemId) {
   const id = String(itemId || '').trim();
@@ -612,6 +620,10 @@ export function revokeUnlock(itemId) {
   return store.owned;
 }
 
+/**
+ * Priced unlock list for the shop.
+ * A frozen level price wins; otherwise the average-frustration discount, else the live multiplier.
+ */
 export function buildShopCatalog(perf = {}, ownedIds = null) {
   const owned = ownedIds ?? getOwnedUnlockIds();
   const band = shopBandFromPerformance(perf);
@@ -630,6 +642,7 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
     .map((item) => ({
       ...item,
       price:
+        // Frozen offer from this level session, else the average-frustration price, else the live multiplier.
         frozen?.[item.id] ??
         (avg != null
           ? priceFromAverageFrustration(item.basePrice, avg)
@@ -654,6 +667,7 @@ export function buildShopCatalog(perf = {}, ownedIds = null) {
   };
 }
 
+/** Catalog row for one unlock id. */
 export function getUnlockItem(itemId) {
   return UNLOCK_ITEMS.find((i) => i.id === itemId) ?? null;
 }
@@ -692,6 +706,7 @@ function tileInRect(tileX, tileY, rect, pad = 0) {
   );
 }
 
+/** True when a tile sits on spawn, the shop, a bed, the pen, the yard, or the forest gate. */
 export function isUnlockKeepClearTile(tileX, tileY, pad = 1) {
   return UNLOCK_KEEP_CLEAR.some((rect) => tileInRect(tileX, tileY, rect, pad));
 }

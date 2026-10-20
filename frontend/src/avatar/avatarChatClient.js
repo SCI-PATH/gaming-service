@@ -1,6 +1,8 @@
 /**
  * Streaming + timed client for avatar chat.
  * Supports JSON (legacy) and SSE stream from /api/avatar-chat?stream=1
+ * Sage's spoken follow-ups for a farm session. Auto coach notes are not
+ * treated as the student's words. A failed stream still returns a local reply.
  */
 
 import { sanitizeKidSpeech, softProviderNote } from './kidFriendlySpeech.js';
@@ -30,6 +32,7 @@ function logMentorExchange(opts, result) {
   });
 }
 
+/** Telemetry openers, not something the student typed or said. */
 function isAutoCoachMessage(studentMessage = '') {
   const s = String(studentMessage || '').trim();
   if (!s) return true;
@@ -305,6 +308,10 @@ export async function streamAvatarChat({
   }
 }
 
+/**
+ * Public entry used by the modal. It still goes through the stream helper,
+ * which falls back to one JSON post when the stream is unavailable.
+ */
 /** Non-stream POST (backup) */
 export async function requestAvatarChat(opts) {
   return streamAvatarChat(opts);

@@ -1,6 +1,8 @@
 /**
  * Builds the dynamic Groq context payload for the personalized AI mentor.
  * Every support open includes intervention_focus: trigger → concept → guidance lock.
+ * Packs the current farm level, frustration, and in-game mind-map summary.
+ * The learning-path engine is not called from here.
  */
 import {
   formatPerformanceDelta,
@@ -64,6 +66,7 @@ export function buildContextPayload({
   const displayName =
     friendlyStudentName(student?.displayName || student?.username) || 'friend';
 
+  // Crop and level name Sage can say. Frustration numbers stay out of speech.
   const correct =
     m.correct_answers ?? m.answer_accuracy_counts?.correct ?? 0;
   const incorrect =
@@ -507,6 +510,7 @@ export function buildContextPayload({
   };
 }
 
+/** Weak / average / advanced label stored beside the tier enum. */
 function mapBandFromTier(tier) {
   if (tier === PERFORMANCE_TIERS.WEAK) return 'weak';
   if (tier === PERFORMANCE_TIERS.SMART) return 'advanced';
@@ -526,6 +530,7 @@ function mapPerceivedFromMode(mode) {
   }
 }
 
+/** One user message: the frozen farm context plus what the student just said. */
 export function buildLlamaMessages(contextPayload, studentMessage) {
   return [
     {

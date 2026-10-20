@@ -1,5 +1,7 @@
 /**
  * Avatar Assistant constants — intelligent intervention (do not interrupt free play).
+ * Farm-level thresholds decide when Sage opens. One wrong crop question is not enough.
+ * Moods feed her portrait; mind-map prompts stay on the support path.
  */
 
 /** Intervention modes (map 1:1 to system-prompt strategies). */
@@ -164,6 +166,7 @@ export const AVATAR_MOODS = {
   proud: 'proud',
 };
 
+/** Click burst during a farm question: calm, medium, or rage. */
 export function clickDensityLabel(clicksInWindow, windowMs, rageThreshold) {
   if (clicksInWindow >= rageThreshold) return 'High/Rage';
   const perSec = clicksInWindow / Math.max(0.5, windowMs / 1000);
@@ -172,6 +175,7 @@ export function clickDensityLabel(clicksInWindow, windowMs, rageThreshold) {
   return 'Low/Calm';
 }
 
+/** Signed accuracy change since the previous farm level, for Sage's payload. */
 export function formatPerformanceDelta(pctPoints) {
   if (pctPoints == null || Number.isNaN(pctPoints)) return '0%';
   const n = Math.round(pctPoints);
@@ -180,6 +184,7 @@ export function formatPerformanceDelta(pctPoints) {
   return '0%';
 }
 
+/** Improving, declining, or steady — used so Sage does not praise a drop. */
 export function trendFromDelta(pctPoints, accuracyPct) {
   if (pctPoints >= 5) return 'Improving';
   if (pctPoints <= -5) return 'Declining';

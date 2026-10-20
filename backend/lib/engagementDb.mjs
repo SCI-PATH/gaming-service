@@ -20,6 +20,7 @@ import {
 
 const OPEN_LEVEL_STATUSES = `('in_progress', 'needs_repeat', 'remediation_required')`;
 
+/** Short text id for tables that store TEXT primary keys. */
 function id(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -35,15 +36,18 @@ function rowUuid() {
   });
 }
 
+/** Some session_id columns are UUID. A text id from the client then has to be stored as null. */
 function isSessionIdError(err) {
   const msg = String(err?.message || '');
   return /uuid|foreign key|session_id|invalid input syntax/i.test(msg);
 }
 
+/** True when farm progress can be written to Neon. */
 export function engagementAvailable() {
   return isPostgresEnabled();
 }
 
+/** Create or refresh the student row the farm uses for level, wallet, and frustration. */
 export async function upsertStudent(body = {}) {
   const studentId = String(body.studentId || body.student_id || '').trim();
   const studentName = String(
@@ -99,6 +103,7 @@ export async function upsertStudent(body = {}) {
   return { studentId, studentName };
 }
 
+/** Open a play session, force level 1 on a fresh start, and arm the level clock. */
 export async function startSession(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -109,6 +114,7 @@ export async function startSession(body = {}) {
   const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || 0;
   let startLevel = Math.max(1, Number(body.startLevel ?? body.start_level) || 1);
   if (lessonOrdinal && startLevel === lessonOrdinal) startLevel = 1;
+  // A new farm run must not resume the chapter ordinal as if it were the level.
   if (body.freshSession === true) startLevel = 1;
   if (body.freshSession === true) {
     await query(
@@ -252,6 +258,7 @@ export async function ensureInProgressLevel(body = {}) {
   return { created: true, ...saved, levelNumber: 1 };
 }
 
+/** Close the play session with duration, quiz totals, and peak frustration. */
 export async function endSession(body = {}) {
   const sessionId = String(body.sessionId || '').trim();
   if (!sessionId) throw new Error('sessionId required');
@@ -286,6 +293,7 @@ export async function endSession(body = {}) {
   return { sessionId };
 }
 
+/** One row per student and relative level. Completing it advances current_level. */
 export async function upsertLevelProgress(body = {}) {
   const studentId = String(body.studentId || '').trim();
   const levelNumber = Number(body.levelNumber ?? body.level_number ?? body.levelId);
@@ -356,10 +364,12 @@ export async function upsertLevelProgress(body = {}) {
   return { levelProgressId, studentId, levelNumber };
 }
 
+/** Shape the level_progress row the farm client expects on resume. */
 function resumeFromProgressRow(row, lessonId = '') {
   return resumeView(row, lessonId);
 }
 
+/** Recent quiz rows, including any explanation and mind map saved on the attempt. */
 async function questionHistoryForStudent(studentId) {
   const found = await query(
     `SELECT attempt_id, question_id, is_correct, raw_payload, answered_at
@@ -407,6 +417,7 @@ export async function getLessonResume(studentId, lessonId = '') {
   return resume;
 }
 
+/** Shop items this student already owns, so a resume can place them again. */
 export async function listStudentUnlocks(studentId) {
   const idValue = String(studentId || '').trim();
   if (!idValue) return [];
@@ -431,6 +442,7 @@ export async function listStudentUnlocks(studentId) {
 
 let statusConstraintReady = false;
 
+/** Quote a constraint name after stripping anything that is not an identifier. */
 function quoteIdent(name) {
   const clean = String(name || '').replace(/[^a-zA-Z0-9_]/g, '');
   if (!clean) throw new Error('constraint name required');
@@ -467,6 +479,7 @@ export async function ensureLevelStatusConstraint() {
   statusConstraintReady = true;
 }
 
+/** Lesson ids look like g6_sci_07. That trailing number is the chapter, not the farm level. */
 function relativeLevelNumber(body = {}) {
   const lessonId = String(body.lessonId || body.lesson_id || '').trim();
   const lessonOrdinal = Number(lessonId.match(/_(\d+)$/)?.[1]) || 0;
@@ -607,6 +620,7 @@ export async function evaluateLevelOutcome(body = {}) {
     await upsertLevelProgress(progressBody);
   } catch (err) {
     const msg = String(err?.message || '');
+    // Older databases reject remediation_required. Keep the retry in the metrics and stay in progress.
     if (!decision.retryLesson || !/check constraint|needs_repeat|remediation_required/i.test(msg)) throw err;
     metrics.progression_status = 'remediation_required';
     await upsertLevelProgress({
@@ -877,6 +891,7 @@ export async function saveQuizExplanation(body = {}) {
   return { ...inserted, updated: false };
 }
 
+/** Record that a farm lesson inside a level was finished. */
 export async function insertLessonCompletion(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -905,6 +920,7 @@ export async function insertLessonCompletion(body = {}) {
   return { lessonCompletionId };
 }
 
+/** Store one farm quiz answer. Timing is checked here; the client frustration score is not trusted. */
 export async function insertQuizAttempt(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -923,6 +939,7 @@ export async function insertQuizAttempt(body = {}) {
       [studentId, sessionId, String(questionId), retryIndex],
     );
     const prior = existing.rows?.[0];
+    // Same question and retry in this session is one attempt, not a second frustration hit.
     if (prior) {
       const payload = prior.raw_payload || {};
       return {
@@ -1001,6 +1018,7 @@ export async function insertQuizAttempt(body = {}) {
   };
 }
 
+/** Map farm shop categories onto the catalog check constraint. */
 function catalogCategory(raw) {
   const c = String(raw || 'other').toLowerCase().trim();
   if (c === 'animal' || c === 'prop' || c === 'decoration' || c === 'other') {
@@ -1011,6 +1029,7 @@ function catalogCategory(raw) {
   return 'other';
 }
 
+/** Ensure the shop item exists before a student can own it. */
 export async function upsertUnlockCatalogItem(item = {}) {
   const itemId = String(item.itemId || item.id || '').trim();
   if (!itemId) return null;
@@ -1036,6 +1055,7 @@ export async function upsertUnlockCatalogItem(item = {}) {
   return itemId;
 }
 
+/** Buy or grant a farm shop item. Cash is synced with the farm wallet, never deducted twice. */
 export async function insertStudentUnlock(body = {}) {
   const studentId = String(body.studentId || '').trim();
   const itemId = String(body.itemId || '').trim();
@@ -1196,6 +1216,7 @@ export async function insertStudentUnlock(body = {}) {
   };
 }
 
+/** Server price from the catalog base and this level's average frustration. */
 async function quoteShopPrice(studentId, itemId, levelNumber) {
   // Local module — Docker only copies backend/lib (no ../frontend tree).
   const { basePriceForItem, priceFromAverageFrustration, averageLevelFrustration } =
@@ -1213,6 +1234,7 @@ async function quoteShopPrice(studentId, itemId, levelNumber) {
   return { price: priceFromAverageFrustration(base, avg), avgFrustration: avg, basePrice: base };
 }
 
+/** Subtract shop price from farm cash when the client has not already done it. */
 async function deductStoredCash(studentId, price) {
   const found = await query(
     `SELECT s.wallet_balance,
@@ -1312,6 +1334,7 @@ async function applyReportedFarmCash(studentId, reported) {
   return syncReportedFarmCash(studentId, reported);
 }
 
+/** Append an earn or spend row for quiz points or a shop purchase. */
 export async function insertPointsLedger(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -1347,6 +1370,7 @@ const FRUSTRATION_SOURCES = new Set([
   'demo',
 ]);
 
+/** Save a 0–100 frustration reading and copy it onto the student row. */
 export async function insertFrustrationSnapshot(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -1408,6 +1432,7 @@ export async function insertFrustrationSnapshot(body = {}) {
   return { snapshotId, frustrationScore: score, frustrationLevel: level };
 }
 
+/** One snapshot in the shape other services read from the frustration API. */
 function normalizeFrustrationRow(row) {
   if (!row) return null;
   const recorded = row.recorded_at;
@@ -1509,6 +1534,7 @@ export async function getFrustrationForStudent(opts = {}) {
   return getFrustration(opts);
 }
 
+/** Store one Sage turn: why it opened, what the student said, and the reply. */
 export async function insertMentorIntervention(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -1632,6 +1658,7 @@ export async function getStudentProgress(studentId) {
   };
 }
 
+/** Lightweight farm event (correct or incorrect answer, and similar signals). */
 export async function insertGameplayEvent(body = {}) {
   const studentId = String(body.studentId || '').trim();
   if (!studentId) throw new Error('studentId required');
@@ -1667,6 +1694,7 @@ export async function insertGameplayEvent(body = {}) {
   return { eventId };
 }
 
+/** Public board row. Demo students are excluded by the queries that feed this. */
 function normalizeLeaderboardRow(row, rank) {
   return {
     rank,
@@ -1678,6 +1706,7 @@ function normalizeLeaderboardRow(row, rank) {
   };
 }
 
+/** Connection-string problems should fall back to the JSON board, not fail the request. */
 function neonLeaderboardUnusable(err) {
   const message = String(err?.message || '').toLowerCase();
   return (
@@ -1709,6 +1738,7 @@ export async function getLeaderboard(opts = {}) {
   }
 }
 
+/** Today ranks quiz points since UTC midnight. All-time uses stored points or a level fallback. */
 async function getNeonLeaderboard({ period, limit, studentId }) {
   let rows = [];
   if (period === 'today') {
@@ -1777,6 +1807,7 @@ async function getNeonLeaderboard({ period, limit, studentId }) {
   return { period, limit, entries, you };
 }
 
+/** Rank for a student who did not make the top-N slice. */
 async function getStudentLeaderboardRank(studentId, period = 'all') {
   if (period === 'today') {
     const result = await query(
@@ -1850,6 +1881,7 @@ async function getStudentLeaderboardRank(studentId, period = 'all') {
 export async function submitLeaderboardScore(body = {}) {
   const studentId = String(body.studentId || body.student_id || '').trim();
   if (!studentId) throw new Error('studentId required');
+  // Demo play updates neither the public board nor the student points total.
   if (studentId.startsWith('demo_')) {
     return { studentId, skipped: true, reason: 'demo_session' };
   }

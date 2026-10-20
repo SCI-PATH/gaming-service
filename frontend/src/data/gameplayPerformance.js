@@ -136,6 +136,7 @@ function writeStore(data) {
   }
 }
 
+/** Weak / Medium / Smart combat, quiz timer, retries, hints, and cash for the next farm level. */
 export function getGameplaySettings(band) {
   const key = normalizePerformanceCategory(band);
   return { ...GAMEPLAY_SETTINGS_BY_BAND[key] };
@@ -339,6 +340,7 @@ export function scoreLevelMetrics(metrics = {}) {
   };
 }
 
+/** Smart at 70 or above, Weak at 40 or below, otherwise Medium. */
 export function bandFromCompositeScore(score) {
   const s = Number(score) || 0;
   if (s >= 70) return GAMEPLAY_BANDS.SMART;
@@ -395,9 +397,11 @@ export function gradeLevelPerformance(metrics, scored) {
     scored?.compositeScore ?? scoreLevelMetrics(metrics).compositeScore;
   const retries = Math.max(0, Number(metrics.retries) || 0);
 
+  // Smart cash grade: high accuracy, a strong composite, and few retries.
   if (accuracy >= 0.82 && composite >= 70 && retries <= 2) {
     return PERFORMANCE_CATEGORIES.SMART;
   }
+  // Weak cash grade: low accuracy, a low composite, or many retries.
   if (accuracy <= 0.5 || composite <= 40 || retries >= 8) {
     return PERFORMANCE_CATEGORIES.WEAK;
   }
@@ -421,6 +425,7 @@ export function computeImprovementBonusPct(classification, previousRecord) {
   const bandUp =
     (bandRank[band] ?? 1) > (bandRank[prevBand] ?? 1);
 
+  // No extra cash unless the band rose, the trend improved, or the score jumped.
   if (!bandUp && trend !== TREND.IMPROVING && scoreDelta < 10) {
     return 0;
   }
@@ -546,6 +551,7 @@ export function saveGameplayLevelPerformance(levelId, payload = {}) {
 export function consumePendingGameplayBonus() {
   const store = readStore();
   const pending = store.pendingBonus;
+  // A missing or zero bonus is cleared so it cannot be applied on a later level.
   if (!pending || !pending.totalBonus) {
     store.pendingBonus = null;
     writeStore(store);
@@ -556,10 +562,12 @@ export function consumePendingGameplayBonus() {
   return pending;
 }
 
+/** Next-level cash bonus still waiting; does not clear it. */
 export function peekPendingGameplayBonus() {
   return readStore().pendingBonus;
 }
 
+/** HUD snapshot: settings inherited from the previous level, plus this level’s saved record. */
 export function getGameplayHudSnapshot(levelId) {
   const start = getGameplayForLevelStart(levelId);
   const store = readStore();
@@ -571,6 +579,7 @@ export function getGameplayHudSnapshot(levelId) {
   };
 }
 
+/** Saved gameplay records for this student, oldest farm level first. */
 export function getAllGameplayLevelRecords() {
   const store = readStore();
   return Object.values(store.levels || {})
@@ -578,6 +587,7 @@ export function getAllGameplayLevelRecords() {
     .sort((a, b) => Number(a.levelId) - Number(b.levelId));
 }
 
+/** Recent classifications used so one level cannot permanently label the student. */
 export function getGameplayHistoryRecords() {
   return readStore().history.slice();
 }
@@ -591,6 +601,7 @@ export function formatDurationSec(sec) {
   return `${m}m ${r}s`;
 }
 
+/** One-line HUD summary of enemy pressure, quiz timer, retries, and hints. */
 export function formatGameplaySettingsSummary(settings) {
   if (!settings) return '—';
   return [

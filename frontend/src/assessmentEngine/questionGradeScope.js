@@ -7,6 +7,7 @@
 import { chapterIdFromTopicId } from '../data/curriculumTopics.js';
 import { normalizeStudentGrade } from '../data/gradeChallengeLibraries.js';
 
+/** acceptScopedQuestion calls this before a /next item is shown in the farm quiz. */
 export function assessQuestionGradeScope(question, student) {
   const expected = normalizeStudentGrade(student?.grade ?? student?.gradeLevel);
   if (expected == null) {

@@ -4,6 +4,7 @@
 
 const LEADERBOARD_LIMIT = 10;
 
+/** Arena points from correct answers, farm level, research points, and cash. */
 export function computeArenaScore({
   rpEarned = 0,
   earnings = 0,
@@ -16,6 +17,10 @@ export function computeArenaScore({
   return Math.round(correct * 10 + level * 50 + (Number(rpEarned) || 0) + (Number(earnings) || 0));
 }
 
+/**
+ * Top students from the engagement API.
+ * A missing database is a soft skip so the farm can still be played.
+ */
 export async function fetchLeaderboard({
   period = 'all',
   studentId = null,
@@ -32,6 +37,7 @@ export async function fetchLeaderboard({
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.ok === false) {
       const raw = data?.error || `HTTP ${res.status}`;
+      // "incorrect scheme" means ranking storage is not configured yet.
       const schemeError = /incorrect scheme/i.test(String(raw));
       return {
         ok: false,
@@ -61,6 +67,7 @@ export async function fetchLeaderboard({
   }
 }
 
+/** Post this run’s arena score. A skipped database does not fail the level. */
 export async function submitLeaderboardScore(payload = {}) {
   try {
     const res = await fetch('/api/engagement/leaderboard/score', {

@@ -1,6 +1,7 @@
 /**
  * Save the current science mind map as a PNG (SVG fallback).
  * Draws the same concept-keyword trees shown in the Sage UI.
+ * Snapshot of the in-game farm map. Not a learning-path engine export.
  */
 import { layoutConceptTree } from './conceptGraph.js';
 
@@ -386,6 +387,7 @@ function svgToPngBlob(svg, width, height) {
   });
 }
 
+/** Prefer a PNG of the in-game map; keep the SVG if the canvas draw fails. */
 export async function downloadMindMap(map, branches = []) {
   const list = Array.isArray(branches) ? branches : [];
   if (!list.length) {
@@ -396,6 +398,7 @@ export async function downloadMindMap(map, branches = []) {
     const png = await svgToPngBlob(svg, width, height);
     triggerDownload(png, `${filename}.png`);
   } catch {
+    // Browser blocked the canvas; the SVG is the same map.
     const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     triggerDownload(blob, `${filename}.svg`);
   }

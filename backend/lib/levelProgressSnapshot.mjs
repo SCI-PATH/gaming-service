@@ -3,6 +3,7 @@
  * Relative level stays 1 for the lesson. Farm layout lives in farm_snapshot.
  */
 
+/** Blank checkpoint for a new farm level: question 0, no layout, no mind map yet. */
 export function initialLevelMetrics({ lessonId = '', chapterTitle = '' } = {}) {
   const lesson = String(lessonId || '').trim();
   const title = String(chapterTitle || '').trim();
@@ -25,6 +26,7 @@ export function initialLevelMetrics({ lessonId = '', chapterTitle = '' } = {}) {
   };
 }
 
+/** Fold a quiz save into the snapshot. Question index only moves forward. */
 export function mergeLevelMetrics(prev = {}, body = {}) {
   const lessonId = String(body.lessonId || body.lesson_id || prev.lesson_id || '').trim();
   const chapterTitle = String(
@@ -35,6 +37,7 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
     1,
     Number(body.levelNumber ?? body.level_number ?? prev.relative_level) || 1,
   );
+  // A lesson id ending in _7 is chapter 7, not farm level 7.
   if (lessonOrdinal && levelNumber === lessonOrdinal) levelNumber = 1;
 
   const incomingIndex = Number(body.lastCompletedQuestionIndex ?? body.questionIndex);
@@ -91,6 +94,7 @@ export function mergeLevelMetrics(prev = {}, body = {}) {
   };
 }
 
+/** Keep the newer farm layout. An older client save must not wipe plots and cash. */
 function chooseFarmSnapshot(previous, incoming) {
   if (!incoming) return previous || null;
   if (!previous) return incoming;
@@ -100,6 +104,7 @@ function chooseFarmSnapshot(previous, incoming) {
   return incoming;
 }
 
+/** Fields the farm client reads to reopen a level at the right question. */
 export function resumeView(row, lessonId = '') {
   if (!row) return null;
   const metrics = row.metrics_snapshot || {};

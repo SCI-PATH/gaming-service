@@ -1,6 +1,9 @@
 /**
  * Sage — professional circular AI agent portrait.
  * Clean photo + ring status (no face overlays).
+ * Shown beside the farm quiz. Speaking and listening follow her voice;
+ * data-mood carries support, encouragement, or pride. Subtitles are the
+ * words she is saying about the in-game mind map, not a second lesson.
  */
 const SAGE_SRC = '/assets/avatar/sage.png';
 
@@ -72,6 +75,7 @@ export default function SageAvatar({
           <div className="sage-status-ring" aria-hidden />
         </div>
 
+        {/* Chip matches the speech engine: talking, hearing the student, or idle. */}
         {speaking ? (
           <div className="sage-status-chip" aria-live="polite">
             <span className="sage-wave" aria-hidden>

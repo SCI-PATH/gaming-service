@@ -1,7 +1,12 @@
+/**
+ * Bow shot aimed with the hero facing. Left and right shots are
+ * rotated because the atlas art points up.
+ */
 import Phaser from 'phaser';
 import { ARROW_SPEED, DIRECTIONS } from '../config/constants';
 
 export default class Arrow extends Phaser.Physics.Arcade.Sprite {
+  /** Spawn on the hero and set velocity from their facing. */
   constructor(scene) {
     const { player } = scene;
     super(scene, player.x, player.y, 'atlas', 'arrow');

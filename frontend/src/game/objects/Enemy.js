@@ -1,7 +1,12 @@
+/**
+ * Mole or treant that bounce-patrols one axis. Frustration retints
+ * the sprite and changes patrol speed while the farm is live.
+ */
 import Phaser from 'phaser';
 import { ENEMY_SPEED, TILE_SIZE } from '../config/constants';
 
 export default class Enemy extends Phaser.Physics.Arcade.Sprite {
+  /** Spawn on a tile and start a horizontal or vertical patrol. */
   constructor(scene, tileX, tileY, verticalMove, atlasSprite, speed = ENEMY_SPEED) {
     super(scene, tileX * TILE_SIZE, tileY * TILE_SIZE, 'atlas', atlasSprite);
 
@@ -23,6 +28,7 @@ export default class Enemy extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  /** High frustration shrinks and cools the sprite. Low frustration enlarges and warms it. */
   applyAdaptiveLook(level) {
     const band = String(level || 'moderate').toLowerCase();
     this.frustrationBand = band;

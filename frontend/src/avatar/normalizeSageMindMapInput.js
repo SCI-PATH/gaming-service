@@ -4,6 +4,8 @@
  * MCQ, True/False, Fill-in-the-Blank, and Typed Answer emit the same analysis
  * shape. Fill-in-the-Blank is NEVER treated as an MCQ. Typed Answer is NEVER
  * treated as Fill-in-the-Blank: the full student sentence is preserved.
+ * One shape for every farm question so the in-game map and Sage's speech
+ * quote the same student text and the same engine key.
  */
 import { inferConceptFromText, resolveTopicKey } from './conceptMaps.js';
 import { isGradeStatusText } from './kidFriendlySpeech.js';
@@ -26,6 +28,7 @@ export const SAGE_ASSESSMENT_TYPES = {
   Matching: 'Matching',
 };
 
+/** Internal kind → the type name sent with a Sage assessment. */
 export function toSageAssessmentType(kind) {
   const raw = String(kind || '')
     .replace(/[_\s-]/g, '')
@@ -144,6 +147,7 @@ export function normalizeFillInAnswerText(raw) {
     .toLowerCase();
 }
 
+/** True for multi-blank farm items. Those must not be read as multiple choice. */
 export function isFillInQuestionType(typeOrInput) {
   if (typeOrInput && typeof typeOrInput === 'object') {
     return detectSageQuestionKind(typeOrInput) === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
@@ -151,6 +155,7 @@ export function isFillInQuestionType(typeOrInput) {
   return explicitKind(typeOrInput) === SAGE_QUESTION_TYPES.FILL_IN_THE_BLANK;
 }
 
+/** True for a typed sentence. Kept apart from fill-in blanks. */
 export function isTypedAnswerQuestionType(typeOrInput) {
   if (typeOrInput && typeof typeOrInput === 'object') {
     return detectSageQuestionKind(typeOrInput) === SAGE_QUESTION_TYPES.TYPED_ANSWER;
@@ -163,6 +168,7 @@ export function usesSageFreeTextAnswer(typeOrInput) {
   return isFillInQuestionType(typeOrInput) || isTypedAnswerQuestionType(typeOrInput);
 }
 
+/** Explicit type first; otherwise infer MCQ, true/false, fill-in, or typed. */
 export function detectSageQuestionKind(input = {}) {
   const q = input.questionData && typeof input.questionData === 'object'
     ? input.questionData

@@ -3,6 +3,9 @@
  *
  * Tracks classic metrics plus non-wrong patterns (slow/hint/selection/pause/DDA)
  * and post-help suppression / escalated scaffolding via InterventionManager.
+ * Watches a farm level: answers, hints, pauses, and frustration samples.
+ * When Sage should open, it builds the in-game mind map from misses.
+ * That map is local to this game. It is not the learning-path engine map.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -12,7 +15,11 @@ import {
   INTERVENTION_MODES,
   trendFromDelta,
 } from './avatarConstants.js';
-import { calculateFrustrationScore, shouldOpenFrustrationAgent } from '../data/frustrationModel.js';
+import {
+  calculateFrustrationScore,
+  frustrationLevelFromScore,
+  shouldOpenFrustrationAgent,
+} from '../data/frustrationModel.js';
 import { readDemoAdaptationSeed } from '../data/demoScenarios.js';
 import {
   appendFrustrationSample,
@@ -45,6 +52,7 @@ import {
 } from './interventionManager.js';
 import { buildInterventionFocus } from './interventionFocus.js';
 
+/** Live farm session: quiz, level clock, DDA band, and the latest miss. */
 export function useBehavioralTelemetry({
   enabled = true,
   quizOpen = false,
@@ -145,12 +153,14 @@ export function useBehavioralTelemetry({
   const lastFocusRef = useRef(null);
   const lastQuizDataRef = useRef(null);
 
+  /** Topics the student has missed, heaviest first, for the in-game map. */
   const listMisconceptions = useCallback(() => {
     return [...misconceptionsRef.current.values()]
       .map((e) => ({ ...e }))
       .sort((a, b) => b.missCount - a.missCount);
   }, []);
 
+  /** Store one wrong farm answer and rebuild the Sage map for that topic. */
   const recordMisconception = useCallback(
     (questionData, selectedText) => {
       const normalized = normalizeSageMindMapInput({
@@ -272,10 +282,12 @@ export function useBehavioralTelemetry({
     [listMisconceptions, launchTopicId],
   );
 
+  /** Chat text that names a preferred farm question format. */
   const updateLearningPreferences = useCallback((message) => {
     setLearningPrefs((prev) => extractLearningPreferences(message, prev));
   }, []);
 
+  /** Show every current miss on one in-game map, not a single topic only. */
   const showMindMapForTopic = useCallback(
     (topic = null) => {
       const list = listMisconceptions();
@@ -292,16 +304,23 @@ export function useBehavioralTelemetry({
     [listMisconceptions],
   );
 
+  /** Recompute accuracy, timing, click density, and the frustration score. */
   const syncMetrics = useCallback(() => {
     const correct = correctRef.current;
     const incorrect = incorrectRef.current;
     const total = correct + incorrect;
     const accuracyPct = total > 0 ? Math.round((correct / total) * 100) : 100;
+    const answerTimes = timesSecRef.current;
     const avgTime =
-      timesSecRef.current.length > 0
-        ? timesSecRef.current.reduce((a, b) => a + b, 0) /
-          timesSecRef.current.length
+      answerTimes.length > 0
+        ? answerTimes.reduce((a, b) => a + b, 0) / answerTimes.length
         : 0;
+    const earlierTimes = answerTimes.length > 1 ? answerTimes.slice(0, -1) : [];
+    const ownBaselineSec = earlierTimes.length
+      ? earlierTimes.reduce((a, b) => a + b, 0) / earlierTimes.length
+      : 0;
+    const priorLevelSec = Number(previousAvgAnswerTimeSec) || 0;
+    const baselineAnswerSec = priorLevelSec > 0 ? priorLevelSec : ownBaselineSec;
     const currentTimeSec = questionOpenedAtRef.current
       ? (Date.now() - questionOpenedAtRef.current) / 1000
       : 0;
@@ -376,8 +395,8 @@ export function useBehavioralTelemetry({
       enemy_deaths: Number(enemyDeaths) || 0,
       level_restarts: Number(levelRestarts) || 0,
       shop_customers_left: Number(shopCustomersLeft) || 0,
-      previous_avg_answer_time_sec: Number(previousAvgAnswerTimeSec) || 0,
-      baseline_avg_answer_time_sec: Number(previousAvgAnswerTimeSec) || 0,
+      previous_avg_answer_time_sec: baselineAnswerSec,
+      baseline_avg_answer_time_sec: baselineAnswerSec,
       // Rolling support for performance-locked diagnostics
       hints_used_recent: recentHintsRef.current,
       hint_count: recentHintsRef.current,
@@ -432,6 +451,7 @@ export function useBehavioralTelemetry({
     return next;
   }, [externalRetries, levelElapsedSec, thresholds, enemyHits, enemyDeaths, levelRestarts, shopCustomersLeft, previousAvgAnswerTimeSec]);
 
+  /** Append one frustration sample for this farm level. Skipped in a pinned demo. */
   const recordFrustrationPoint = useCallback(
     (snapshot, isCorrect, topicId = null) => {
       if (readDemoAdaptationSeed()?.pinned) return;
@@ -455,6 +475,7 @@ export function useBehavioralTelemetry({
     [levelId],
   );
 
+  /** Open Sage from an evaluation, unless cooldown or post-help grace blocks it. */
   const raiseFromEval = useCallback(
     (evaluation, snapshot, reasonExtra = null) => {
       if (!enabled || !evaluation) return false;
@@ -651,6 +672,7 @@ export function useBehavioralTelemetry({
     [enabled, quizKey, thresholds.reevalMinIntervalMs, listMisconceptions],
   );
 
+  /** Score the latest metrics and raise Sage when the rules say to. */
   const runEvaluation = useCallback(
     (opts = {}) => {
       if (!enabled) return null;
@@ -679,6 +701,7 @@ export function useBehavioralTelemetry({
       thresholds.nonWrongLongPauseSec || DEFAULT_NON_WRONG_THRESHOLDS.longPauseSec,
   };
 
+  /** Remember a hint, pause, or answer so non-wrong patterns can be detected. */
   const pushBehaviorEvent = useCallback((event) => {
     behaviorEventsRef.current = [
       ...behaviorEventsRef.current.slice(-200),
@@ -686,6 +709,7 @@ export function useBehavioralTelemetry({
     ];
   }, []);
 
+  /** Open Sage for slow, hint, pause, or DDA struggle that is not only a wrong tick. */
   const tryRaiseNonWrong = useCallback(
     (opts = {}) => {
       if (!enabled) return false;
@@ -782,12 +806,14 @@ export function useBehavioralTelemetry({
     [enabled, nwThresholds, raiseFromEval, syncMetrics, thresholds.reevalMinIntervalMs, listMisconceptions],
   );
 
+  /** Student closed Sage. Start the post-help window. */
   const clearTrigger = useCallback(() => {
     setTrigger(null);
     cooldownUntilRef.current = Date.now() + thresholds.cooldownMs;
     interventionMgrRef.current.onInterventionClosed();
   }, [thresholds.cooldownMs]);
 
+  /** New farm visit: drop counters, the open trigger, and the live map. */
   const resetSession = useCallback(() => {
     consecutiveFailsRef.current = 0;
     correctRef.current = 0;
@@ -912,6 +938,7 @@ export function useBehavioralTelemetry({
     }
   }, [levelId, runEvaluation, syncMetrics, thresholds.rapidLevelSec]);
 
+      /** One submitted farm answer: timing, streak, miss map, then maybe open Sage. */
       const recordAnswer = useCallback(
     ({
       isCorrect,
@@ -1310,6 +1337,7 @@ export function useBehavioralTelemetry({
     ],
   );
 
+  /** Student pressed the hint control on the current farm question. */
   const recordHintUsed = useCallback(() => {
     if (!enabled) return;
     hintUsedThisQuestionRef.current = true;
@@ -1318,6 +1346,7 @@ export function useBehavioralTelemetry({
     tryRaiseNonWrong();
   }, [enabled, pushBehaviorEvent, tryRaiseNonWrong]);
 
+  /** Student changed the selected choice before submitting. */
   const recordSelectionSwitch = useCallback(
     (optionIndex = null) => {
       if (!enabled) return;
@@ -1342,6 +1371,7 @@ export function useBehavioralTelemetry({
     [enabled, pushBehaviorEvent, tryRaiseNonWrong],
   );
 
+  /** DDA raised or lowered the farm difficulty band. */
   const recordDdaBandChange = useCallback(
     (nextBand, priorBand = null) => {
       if (!enabled) return;
@@ -1374,6 +1404,7 @@ export function useBehavioralTelemetry({
     }
   }, [enabled, gameplayBand, recordDdaBandChange]);
 
+  /** Manual open: the student asked Sage for help on this farm question. */
   const requestHelp = useCallback(() => {
     if (!enabled) return;
     const snapshot = syncMetrics();
@@ -1397,6 +1428,38 @@ export function useBehavioralTelemetry({
       'manual',
     );
   }, [enabled, raiseFromEval, syncMetrics, thresholds]);
+
+  /** Opens Sage in the tone that matches the live frustration score. Demo recordings only. */
+  /** Demo path: open Sage at a chosen frustration score without waiting for misses. */
+  const presentDemoSage = useCallback((scoreOverride) => {
+    if (!enabled) return false;
+    const snapshot = syncMetrics();
+    const override = Number(scoreOverride);
+    const score = Number.isFinite(override)
+      ? override
+      : Number(snapshot?.frustration_score);
+    const level = frustrationLevelFromScore(Number.isFinite(score) ? score : 0);
+    const upbeat = level === 'low';
+    raisedForQuizRef.current = null;
+    cooldownUntilRef.current = 0;
+    lastEvalAtRef.current = 0;
+    return raiseFromEval(
+      {
+        intervention_mode: upbeat
+          ? INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE
+          : INTERVENTION_MODES.SUPPORT_AND_SCAFFOLD,
+        perceived_state: upbeat ? 'HIGH_PERFORMING' : 'NEEDS_SUPPORT',
+        reason: 'manual',
+        scenario: upbeat ? 'bored' : 'demo_tone',
+        confidence: 1,
+        indicators: [],
+        offerMindMap: true,
+        generate_mind_map: true,
+      },
+      snapshot,
+      'manual',
+    );
+  }, [enabled, raiseFromEval, syncMetrics]);
 
   // Question open → stagnation timer → evaluateStudentState
   useEffect(() => {
@@ -1544,6 +1607,7 @@ export function useBehavioralTelemetry({
     recordSelectionSwitch,
     recordDdaBandChange,
     requestHelp,
+    presentDemoSage,
     runEvaluation,
     updateLearningPreferences,
     showMindMapForTopic,
@@ -1555,6 +1619,7 @@ export function useBehavioralTelemetry({
 /** Back-compat export name used by App.jsx */
 export const useFrustrationTelemetry = useBehavioralTelemetry;
 
+/** Blank counters for a farm level that has not been played yet. */
 function emptySession() {
   return {
     consecutiveFails: 0,
@@ -1577,6 +1642,7 @@ function emptySession() {
   };
 }
 
+/** Order DDA bands so a rise in difficulty can be detected. */
 function difficultyRank(band) {
   const b = String(band || '').toLowerCase();
   if (b === 'weak' || b === 'developing' || b === 'beginner' || b === 'emerging') return 1;
@@ -1587,6 +1653,7 @@ function difficultyRank(band) {
   return 0;
 }
 
+/** Zeroed metric object shared with the mentor payload. */
 function emptyMetrics() {
   return {
     level_retries_count: 0,

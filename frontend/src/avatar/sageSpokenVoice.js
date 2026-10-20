@@ -1,5 +1,7 @@
 /**
  * Sage TTS: natural teacher talk, paced by CSF frustration (never spoken aloud).
+ * Tone, rate, and sentence count change with the farm frustration score.
+ * Scripts describe the missed science idea; the score itself is never said.
  */
 import {
   buildFrustrationAdaptation,
@@ -11,6 +13,19 @@ import { explanationForMiss } from './textbookGraph.js';
 
 const CHAPTER_TOPIC = /^(plant biology|science|biology|topic)$/i;
 
+/** Short words for the recording so Sage's pace is visible, not only a voice rate. */
+export function sageToneLabel(level) {
+  const key = String(level || '').toLowerCase();
+  if (key === 'low') return 'Upbeat';
+  if (key === 'high') return 'Slow and gentle';
+  if (key === 'very_high') return 'Very slow and gentle';
+  return 'Steady';
+}
+
+/**
+ * Map a frustration score onto pace, warmth, and how many sentences Sage may say.
+ * High frustration shortens the script and slows the browser voice.
+ */
 export function resolveSageVoice(opts = {}) {
   const rawScore = Number(opts.frustrationScore);
   const score = Number.isFinite(rawScore) ? rawScore : null;
@@ -49,6 +64,7 @@ export function resolveSageVoice(opts = {}) {
   };
 }
 
+/** Keep only the first few sentences so a high-frustration turn stays short. */
 export function capSpokenSentences(text, max = 4) {
   const clean = compactText(text);
   if (!clean) return '';
@@ -118,6 +134,7 @@ function spokenFromGraph(graph, voice) {
   return '';
 }
 
+/** Greeting that slows down when frustration is high, using the farm student's name. */
 export function sageGreeting(voice, studentName) {
   const name = friendlyStudentName(studentName);
   const hi = name ? `Hey ${name}.` : "Hey, I'm Sage.";
@@ -133,6 +150,7 @@ export function sageGreeting(voice, studentName) {
   return `${hi} Let's look at this together.`;
 }
 
+/** Closing line after she finishes a map card. Gentler when frustration is high. */
 export function sageMapOutro(voice) {
   if (voice.level === 'very_high' || voice.level === 'high') {
     return 'I can say it again if you want.';
@@ -140,6 +158,7 @@ export function sageMapOutro(voice) {
   return 'Ask me if you want that again.';
 }
 
+/** Reserved hook for naming the student's mix-up. Currently silent so speech stays on the correct idea. */
 function honourMixup() {
   return '';
 }
@@ -174,6 +193,7 @@ export function buildSageMissScript(branch, voice) {
   return prepareTtsText(capSpokenSentences(joined, voice.sentenceMax));
 }
 
+/** Short spoken path from a concept graph when the card has no textbook line. */
 export function narrateConceptGraph(graph, voice) {
   return spokenFromGraph(graph, voice);
 }

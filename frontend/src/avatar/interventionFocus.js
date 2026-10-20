@@ -19,6 +19,8 @@ import {
  * then supports that issue (science only when the student signals a concept gap).
  *
  * Pipeline: Detected trigger → Name problem → Behavior probe (A–D) → Analyze reason → Targeted support.
+ * Names the farm problem Sage will say out loud. Spoken openers stay friendly;
+ * frustration voice is resolved here so a high score shortens that opener.
  */
 
 /** Priority: lower number wins when multiple problems fire together. */
@@ -58,6 +60,7 @@ const PRIORITY = {
   [INTERVENTION_FOCUS_CODES.CONGRATULATE]: 70,
 };
 
+/** One sentence a student can hear. Codes stay internal. */
 export function describeFocusCode(code) {
   const map = {
     [INTERVENTION_FOCUS_CODES.REPEATED_SLOW_ANSWERS]:
@@ -91,6 +94,7 @@ export function describeFocusCode(code) {
   return map[code] || code || 'Learning support needed';
 }
 
+/** Private coach note: probe the hang-up before teaching the farm science. */
 export function mentorBriefForCode(code, concept = null) {
   const c = concept || 'the science idea in the current farm question';
   const map = {
@@ -125,6 +129,7 @@ export function mentorBriefForCode(code, concept = null) {
   );
 }
 
+/** Pick one focus code from the evaluation, scenario, and indicator list. */
 export function resolveFocusCode({
   scenarioCode = null,
   reason = null,
@@ -206,6 +211,7 @@ export function resolveFocusCode({
   return raw || INTERVENTION_FOCUS_CODES.MANUAL;
 }
 
+/** Lower number wins when several farm problems fire on the same turn. */
 export function focusPriority(code) {
   return PRIORITY[code] ?? 40;
 }
@@ -266,6 +272,7 @@ function scoreTopics({ misconceptions = [], events = [], quiz = null, mindMap = 
   );
 }
 
+/** Science topic with the most misses, else the question on screen. */
 export function pickFocusConcept({
   misconceptions = [],
   events = [],
@@ -401,6 +408,7 @@ export function buildStructuredDiagnostic(code, questionText = null, evidence = 
  * Warm first line: name + concrete why (evidence) + one problem probe.
  * A–D options are shown in chat + buttons (not all read aloud).
  */
+/** First spoken line: why Sage walked over, paced by the frustration voice. */
 export function buildFocusedSpokenOpener(focus = {}, opts = {}) {
   const name = friendlyStudentName(opts.name || focus.student_name);
   const hi = name ? `Hi ${name}! ` : 'Hi there! ';
@@ -462,12 +470,14 @@ export function buildFocusedSpokenOpener(focus = {}, opts = {}) {
   );
 }
 
+/** Short process reminder before any science explanation. */
 export function buildTargetedGuidance(focus = {}) {
   return sanitizeKidSpeech(
     `First find what is getting in the way (time, confidence, wording, or the science idea). Support that hang-up, then return to the farm when ready.`,
   );
 }
 
+/** Full focus object frozen when Sage opens on a farm problem. */
 export function buildInterventionFocus(input = {}) {
   const {
     scenarioCode = null,
@@ -799,6 +809,7 @@ function buildEvidenceLines(focus) {
   return lines;
 }
 
+/** Hidden opener the model sees. The student hears the friendly why instead. */
 export function buildCoachAutoSignal({
   code,
   topic,
@@ -840,6 +851,7 @@ export function buildCoachAutoSignal({
   );
 }
 
+/** When several codes fire, keep the one with the strongest priority. */
 export function pickMainProblem(codes = []) {
   const list = [...new Set((codes || []).filter(Boolean))];
   if (!list.length) return null;

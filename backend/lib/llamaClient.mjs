@@ -15,6 +15,7 @@ function normalizeProvider(raw) {
   return p;
 }
 
+/** Which tutor to call. A Groq key defaults the provider on; retired model names are remapped. */
 export function getLlamaConfig() {
   const hasGroqKey = Boolean(env('GROQ_API_KEY', '').trim());
   const provider = normalizeProvider(
@@ -150,6 +151,7 @@ async function chatOpenRouter({
   });
 }
 
+/** If Groq says it cannot teach, ask OpenRouter once and keep Groq's reply when that fails. */
 async function withOpenRouterIfNeeded(primary, { messages, maxTokens, temperature, responseFormat }) {
   const cfg = getLlamaConfig();
   if (!hasOpenRouter(cfg)) return primary;
@@ -211,6 +213,7 @@ export async function chatCompletion({
     throw new Error('OFFLINE_MODE');
   }
 
+  // Groq is the live Sage voice. OpenRouter answers only if Groq cannot teach.
   if (cfg.provider === 'groq') {
     if (!cfg.groqApiKey?.trim()) {
       throw new Error(

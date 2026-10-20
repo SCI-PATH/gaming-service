@@ -81,6 +81,7 @@ export const METRIC_LABELS = Object.freeze({
 
 const WEIGHT_SUM = Object.values(FRUSTRATION_WEIGHTS).reduce((a, b) => a + b, 0);
 
+/** LOW through 25, MILD through 50, MODERATE through 70, HIGH through 85, else VERY_HIGH. */
 /**
  * @param {number} score
  * @returns {typeof FRUSTRATION_LEVELS[keyof typeof FRUSTRATION_LEVELS]}
@@ -95,6 +96,7 @@ export function frustrationLevelFromScore(score) {
 }
 
 function declineTo100(raw) {
+  // Values already on 0–1 are percents; larger numbers are treated as 0–100.
   const v = Number(raw) || 0;
   if (v <= 1) return clamp(v * 100, 0, 100);
   return clamp(v, 0, 100);
@@ -164,6 +166,7 @@ function pickDominantIndicators(contributions, normalized) {
       contribution: contributions[key],
       normalized: normalized[key],
     }))
+    // Keep signals that are clearly elevated, then the five that move the score most.
     .filter((row) => row.normalized >= 28 || row.contribution >= 2.4)
     .sort((a, b) => b.contribution - a.contribution)
     .slice(0, 5);

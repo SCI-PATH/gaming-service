@@ -50,6 +50,7 @@ export function ensureAnswerBranch(tree, correctAnswer = '') {
   };
 }
 
+/** Split the explanation into a root and sentence branches when no model tree exists. */
 export function parseExplanationToTree(explanationText, questionText = '', correctConcept = '', correctAnswer = '') {
   const explanation = clean(explanationText);
   const question = clean(questionText);
@@ -93,6 +94,7 @@ function firstWords(text, count) {
   return clean(text).split(' ').slice(0, count).join(' ');
 }
 
+/** Accept the model's root/nodes shape and drop empty labels. */
 export function normalizeMindMapTree(raw, fallbackConcept = '') {
   const source = raw?.tree || raw?.mindmap || raw || {};
   const rootLabel = mindMapLabel(
@@ -125,6 +127,7 @@ function normalizeChild(item) {
   return { label, children };
 }
 
+/** Mermaid mindmap text the farm history drawer can render. */
 export function treeToMermaid(tree) {
   const root = mindMapLabel(tree?.label || 'Science idea', 5);
   const lines = ['mindmap', `  root((${root}))`];
@@ -205,6 +208,7 @@ export function renderMindMapSvg(tree) {
   return parts.join('');
 }
 
+/** One downloadable page of explanation maps for the student. */
 export function renderMindMapHtml(maps = []) {
   const sections = maps
     .map((map) => {

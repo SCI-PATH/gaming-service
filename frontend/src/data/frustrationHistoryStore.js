@@ -43,6 +43,7 @@ function emptyState() {
   };
 }
 
+/** This student's daily scores, topic averages, and recent question samples. */
 export function loadFrustrationHistory() {
   try {
     const raw = localStorage.getItem(storageKey());
@@ -235,6 +236,7 @@ export function recordFrustrationSample(sample = {}) {
     data.topics[topic] = prev;
   }
 
+  // Same calendar day keeps the streak. A gap resets it to 1.
   if (data.lastPlayDate === date) {
     /* same day — streak unchanged */
   } else if (data.lastPlayDate === yesterdayKey(date)) {
@@ -335,6 +337,7 @@ function filterSamples(samples = [], filters = {}) {
   });
 }
 
+/** Dashboard filter: one day, the last 7 or 14 days, or the whole history. */
 export function dateRangeFromPreset(preset = 'all', customDate = '') {
   if (customDate) {
     const key = dayKey(customDate);
@@ -418,6 +421,7 @@ export function buildFrustrationChartModel(live = null, filters = {}) {
       filters.fromMs != null,
   );
 
+  // A first session has no daily line yet, so the chart follows each question.
   if (scoredDays.length < 2 && samples.length >= 2) {
     return {
       mode: 'question',
@@ -448,6 +452,7 @@ export function buildFrustrationChartModel(live = null, filters = {}) {
   };
 }
 
+/** Grade 6–9 chapters this student has actually answered, for the dashboard filter. */
 export function listFrustrationTopics() {
   const data = loadFrustrationHistory();
   const ids = new Set();
@@ -476,6 +481,10 @@ export function listFrustrationTopics() {
     }));
 }
 
+/**
+ * Average frustration by chapter, highest first.
+ * Live misses with no saved samples still produce a score so the chart is not blank.
+ */
 export function frustrationByTopic(misconceptions = []) {
   const data = loadFrustrationHistory();
   const map = {};
@@ -589,6 +598,7 @@ export function frustrationByTopic(misconceptions = []) {
     .slice(0, 8);
 }
 
+/** Per-answer points for the journey view, filtered by chapter and date. */
 export function frustrationPerformancePoints(filters = {}) {
   const { topicId, fromMs, toMs } = normalizeFilters(filters);
   return loadFrustrationHistory()
@@ -601,6 +611,7 @@ export function frustrationPerformancePoints(filters = {}) {
     });
 }
 
+/** Consecutive play days stored with the frustration history. */
 export function learningStreak() {
   return loadFrustrationHistory().streak || 0;
 }
@@ -611,6 +622,7 @@ export function learningStreak() {
  */
 export function seedHistoryFromLessons(lessonProgress = [], liveScore = 0) {
   const data = loadFrustrationHistory();
+  // Three real play days are enough. Do not invent more from old lesson rows.
   if (data.days.length >= 3) return data;
   const rows = (lessonProgress || []).filter((r) => r.savedAt);
   if (!rows.length && !liveScore) return data;
@@ -620,6 +632,7 @@ export function seedHistoryFromLessons(lessonProgress = [], liveScore = 0) {
     if (data.days.some((d) => d.date === date)) continue;
     const accuracy = Number(row.accuracyPct);
     const score =
+      // Higher quiz accuracy seeds a lower frustration score.
       Number.isFinite(accuracy)
         ? Math.max(8, Math.min(88, Math.round(100 - accuracy * 0.7)))
         : Math.round(Number(liveScore) || 20);
@@ -644,10 +657,12 @@ export function seedHistoryFromLessons(lessonProgress = [], liveScore = 0) {
   return saveState(data);
 }
 
+/** Raw question samples, newest last, for the play-journey chart. */
 export function getFrustrationHistory() {
   return loadFrustrationHistory().samples;
 }
 
+/** Append one answered question: score, band, chapter, and its place in the level. */
 export function appendFrustrationSample(sample = {}) {
   const store = loadFrustrationHistory();
   const prev = store.samples[store.samples.length - 1];

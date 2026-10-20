@@ -1,6 +1,7 @@
 /**
  * Short in-world Sage lines for farm objectives.
  */
+/** Spoken line for the current quest step. High frustration softens the wording; low frustration is lively. */
 export function sageLineForStep(step, { frustrationLevel } = {}) {
   if (!step) return '';
   const level = String(frustrationLevel || '').toLowerCase();
@@ -8,6 +9,7 @@ export function sageLineForStep(step, { frustrationLevel } = {}) {
   const lively = level === 'low';
   const title = String(step.title || '');
 
+  // Quiet quiz steps should not nag; high frustration only adds “when you are ready”.
   if (step.quiet && /quiz/i.test(step.id || '')) {
     return gentle
       ? 'Take this question when you are ready.'
@@ -47,6 +49,7 @@ export function sageLineForStep(step, { frustrationLevel } = {}) {
   return title;
 }
 
+/** One-line grove mood for the HUD. Empty when frustration is moderate. */
 export function grovePressureLine(level) {
   const lvl = String(level || '').toLowerCase();
   if (lvl === 'low') return 'The grove is lively — watch the paths!';

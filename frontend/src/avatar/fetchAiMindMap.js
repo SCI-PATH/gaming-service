@@ -1,5 +1,8 @@
 /**
  * Client: concept map from the assessment engine key, structured by AI.
+ * Posts farm misses to the gaming-service /api/mind-map route.
+ * Frustration score rides along so the map can simplify. This in-game
+ * Sage map is separate from the learning-path engine map.
  */
 import { softProviderNote } from './kidFriendlySpeech.js';
 
@@ -37,6 +40,7 @@ export async function fetchAiMindMap({
     });
 
     const data = await res.json().catch(() => ({}));
+    // Caller falls back to the local farm-miss map when this throws.
     if (!res.ok || data?.ok === false) {
       throw new Error(data?.error || `Mind map API ${res.status}`);
     }

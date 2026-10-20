@@ -65,6 +65,7 @@ export function timeTargetFromPrevious(previousAvgMs, mastery) {
   return timeTargetFromMastery(mastery);
 }
 
+/** Sell-price tweak from the mastery band: Smart +2, Weak −2, never below 5. */
 export function cropValueFromMastery(baseValue, mastery) {
   const band = bandFromMastery(mastery);
   if (band === DDA_BANDS.STRONG) return baseValue + 2;
@@ -166,6 +167,7 @@ export function setExternalMastery(payload) {
   return store.external;
 }
 
+/** Drop the plugged-in mastery model so the next level uses saved farm history. */
 export function clearExternalMastery() {
   const store = readStore();
   store.external = null;
@@ -218,6 +220,7 @@ export function saveLevelPerformance(levelId, payload) {
   return saved;
 }
 
+/** This student’s saved mastery rows, oldest farm level first. */
 export function getAllMasteryLevelRecords() {
   const store = readStore();
   return Object.values(store.levels || {})
@@ -225,6 +228,7 @@ export function getAllMasteryLevelRecords() {
     .sort((a, b) => Number(a.levelId) - Number(b.levelId));
 }
 
+/** Latest external mastery payload, if a model called setExternalMastery. */
 export function getExternalMasteryRecord() {
   return readStore().external || null;
 }

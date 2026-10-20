@@ -23,6 +23,7 @@ export default function GlobalLeaderboardModal({
   const [entries, setEntries] = useState([]);
   const [you, setYou] = useState(null);
 
+  /** Shared top-10 for the period the lobby opened. App posts the arena score on its own. */
   const load = useCallback(async () => {
     if (!open) return;
     setLoading(true);

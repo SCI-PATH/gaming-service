@@ -1,6 +1,7 @@
 /**
  * Farm shop challenge art — user stall + customer sprite sheets.
  */
+/** Stall and counter art for the physical farm shop. */
 export const FARM_SHOP_TEXTURES = [
   { textureKey: 'fshop_stall', image: '/assets/farm-shop/stall.png' },
   { textureKey: 'fshop_counter', image: '/assets/farm-shop/counter.png' },
@@ -25,11 +26,13 @@ export const FARM_SHOP_CUSTOMER_SHEET_FRONT = {
   frameCount: 36,
 };
 
+/** Both customer sheets, loaded together with the stall textures. */
 export const FARM_SHOP_SPRITESHEETS = [
   FARM_SHOP_CUSTOMER_SHEET,
   FARM_SHOP_CUSTOMER_SHEET_FRONT,
 ];
 
+/** Everything Phaser preloads before a customer queue can appear. */
 export const FARM_SHOP_LOAD_ITEMS = [
   ...FARM_SHOP_TEXTURES,
   ...FARM_SHOP_SPRITESHEETS,

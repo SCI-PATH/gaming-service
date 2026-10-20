@@ -26,6 +26,7 @@ export {
   GRADE_LIBRARY_DEFS,
 };
 
+/** Farm and science challenges for one grade. Unsupported grades are rejected. */
 export function challengesPayloadForGrade(grade) {
   const g = normalizeStudentGrade(grade);
   if (g == null) {
@@ -58,6 +59,7 @@ export function challengesPayloadForGrade(grade) {
   };
 }
 
+/** Confirm a challenge id belongs to this grade before the farm runs it. */
 export function validateChallengeRequest({ grade, challengeId } = {}) {
   const g = normalizeStudentGrade(grade);
   if (g == null) {

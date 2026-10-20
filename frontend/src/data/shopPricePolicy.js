@@ -62,6 +62,7 @@ export function shopMultiplierForAverage(averageScore) {
   );
 }
 
+/** Shelf price from average frustration: nearest 5 coins, never below the minimum. */
 export function priceFromAverageFrustration(basePrice, averageScore) {
   const base = Math.max(0, Number(basePrice) || 0);
   const mult = shopMultiplierForAverage(averageScore);
@@ -70,6 +71,7 @@ export function priceFromAverageFrustration(basePrice, averageScore) {
   return Math.max(SHOP_PRICE_LIMITS.minPrice, rounded);
 }
 
+/** Catalog base for one unlock, or null when this map does not sell that id. */
 export function basePriceForItem(itemId) {
   const price = SHOP_BASE_PRICES[String(itemId || '').trim()];
   return Number.isFinite(price) ? price : null;

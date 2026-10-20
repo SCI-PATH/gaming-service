@@ -18,6 +18,11 @@
 
 
 
+/**
+ * Frozen farm-lesson chat. Sage keeps the reason she opened, then follows
+ * the student's A–D answer. Science and the in-game map wait until they
+ * say the idea itself is fuzzy. Frustration tone is applied by the tutor loop.
+ */
 import {
 
   asQuestionText,
@@ -88,6 +93,7 @@ export const GUIDANCE_LEVELS = {
 
 };
 
+/** Pull the farm question, answers, and frustration band out of a frozen session. */
 function tutorContextFromSession(session = {}) {
   const ev = session.evidence || {};
   const assessment = ev.sage_assessment || session.sageAssessment || null;
@@ -127,6 +133,7 @@ function tutorContextFromSession(session = {}) {
   );
 }
 
+/** Run one tutor-loop turn when the session already has an assessment to teach. */
 function applyTutorIfReady(session, studentMessage) {
   const context = tutorContextFromSession(session);
   if (!shouldEnterTutorLoop(session, context, studentMessage)) return null;
@@ -441,6 +448,7 @@ export function freezeInterventionSession(focus = {}, extras = {}) {
 
 
 
+/** Step the ladder: a concept gap goes deeper; "I get it" stays lighter. */
 export function nextGuidanceLevel(current = 0, understanding = 'partial') {
 
   const c = Number(current) || 0;
@@ -1136,6 +1144,7 @@ function modelTouchesPerformance(reply, studentMessage, session) {
   return mentionsStudent || mentionsConcept || mentionsProblem;
 }
 
+/** Copy the live session back onto the focus object for the next mentor turn. */
 export function sessionToFocusPatch(session) {
 
   if (!session) return {};

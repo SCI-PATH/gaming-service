@@ -28,6 +28,7 @@ let usePublicPrefix = false;
 let ensuring = null;
 let lastSchemaError = null;
 
+/** Quote a schema name. Rejects anything that is not a plain identifier. */
 export function ident(name) {
   const raw = String(name || '').trim();
   if (!/^[a-z_][a-z0-9_]*$/i.test(raw)) {
@@ -36,10 +37,12 @@ export function ident(name) {
   return `"${raw.replace(/"/g, '""')}"`;
 }
 
+/** Schema chosen at startup, or the preferred name before resolve finishes. */
 export function engagementSchemaName() {
   return resolved || process.env.ENGAGEMENT_SCHEMA || PREFERRED;
 }
 
+/** Health fields: which schema the farm writes landed in, and the last open error. */
 export function getEngagementSchemaStatus() {
   return {
     schema: resolved,
@@ -50,6 +53,7 @@ export function getEngagementSchemaStatus() {
   };
 }
 
+/** Point engagement_gaming.table at the schema this role can actually use. */
 function rewriteEngagementSql(sql, schema, prefixedPublic) {
   const text = String(sql);
   if (prefixedPublic) {
@@ -107,6 +111,7 @@ async function canCreateInSchema(schema, prefixedPublic = false) {
   return ok === true || ok === 't';
 }
 
+/** Best-effort grants. A role that does not own engagement_gaming will fail these quietly. */
 async function tryGrantPreferred() {
   const s = ident(PREFERRED);
   const statements = [
@@ -342,6 +347,7 @@ async function bootstrapCoreTables(schema, prefixedPublic = false) {
   await query(`ALTER TABLE ${quiz} ADD COLUMN IF NOT EXISTS attempt_number INTEGER`);
 }
 
+/** Use this schema if its tables exist or this role can create them. */
 async function adoptSchema(schema, prefixedPublic = false) {
   if (!prefixedPublic) {
     try {

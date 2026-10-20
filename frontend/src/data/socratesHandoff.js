@@ -45,10 +45,12 @@ function pickText(...candidates) {
 function toUnitScore(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
+  // Farm scores are 0–100; the tutor query expects a 0–1 unit score.
   if (n > 1) return Math.max(0, Math.min(1, n / 100));
   return Math.max(0, Math.min(1, n));
 }
 
+/** Student id from whichever field the platform session stored. */
 export function resolveHandoffStudentId(student) {
   return pickText(student?.id, student?.studentId, student?.userId);
 }
@@ -125,6 +127,7 @@ export async function handoffToSocrates({
     cuePosted: false,
   });
 
+  // No student id — stay on the farm instead of opening the tutor.
   if (!userId) {
     return {
       opened: false,

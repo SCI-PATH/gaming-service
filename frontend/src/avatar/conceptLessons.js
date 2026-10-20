@@ -1,6 +1,8 @@
 /**
  * Curriculum concept trees for Grade 6–9. Labels are keywords;
  * explanations live on the node, not in the box.
+ * Farm quiz topics (roots, leaves, water cycle, charge) pick a tree
+ * so the in-game Sage map names the real job of each plant part.
  */
 import { compactText } from './assessmentMiss.js';
 
@@ -15,6 +17,7 @@ function has(text, re) {
   return re.test(lower(text));
 }
 
+/** Short keyword for a map node. Drops option letters and trailing ellipsis. */
 export function phraseLabel(text, n = 72) {
   const s = compactText(text)
     .replace(/^(?:option\s*)?\(?[A-Da-d]\)?[.)]\s+/i, '')
@@ -35,6 +38,7 @@ export function phraseLabel(text, n = 72) {
   return first.length <= cap ? first : first.slice(0, cap);
 }
 
+/** Stem plus correct answer, so lesson detectors can see the scored idea. */
 export function questionBlob(miss = {}) {
   return `${miss.question || ''} ${miss.prompt || ''} ${miss.correctAnswer || ''} ${miss.topic || ''}`;
 }
@@ -115,11 +119,13 @@ export const PLANT_PARTS = [
   },
 ];
 
+/** First matching plant part named in a stem, choice, or student answer. */
 export function findPlantPart(text) {
   const t = lower(text);
   return PLANT_PARTS.find((p) => p.keys.test(t)) || null;
 }
 
+/** True when the farm question asks which plant part does a job. */
 export function isPlantPartFunctionQuestion(miss) {
   const q = `${miss.question || ''} ${miss.prompt || ''}`;
   return has(
@@ -128,6 +134,7 @@ export function isPlantPartFunctionQuestion(miss) {
   );
 }
 
+/** The part the engine scored, else the part the stem is asking about. */
 export function focusPlantPart(miss) {
   const q = `${miss.question || ''} ${miss.prompt || ''}`;
   const c = miss.correctAnswer || '';
@@ -155,6 +162,7 @@ export function focusPlantPart(miss) {
   return findPlantPart(q);
 }
 
+/** A different plant part hiding in the student's wrong idea. */
 export function mixupPlantPart(miss, focus) {
   const s = miss.studentAnswer || '';
   if (!compactText(s)) return null;
@@ -172,6 +180,7 @@ export function mixupPlantPart(miss, focus) {
   return null;
 }
 
+/** Broad plant-science miss, used before the more specific lesson pickers. */
 export function isPlantQuestion(miss) {
   return has(
     questionBlob(miss),
@@ -179,6 +188,7 @@ export function isPlantQuestion(miss) {
   );
 }
 
+/** Photosynthesis item whose correct gas or input is carbon dioxide, light, or water. */
 export function photosynthesisInputsLesson(miss) {
   return has(
     questionBlob(miss),
@@ -186,14 +196,17 @@ export function photosynthesisInputsLesson(miss) {
   ) && has(miss.correctAnswer, /carbon dioxide|co2|sunlight|water|chlorophyll/);
 }
 
+/** Pollen moving from flower to flower, often by a bee. */
 export function pollinationLesson(miss) {
   return has(questionBlob(miss), /pollinat|pollen from|bee/);
 }
 
+/** Evaporation, condensation, precipitation, or transpiration. */
 export function waterCycleLesson(miss) {
   return has(questionBlob(miss), /evaporat|condens|precipit|transpir|water cycle/);
 }
 
+/** Flowering versus non-flowering (spores, cones, moss, fern). */
 export function floweringContrastLesson(miss) {
   const q = `${miss.question || ''} ${miss.prompt || ''}`;
   const blob = questionBlob(miss);
@@ -207,6 +220,7 @@ export function floweringContrastLesson(miss) {
   return false;
 }
 
+/** Monocot versus dicot, or the two groups of flowering plants. */
 export function diversityLesson(miss) {
   const blob = questionBlob(miss);
   if (has(blob, /monocot|dicot|cotyledon|taproot|fibrous/)) return true;
@@ -218,6 +232,7 @@ export function diversityLesson(miss) {
   return false;
 }
 
+/** Charge, capacitor, resistor, or electron items on the farm quiz. */
 export function chargeLesson(miss) {
   return has(questionBlob(miss), /capacitor|resistor|electric charge|electron|static/);
 }

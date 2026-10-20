@@ -22,6 +22,7 @@ function letterIndex(token) {
   return m[1].toUpperCase().charCodeAt(0) - 65;
 }
 
+/** Map an A–D (or True/False) grade token onto the option text the quiz displays. */
 function resolveMcqDisplay(raw, questionData = {}) {
   const trimmed = compact(raw);
   if (!trimmed) return '';
@@ -46,12 +47,14 @@ function resolveMcqDisplay(raw, questionData = {}) {
   return trimmed;
 }
 
+/** Multi-blank keys sometimes arrive only inside the grader's explanation text. */
 function fromExpectedBlanks(text) {
   const s = compact(text);
   const match = s.match(/(?:expected blanks?|blanks? are):\s*(.+)$/i);
   return match?.[1] ? compact(match[1]) : '';
 }
 
+/** Join missed-blank corrections in blank order for the quiz's correct-answer line. */
 function fromMissedBlanks(missed) {
   if (!missed || typeof missed !== 'object') return '';
   if (Array.isArray(missed)) {

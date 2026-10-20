@@ -1,5 +1,7 @@
 /**
  * Browser text-to-speech with per-word callbacks (Chrome/Edge friendly).
+ * Sage's farm-lesson voice. Rate comes from frustration; each word can
+ * light the matching token on the in-game mind map.
  */
 import {
   sageGreeting,
@@ -8,6 +10,7 @@ import {
   prepareTtsText,
 } from './sageSpokenVoice.js';
 
+/** Prefer a natural English voice so Sage sounds like a teacher, not a default beep. */
 function pickVoice() {
   if (typeof window === 'undefined' || !window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices() || [];
@@ -23,6 +26,7 @@ function pickVoice() {
   return [...voices].sort((a, b) => score(b) - score(a))[0] || voices[0];
 }
 
+/** Engine the modal uses to speak openers and map cards, with word callbacks. */
 export function createSpeechEngine({
   onWord = null,
   onStart = null,
@@ -493,6 +497,7 @@ export function isTermSpoken(term, spokenSoFar) {
   return false;
 }
 
+/** One miss card, paced by the same frustration voice as the full map tour. */
 export function buildMissCardNarration(branch, opts = {}) {
   if (!branch) return null;
   const voice = resolveSageVoice({

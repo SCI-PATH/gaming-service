@@ -21,10 +21,10 @@ describe('frustration adaptation rules', () => {
     assert.equal(high.mindMap.tone, 'support');
     assert.ok(low.shop.priceMult > high.shop.priceMult);
 
-    const busy = getShopDifficulty(10);
-    const calm = getShopDifficulty(75);
-    assert.ok(busy.maxCustomers > calm.maxCustomers);
-    assert.ok(busy.patienceDrainPerTick > calm.patienceDrainPerTick);
+    const doingWell = getShopDifficulty(10);
+    const struggling = getShopDifficulty(75);
+    assert.ok(doingWell.maxCustomers > struggling.maxCustomers);
+    assert.ok(doingWell.patienceDrainPerTick < struggling.patienceDrainPerTick);
 
     const lowVoice = resolveSageVoice({ frustrationScore: 10 });
     const highVoice = resolveSageVoice({ frustrationScore: 75 });

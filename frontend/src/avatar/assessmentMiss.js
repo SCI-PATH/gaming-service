@@ -6,6 +6,7 @@
  *
  * The assessment engine is the only source of truth for correctAnswer.
  * Catalog / regex / Groq may enrich explanations, never replace the key.
+ * Turns a farm quiz miss into the lesson the in-game Sage map displays.
  */
 import {
   SAGE_QUESTION_TYPES,
@@ -25,12 +26,14 @@ import {
 
 export { SAGE_QUESTION_TYPES, SAGE_ASSESSMENT_TYPES };
 
+/** Collapse whitespace so answer compares do not fail on spacing. */
 export function compactText(raw) {
   return String(raw ?? '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+/** Case-insensitive match of two farm answers, ignoring extra spaces. */
 export function answersEquivalent(a, b) {
   const left = compactText(a)
     .toLowerCase()
@@ -41,6 +44,7 @@ export function answersEquivalent(a, b) {
   return Boolean(left) && left === right;
 }
 
+/** Split a pipe- or comma-joined fill-in into blank parts. */
 export function splitAnswerParts(raw) {
   if (Array.isArray(raw)) {
     return raw.map((item) => compactText(item)).filter(Boolean);
@@ -55,6 +59,7 @@ export function splitAnswerParts(raw) {
   return [s];
 }
 
+/** Timeouts, blanks, and single letters are not science ideas to compare. */
 export function looksLikeNonConceptAnswer(raw) {
   const s = compactText(raw);
   if (!s) return true;
@@ -78,6 +83,7 @@ function uniqueConcepts(list) {
 }
 
 /** Assessment-engine keys for this miss — one concept per scored blank. */
+/** Concepts the engine scored, used as map nodes that must stay visible. */
 export function scoredConceptList(miss = {}) {
   const blanks = Array.isArray(miss.missedBlanks) ? miss.missedBlanks : [];
   const fromBlanks = uniqueConcepts(blanks.map((b) => b?.correctAnswer || b?.correct || b));
@@ -87,6 +93,7 @@ export function scoredConceptList(miss = {}) {
   return uniqueConcepts(splitAnswerParts(miss.correctAnswer || miss.canonicalCorrectAnswer));
 }
 
+/** Student's mix-ups that are real words, not blanks or the correct key. */
 export function studentMixupList(miss = {}) {
   const blanks = Array.isArray(miss.missedBlanks) ? miss.missedBlanks : [];
   const raw = blanks.length
@@ -97,6 +104,7 @@ export function studentMixupList(miss = {}) {
 }
 
 /** Verb-ish link from the stem immediately before each blank. */
+/** What each blank in a fill-in stem is asking for. */
 export function blankRolesFromQuestion(question) {
   const q = compactText(question);
   if (!q) return [];
@@ -305,6 +313,7 @@ export function normalizeAssessmentMiss(source = {}) {
 /**
  * One mind-map miss per question. Fill-in blanks stay on that one record.
  */
+/** One miss per wrong blank so a multi-blank farm item can teach each gap. */
 export function expandAssessmentMisses(miss) {
   if (!miss || miss.isCorrect) return [];
   if (answersEquivalent(miss.studentAnswer, miss.correctAnswer) && !miss.missedBlanks?.length) {
@@ -338,6 +347,7 @@ function questionIdentity(row = {}) {
   return compactText(row.questionId || row.question || row.prompt).toLowerCase();
 }
 
+/** Gather every miss on a quiz body, skipping items the engine marked correct. */
 export function collectAssessmentMisses(body = {}) {
   const raw = [];
   const attempts = body.attempts || body.sourceAttempts || [];
@@ -485,6 +495,7 @@ export function buildTypeAwareLesson(miss, voice = {}) {
   if (!correct) return null;
   const sage = toSageAssessmentType(miss.questionType);
   const tf = sage === SAGE_ASSESSMENT_TYPES.TrueFalse;
+  // Symbols and blanks are not a student idea, so there is nothing to compare.
   if (!tf && looksLikeSymbolicTypedAnswer(student)) return null;
   const attempt = {
     prompt: miss.question,
@@ -636,6 +647,7 @@ export function validateMindMapAgainstAssessments(map, assessments = []) {
   return { ok: true };
 }
 
+/** Typed and short-answer farm items share the free-text lesson path. */
 export function isTypedOrShort(questionType) {
   return isTypedAnswerQuestionType(questionType);
 }

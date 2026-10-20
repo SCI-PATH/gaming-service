@@ -13,6 +13,10 @@ export default function DdaResearchOverlay({
   grade = null,
   demoProfile = null,
   demoPinned = false,
+  autoplay = false,
+  autoplayStatus = '',
+  liveScore = null,
+  liveLevel = null,
   onPreviewShop = null,
   farm = {},
   shopPerformance = null,
@@ -22,6 +26,7 @@ export default function DdaResearchOverlay({
   const [shopState, setShopState] = useState(null);
   const [ddaLive, setDdaLive] = useState(null);
 
+  /** Listen to the live farm and stall so the readout matches the world, not a pinned seed. */
   useEffect(() => {
     if (!open) return undefined;
     const onShop = (payload = {}) => setShopState(payload);
@@ -48,12 +53,16 @@ export default function DdaResearchOverlay({
     null;
   const worldScore = ddaLive?.frustrationScore ?? farm.frustrationScore ?? null;
   const worldLevel = ddaLive?.frustrationLevel ?? farm.frustrationLevel ?? null;
-  const frScore = demoPinned
-    ? worldScore
-    : lastAttempt?.frustrationScore ?? worldScore;
-  const frLevel = demoPinned
-    ? worldLevel
-    : lastAttempt?.frustrationLevel ?? worldLevel;
+  const frScore = autoplay
+    ? liveScore ?? worldScore
+    : demoPinned
+      ? worldScore
+      : lastAttempt?.frustrationScore ?? worldScore;
+  const frLevel = autoplay
+    ? liveLevel ?? worldLevel
+    : demoPinned
+      ? worldLevel
+      : lastAttempt?.frustrationLevel ?? worldLevel;
   const sampleItem = 'sheep';
   const basePrice = SHOP_BASE_PRICES[sampleItem];
   const frozenPrice = shopPerformance?.frozenPrices?.[sampleItem] ?? null;
@@ -64,7 +73,11 @@ export default function DdaResearchOverlay({
       { label: 'Demo profile', value: demoProfile || 'off', kind: 'config' },
       {
         label: 'World source',
-        value: demoPinned ? 'Demo override (not a student result)' : 'Live play',
+        value: autoplay
+          ? 'Scripted answers, live score'
+          : demoPinned
+            ? 'Demo override (not a student result)'
+            : 'Live play',
         kind: 'config',
       },
       { label: 'Level', value: farm.levelId ?? '—', kind: 'measured' },
@@ -165,6 +178,7 @@ export default function DdaResearchOverlay({
       grade,
       demoProfile,
       demoPinned,
+      autoplay,
       farm,
       lastAttempt,
       frScore,
@@ -181,17 +195,23 @@ export default function DdaResearchOverlay({
   if (!open) return null;
 
   return (
-    <aside className="dda-research-overlay" aria-label="DDA research overlay">
+    <aside
+      className={`dda-research-overlay${autoplay ? ' is-autoplay' : ''}`}
+      aria-label="DDA research overlay"
+    >
       <header className="dda-research-head">
         <p className="dda-research-kicker">Research overlay</p>
         <h2>Frustration → DDA</h2>
         <p className="dda-research-note">
-          {demoPinned
-            ? 'This recording is pinned to a demo profile. The world uses that scored profile. It is stored separately and is not a real student result. Remove demoProfile to return to live adaptation.'
-            : 'Measured values come from live gameplay. Derived values use the real CSF and shop formulas.'}
+          {autoplay
+            ? autoplayStatus ||
+              'This run submits scripted answers on its own. The score, enemies, customers, and shop follow those answers. It is not a real student result.'
+            : demoPinned
+              ? 'This recording is pinned to a demo profile. The world uses that scored profile. It is stored separately and is not a real student result. Remove demoProfile to return to live adaptation.'
+              : 'Measured values come from live gameplay. Derived values use the real CSF and shop formulas.'}
         </p>
       </header>
-      {onPreviewShop ? (
+      {onPreviewShop && !autoplay ? (
         <button type="button" className="dda-research-preview" onClick={onPreviewShop}>
           Preview shop prices
         </button>

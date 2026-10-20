@@ -7,6 +7,8 @@
  *
  * Enable with URL params, for example:
  *   ?demoProfile=smart&demoGrade=6&researchOverlay=1
+ *   ?demoAct=shop&demoGrade=6
+ *     Grade 6 only: after the level, buy unlocks and show them on the next farm.
  */
 
 import { PERFORMANCE_CATEGORIES } from './performanceCategories.js';
@@ -33,18 +35,21 @@ export const DEMO_PROFILES = Object.freeze({
     label: 'Smart / Low Frustration',
     performanceCategory: PERFORMANCE_CATEGORIES.SMART,
     targetFrustrationLevel: FRUSTRATION_LEVELS.LOW,
-    /** Scripted answers: mostly correct and comfortably paced. */
+    /**
+     * Scripted answers: mostly correct and comfortably paced.
+     * One deliberate miss so Sage still appears, in the upbeat tone.
+     */
     attempts: Object.freeze([
       { wasCorrect: true, responseTimeMs: 4500 },
       { wasCorrect: true, responseTimeMs: 5200 },
       { wasCorrect: true, responseTimeMs: 4800 },
-      { wasCorrect: true, responseTimeMs: 6100 },
+      { wasCorrect: false, responseTimeMs: 8000 },
       { wasCorrect: true, responseTimeMs: 5500 },
       { wasCorrect: true, responseTimeMs: 4900 },
-      { wasCorrect: true, responseTimeMs: 7000 },
       { wasCorrect: true, responseTimeMs: 5300 },
       { wasCorrect: true, responseTimeMs: 5800 },
       { wasCorrect: true, responseTimeMs: 5000 },
+      { wasCorrect: true, responseTimeMs: 4700 },
     ]),
   }),
   intermediate: Object.freeze({
@@ -53,16 +58,16 @@ export const DEMO_PROFILES = Object.freeze({
     performanceCategory: PERFORMANCE_CATEGORIES.MEDIUM,
     targetFrustrationLevel: FRUSTRATION_LEVELS.MODERATE,
     attempts: Object.freeze([
-      { wasCorrect: true, responseTimeMs: 9000 },
-      { wasCorrect: false, responseTimeMs: 14000 },
-      { wasCorrect: true, responseTimeMs: 11000 },
-      { wasCorrect: true, responseTimeMs: 16000 },
-      { wasCorrect: false, responseTimeMs: 18000 },
-      { wasCorrect: true, responseTimeMs: 12000 },
-      { wasCorrect: false, responseTimeMs: 15000 },
-      { wasCorrect: true, responseTimeMs: 10000 },
-      { wasCorrect: true, responseTimeMs: 13000 },
-      { wasCorrect: true, responseTimeMs: 11000 },
+      { wasCorrect: true, responseTimeMs: 8000 },
+      { wasCorrect: false, responseTimeMs: 16000 },
+      { wasCorrect: false, responseTimeMs: 20000 },
+      { wasCorrect: true, responseTimeMs: 14000 },
+      { wasCorrect: false, responseTimeMs: 26000 },
+      { wasCorrect: false, responseTimeMs: 28000 },
+      { wasCorrect: true, responseTimeMs: 15000 },
+      { wasCorrect: false, responseTimeMs: 24000 },
+      { wasCorrect: false, responseTimeMs: 22000 },
+      { wasCorrect: false, responseTimeMs: 20000 },
     ]),
   }),
   weak: Object.freeze({
@@ -71,20 +76,21 @@ export const DEMO_PROFILES = Object.freeze({
     performanceCategory: PERFORMANCE_CATEGORIES.WEAK,
     targetFrustrationLevel: FRUSTRATION_LEVELS.HIGH,
     attempts: Object.freeze([
-      { wasCorrect: false, responseTimeMs: 22000 },
-      { wasCorrect: false, responseTimeMs: 25000 },
-      { wasCorrect: true, responseTimeMs: 19000 },
-      { wasCorrect: false, responseTimeMs: 28000 },
+      { wasCorrect: false, responseTimeMs: 7000 },
+      { wasCorrect: false, responseTimeMs: 8000 },
+      { wasCorrect: false, responseTimeMs: 18000 },
       { wasCorrect: false, responseTimeMs: 24000 },
-      { wasCorrect: true, responseTimeMs: 21000 },
-      { wasCorrect: false, responseTimeMs: 26000 },
-      { wasCorrect: true, responseTimeMs: 20000 },
-      { wasCorrect: false, responseTimeMs: 23000 },
-      { wasCorrect: true, responseTimeMs: 18000 },
+      { wasCorrect: false, responseTimeMs: 30000 },
+      { wasCorrect: false, responseTimeMs: 36000 },
+      { wasCorrect: false, responseTimeMs: 42000 },
+      { wasCorrect: false, responseTimeMs: 48000 },
+      { wasCorrect: false, responseTimeMs: 52000 },
+      { wasCorrect: false, responseTimeMs: 56000 },
     ]),
   }),
 });
 
+/** Map URL words (low, medium, high, weak) onto smart, intermediate, or weak. */
 export function normalizeDemoProfile(raw) {
   const key = String(raw || '')
     .trim()
@@ -97,12 +103,22 @@ export function normalizeDemoProfile(raw) {
   return null;
 }
 
+/**
+ * Read demoGrade, demoProfile, and demoAct from the URL.
+ * A shop act with no profile records the smart grade-6 unlock path.
+ */
 export function readDemoLaunch(search = '') {
   const params =
     typeof search === 'string'
       ? new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
       : search;
-  const profile = normalizeDemoProfile(params.get('demoProfile') || params.get('profile'));
+  const actRaw = String(params.get('demoAct') || params.get('demoScript') || '')
+    .trim()
+    .toLowerCase();
+  const act = actRaw === 'shop' || actRaw === 'unlock' || actRaw === 'buy' ? 'shop' : 'play';
+  let profile = normalizeDemoProfile(params.get('demoProfile') || params.get('profile'));
+  // Grade 6 shop recordings default to the smart profile when none is named.
+  if (!profile && act === 'shop') profile = 'smart';
   const hasDemoGrade = params.has('demoGrade');
   const explicitDemoGrade = normalizeStudentGrade(params.get('demoGrade'));
   const isolated = Boolean(profile) || hasDemoGrade;
@@ -116,6 +132,7 @@ export function readDemoLaunch(search = '') {
     enabled: Boolean(profile),
     isolated,
     profile,
+    act,
     grade: isolated ? grade ?? 6 : explicitDemoGrade,
     researchOverlay,
     demoSessionId,
@@ -148,8 +165,8 @@ export function buildDemoStudent(launch) {
 }
 
 /**
- * World seed from the real question scorer. Not a hardcoded DDA result.
- * Present only while a demo profile is pinning the recording.
+ * What this profile's script measures through the real question scorer.
+ * Recordings do not pin the world to this seed — live answers move the score.
  */
 export function demoAdaptationSeed(profileId) {
   const pipeline = simulateDemoProfilePipeline(profileId);
@@ -173,10 +190,12 @@ export function demoAdaptationSeed(profileId) {
 let activeLaunch = null;
 let activeSeed = null;
 
+/** Measured seed for the active recording, or null outside a demo URL. */
 export function readDemoAdaptationSeed() {
   return activeSeed;
 }
 
+/** Launch parsed for this page load. */
 export function readActiveDemoLaunch() {
   return activeLaunch;
 }
@@ -188,19 +207,32 @@ export function readActiveDemoLaunch() {
 export function installDemoLaunch(search = '') {
   const launch = readDemoLaunch(search);
   activeLaunch = launch;
+  // A normal student URL restores whoever was held aside for a previous demo.
   if (!launch.isolated) {
     activeSeed = null;
     if (isDemoStudent()) restoreHeldStudent();
     return { launch, seed: null, student: getCurrentStudent() };
   }
   const student = beginDemoStudent(buildDemoStudent(launch));
-  activeSeed = launch.profile ? demoAdaptationSeed(launch.profile) : null;
+  const seeded = launch.profile ? demoAdaptationSeed(launch.profile) : null;
+  activeSeed = seeded ? { ...seeded, pinned: false, autoplay: true } : null;
   return { launch, seed: activeSeed, student };
+}
+
+/** True while a demo profile is playing itself for a recording. */
+export function isDemoAutoplay() {
+  return Boolean(activeLaunch?.profile && activeSeed?.autoplay && !activeSeed?.pinned);
+}
+
+/** Grade 6 shop recording: buy unlocks, then show them on the next farm level. */
+export function isDemoShopRun() {
+  return isDemoAutoplay() && activeLaunch?.act === 'shop';
 }
 
 /** Performance object for the real unlock-shop price function. Purchases stay disabled. */
 export function demoShopPerformance(seed, live = {}) {
   const pinned = seed?.pinned ? seed : null;
+  // A pinned seed freezes the price preview. Live play uses the score from real answers.
   const frustrationScore = pinned
     ? pinned.frustrationScore
     : Number(live.frustrationScore) || 0;
@@ -215,6 +247,7 @@ export function demoShopPerformance(seed, live = {}) {
     frustrationLevel,
     band,
     performanceCategory: band,
+    performanceBand: band,
     gameplayBand: band,
     preview: true,
     demoOverride: Boolean(pinned),
@@ -234,19 +267,40 @@ export function simulateDemoProfilePipeline(profileId, { levelId = 1, sessionId 
   const rows = [];
   let correct = 0;
   let incorrect = 0;
+  let consecutive = 0;
+  let correctStreak = 0;
+  let timeSum = 0;
+  let timeCount = 0;
 
   profile.attempts.forEach((attempt, index) => {
-    if (attempt.wasCorrect) correct += 1;
-    else incorrect += 1;
+    if (attempt.wasCorrect) {
+      correct += 1;
+      consecutive = 0;
+      correctStreak += 1;
+    } else {
+      incorrect += 1;
+      consecutive += 1;
+      correctStreak = 0;
+    }
+    const sec = Number(attempt.responseTimeMs) / 1000;
+    const baseline = timeCount > 0 ? timeSum / timeCount : sec;
+    timeSum += sec;
+    timeCount += 1;
     const scored = scoreQuestionAttempt({
       wasCorrect: attempt.wasCorrect,
       responseTimeMs: attempt.responseTimeMs,
       metrics: {
-        consecutiveIncorrect: attempt.wasCorrect
-          ? 0
-          : Math.min(3, incorrect),
-        retries: attempt.wasCorrect ? 0 : 1,
-        errorRate: incorrect / (correct + incorrect),
+        correct_answers: correct,
+        incorrect_answers: incorrect,
+        consecutive_fails: consecutive,
+        recent_correct_streak: correctStreak,
+        retries: attempt.wasCorrect ? 0 : Math.min(4, incorrect),
+        same_concept_misses: incorrect,
+        concept_miss_count: incorrect,
+        // Only the weak profile spends hints, and only after a second miss.
+        hint_count: profile.id === 'weak' && incorrect >= 2 ? 3 : 0,
+        time_per_question_avg_sec: sec,
+        previous_avg_answer_time_sec: baseline,
       },
       previousSmoothed: smoothed,
     });
@@ -284,6 +338,7 @@ export function simulateDemoProfilePipeline(profileId, { levelId = 1, sessionId 
   };
 }
 
+/** One planned recording: grade 6–9, profile, video type, and that grade's featured challenge. */
 export function buildDemoRecordingSlot({
   grade,
   profileId,

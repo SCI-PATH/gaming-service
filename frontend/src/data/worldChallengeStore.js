@@ -37,18 +37,22 @@ function writeAll(data) {
   }
 }
 
+/** True when this sprite in the cluster was already picked up. */
 export function isPickupCollected(nodeId) {
   return Boolean(readAll().pickups[nodeId]);
 }
 
+/** True after the cluster’s quiz has been completed for this student. */
 export function isWorldChallengeComplete(challengeId) {
   return Boolean(readAll().tasks[challengeId]?.done);
 }
 
+/** Saved gather/done record for one cluster, or a fresh empty record. */
 export function getTaskRecord(challengeId) {
   return readAll().tasks[challengeId] || { done: false, collected: {} };
 }
 
+/** How many of one item were collected, or the total across items when no key is given. */
 export function getCollectedCount(challengeId, itemKey = null) {
   const rec = getTaskRecord(challengeId);
   const collected = rec.collected || {};
@@ -56,6 +60,7 @@ export function getCollectedCount(challengeId, itemKey = null) {
   return Object.values(collected).reduce((sum, n) => sum + (Number(n) || 0), 0);
 }
 
+/** Remember one sprite pickup and bump that item’s count on the parent cluster. */
 export function markPickupCollected(nodeId, { taskId, itemKey } = {}) {
   const all = readAll();
   all.pickups[nodeId] = { at: Date.now(), taskId, itemKey };
@@ -71,11 +76,13 @@ export function markPickupCollected(nodeId, { taskId, itemKey } = {}) {
   return all.tasks[taskId] || null;
 }
 
+/** Cluster is gathered or already marked done. */
 export function isTaskGathered(challengeId) {
   const rec = getTaskRecord(challengeId);
   return Boolean(rec.gathered) || Boolean(rec.done);
 }
 
+/** Mark the cluster gathered and stamp each listed sprite as collected. */
 export function markTaskGathered(challengeId, { itemCounts = {}, nodeIds = [] } = {}) {
   const all = readAll();
   const rec = all.tasks[challengeId] || { done: false, collected: {} };
@@ -92,6 +99,7 @@ export function markTaskGathered(challengeId, { itemCounts = {}, nodeIds = [] } 
   return rec;
 }
 
+/** Finish the cluster after its science quiz so the next farm-life action can appear. */
 export function markWorldChallengeComplete(challengeId, extra = {}) {
   const all = readAll();
   const prev = all.tasks[challengeId] || { done: false, collected: {} };

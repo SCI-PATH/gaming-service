@@ -22,6 +22,7 @@ function emptyProgress() {
   };
 }
 
+/** Resume cursor for this student. A corrupt save starts at level 1 with no cash. */
 export function loadFarmProgress() {
   try {
     const raw = localStorage.getItem(storageKey());
@@ -39,6 +40,7 @@ export function loadFarmProgress() {
   }
 }
 
+/** Merge a patch into the saved cursor. Omitted cash keeps the previous wallet. */
 export function saveFarmProgress(patch = {}) {
   const prev = loadFarmProgress();
   const next = {
@@ -77,6 +79,7 @@ export function markLevelCompleted(levelId, extras = {}) {
   });
 }
 
+/** True after any finished level, or once the cursor has left level 1. */
 export function hasSavedFarmProgress() {
   const progress = loadFarmProgress();
   return progress.highestCompletedLevel > 0 || progress.currentLevelId > 1;
@@ -85,6 +88,7 @@ export function hasSavedFarmProgress() {
 /** Merge a launch/API cursor into local progress without going backwards. */
 export function applyRemoteFarmProgress(remote = {}) {
   const local = loadFarmProgress();
+  // Engagement snapshot replaces the level cursor. Cash only moves up.
   if (remote.authoritative) {
     return saveFarmProgress({
       currentLevelId: Math.max(1, Number(remote.currentLevel ?? remote.currentLevelId) || 1),
@@ -96,6 +100,7 @@ export function applyRemoteFarmProgress(remote = {}) {
       levelSource: 'engagement',
     });
   }
+  // A chapter or Neon cursor already won. Do not let an older remote walk it back.
   if (local.levelSource === 'engagement' || local.levelSource === 'lesson') {
     return local;
   }
@@ -146,6 +151,7 @@ export function applyChapterFarmLevel(levelId, cash = null, lessonId = '') {
 
   let currentLevelId;
   if (inflated) {
+    // The saved cursor was a lesson number, not a farm level.
     currentLevelId = 1;
   } else if (fromLessonOrdinal || requested === 1) {
     const saved = Math.max(1, Number(prev.currentLevelId) || 1);

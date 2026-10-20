@@ -1,6 +1,8 @@
 /**
  * Build one comprehensive mind map from ALL incorrect quiz attempts.
  * Each miss = one main branch (like the hand-drawn reference layout).
+ * In-game Sage map for the farm lesson. Frustration can shorten branches.
+ * This builder does not call the learning-path engine.
  */
 import { bandFromMastery, getMasteryForLevelStart } from '../data/masteryModel.js';
 import { DDA_BANDS } from '../data/dda.js';
@@ -41,6 +43,7 @@ const BRANCH_COLORS = [
   { key: 'slate', stroke: '#5a6570', fill: '#e8ecef', accent: '#3d4650' },
 ];
 
+/** Prompt, choices, and answers pulled off one farm question object. */
 export function extractQuestionFacts(questionData) {
   if (!questionData) return null;
   const fillIn = isFillInQuestionType(questionData);
@@ -115,6 +118,7 @@ export function extractQuestionFacts(questionData) {
   };
 }
 
+/** One miss record: what the student chose and what the engine scored. */
 export function buildMissAttempt(questionData, selectedText = null) {
   const normalized = normalizeSageMindMapInput({
     questionData,
@@ -273,6 +277,7 @@ function collectAttempts({
   });
 }
 
+/** Depth and wording for the map. A frustration level overrides mastery tone. */
 function mindMapProfile({ mastery, band, frustrationScore, frustrationLevel } = {}) {
   // Frustration personalization takes priority when available (CSF adaptation).
   const frScore =
@@ -749,6 +754,7 @@ function buildEmptyTopicMap(topic, prompt, profile = null, masteryInfo = null) {
   };
 }
 
+/** Topic with the most farm misses, used when the map needs a single root. */
 export function pickTopMisconceptionTopic(misconceptions = []) {
   if (!Array.isArray(misconceptions) || misconceptions.length === 0) return null;
   const sorted = [...misconceptions].sort(
@@ -757,6 +763,7 @@ export function pickTopMisconceptionTopic(misconceptions = []) {
   return resolveTopicKey(sorted[0]?.topic) || sorted[0]?.topic || null;
 }
 
+/** Short text of the in-game map for the mentor payload. Not a second map service. */
 export function summarizeMindMapForLlm(map) {
   if (!map) return null;
   return {

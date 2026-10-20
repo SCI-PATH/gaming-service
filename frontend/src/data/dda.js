@@ -48,23 +48,27 @@ export function scoreAttempt({ wasCorrect, responseTimeMs }) {
   const t = Math.max(0, Number(responseTimeMs) || 0);
 
   if (wasCorrect) {
+    // Fast correct answers score highest. A slow correct answer still passes.
     if (t <= DDA_CONFIG.fastMs) return 95;
     if (t <= DDA_CONFIG.moderateMs) return 75;
     if (t <= DDA_CONFIG.slowMs) return 58;
     return 48;
   }
 
+  // A very fast wrong answer looks like a guess and scores lower than a slower miss.
   if (t <= 2500) return 22;
   if (t <= DDA_CONFIG.moderateMs) return 30;
   return 18;
 }
 
+/** Mean of attempt scores. An empty window sits in the medium band (55). */
 export function averageScore(scores) {
   if (!scores?.length) return 55;
   const sum = scores.reduce((a, b) => a + b, 0);
   return sum / scores.length;
 }
 
+/** Smart at 72+, weak at 40 or below, otherwise medium. Empty history stays medium. */
 export function classifyPerformance(attemptScores) {
   if (!attemptScores?.length) return DDA_BANDS.MEDIUM;
   const avg = averageScore(attemptScores);
@@ -105,10 +109,12 @@ export function adjustTimeTarget(previousAvgMs, band) {
   );
 }
 
+/** Correct plus incorrect. The unlock shop opens after DDA_CONFIG.maxQuestions (10). */
 export function questionsAnswered(correct, incorrect) {
   return (correct || 0) + (incorrect || 0);
 }
 
+/** True once this farm level has used its science-question budget. */
 export function isLevelQuestionCapReached(
   correct,
   incorrect,
@@ -126,6 +132,7 @@ export function isCalibrated(
   return isLevelQuestionCapReached(correct, incorrect, minQuestions);
 }
 
+/** HUD line: questions left on this level and the response-time target. */
 export function goalTextForQuestions(answered, maxQuestions, targetMs) {
   const remaining = Math.max(0, maxQuestions - answered);
   const targetSec = (targetMs / 1000).toFixed(1);
@@ -137,6 +144,7 @@ export function goalTextForQuestions(answered, maxQuestions, targetMs) {
   } (${answered}/${maxQuestions}) · target avg ${targetSec}s`;
 }
 
+/** Band label plus the 10-question target. Strong is challenge mode; emerging is supported. */
 export function goalTextForTarget(targetMs, band) {
   const targetSec = (targetMs / 1000).toFixed(1);
   const bandLabel =
@@ -148,12 +156,14 @@ export function goalTextForTarget(targetMs, band) {
   return `${bandLabel}: finish ${DDA_CONFIG.maxQuestions} questions · target avg ${targetSec}s`;
 }
 
+/** Strong students earn +2 per crop. Emerging students earn 2 less, never under 5. */
 export function cropValueForBand(baseValue, band) {
   if (band === DDA_BANDS.STRONG) return baseValue + 2;
   if (band === DDA_BANDS.EMERGING) return Math.max(5, baseValue - 2);
   return baseValue;
 }
 
+/** Response time as seconds with one decimal, for lobby and quest text. */
 export function formatResponseTime(ms) {
   const sec = Math.max(0, ms) / 1000;
   return `${sec.toFixed(1)}s`;

@@ -87,6 +87,7 @@ export default function ResearchDashboard({
     .map((row) => `${row.levelId}:${row.savedAt || ''}`)
     .join('|')}`;
 
+  /** Seed charts from saved lessons, then refresh them as this farm session answers questions. */
   useEffect(() => {
     seedHistoryFromLessons(lessonProgress, liveScore);
     setHistoryTick((n) => n + 1);

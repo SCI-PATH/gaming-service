@@ -28,6 +28,7 @@ export const ASSESSMENT_ENGINE = Object.freeze({
   API_PREFIX: '/api/v1/assessment-engine',
 });
 
+/** Order the quiz client tries: env override, same-origin proxy, deployed, then localhost. */
 export function getAssessmentBaseCandidates() {
   const override = envBase('VITE_ASSESSMENT_API_BASE');
   const sameOrigin = ASSESSMENT_ENGINE.SAME_ORIGIN_BASE;
@@ -46,6 +47,7 @@ export function getAssessmentBaseCandidates() {
   return [...new Set(bases.filter(Boolean))];
 }
 
+/** Paths the farm quiz session calls: post-lesson, next, answer, terminate. */
 export const ASSESSMENT_PATHS = Object.freeze({
   postLesson: () => `${ASSESSMENT_ENGINE.API_PREFIX}/quizzes/post-lesson`,
   next: (sessionId) =>

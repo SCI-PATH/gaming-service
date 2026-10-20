@@ -18,6 +18,7 @@ export default function MotivationalVideoModal({
   const [choiceId, setChoiceId] = useState(null);
   const [choiceReply, setChoiceReply] = useState(null);
 
+  /** Rebuild the story from this level's frustration each time App opens the modal. */
   useEffect(() => {
     if (!open) {
       setSuggestion(null);

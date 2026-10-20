@@ -58,6 +58,7 @@ function aptitudeStorageKey(studentId) {
   return `${APTITUDE_BASE_KEY}__${studentId}`;
 }
 
+/** Aptitude blob saved for this student, or null. First visits use it before any farm level. */
 export function readStoredAptitudeResult(studentId) {
   if (!studentId) return null;
   try {
@@ -70,6 +71,7 @@ export function readStoredAptitudeResult(studentId) {
   }
 }
 
+/** Persist an aptitude result so the next lobby open keeps the same time target. */
 export function saveStoredAptitudeResult(studentId, payload) {
   if (!studentId || !payload) return null;
   const record = {
@@ -122,6 +124,10 @@ export function createDefaultMockAptitudeForStudent(student = {}) {
   };
 }
 
+/**
+ * Seed a mock aptitude only for a first visit.
+ * Students who already have farm history, and non-mock saves, are left alone.
+ */
 export function ensureMockAptitudeFallback(student) {
   if (!USE_MOCK_APTITUDE_FALLBACK || !student?.id || hasFarmLevelHistory()) {
     return null;
@@ -181,6 +187,7 @@ export function masteryFromAptitudePerformance(performance = {}) {
   const category = String(
     performance.placementCategory || performance.category || '',
   ).toUpperCase();
+  // Named placement wins over raw answer counts.
   if (category && PLACEMENT_MASTERY[category] != null) {
     return PLACEMENT_MASTERY[category];
   }
@@ -205,6 +212,7 @@ export function masteryFromAptitudePerformance(performance = {}) {
 export function timeTargetFromAptitudePerformance(performance = {}, mastery = null) {
   const d = performance.aptitudeData || performance;
   const avgSec = Number(d.averageAnswerTime);
+  // A measured average becomes the next level's response-time target.
   if (avgSec > 0) {
     return clampTargetMs(avgSec * 1000);
   }
@@ -214,13 +222,19 @@ export function timeTargetFromAptitudePerformance(performance = {}, mastery = nu
   return bandTimeTarget(bandFromMastery(resolvedMastery));
 }
 
+/** True when mastery records or a saved farm cursor already exist. */
 export function hasFarmLevelHistory() {
   return getAllMasteryLevelRecords().length > 0 || hasSavedFarmProgress();
 }
 
+/**
+ * Level the lobby should open.
+ * A learning-path launch corrects a cursor that was stored as the lesson number.
+ */
 export function resolveCurrentLevelId() {
   const saved = loadFarmProgress();
   const fromSaved = Math.max(1, Number(saved?.currentLevelId) || 1);
+  // Chapter launch: keep the farm cursor, but undo a lesson-ordinal level.
   if (isLearningPathLinked()) {
     if (saved.levelSource === 'engagement') return fromSaved;
     const level = displayFarmLevel(fromSaved, getChapterLaunch().lessonId);
@@ -240,6 +254,7 @@ export function resolveCurrentLevelId() {
   return Math.max(1, fromMastery, fromSaved);
 }
 
+/** Pull the Neon farm cursor into local progress when the student id is known. */
 export async function hydrateFarmProgressFromEngagement(studentId) {
   if (!studentId) return loadFarmProgress();
   const remote = await fetchEngagementStudent(studentId);
@@ -386,6 +401,7 @@ export function resolveLobbyProgress(student, farm = {}) {
   const targetMs = prior.timeTargetMs ?? DDA_CONFIG.midTargetMs;
   const targetLabel = formatResponseTime(targetMs);
 
+  // No history and no aptitude yet — lobby stays on a getting-ready card.
   if (phase === 'needs_aptitude') {
     return {
       phase,
@@ -404,6 +420,7 @@ export function resolveLobbyProgress(student, farm = {}) {
     };
   }
 
+  // First visit with a baseline: level 1, time target from aptitude, no question progress.
   if (phase === 'aptitude_ready') {
     return {
       phase,
@@ -446,6 +463,7 @@ export function resolveLobbyProgress(student, farm = {}) {
   };
 }
 
+/** Cash, mastery, crop, and the 10-question target the farm scene starts from. */
 export function farmBaselinesFromPrior(prior, levelId = 1) {
   const level = getFarmLevel(levelId);
   const mastery = prior?.mastery ?? 0.5;
@@ -507,6 +525,7 @@ export async function bootstrapStudentProgress(student) {
     ensureAptitudeBaselineApplied(student);
 
     const remote = await fetchRemoteAptitudeStatus(student.id);
+    // Remote placement overrides the mock seed before the farm cursor is read.
     if (remote) {
       saveStoredAptitudeResult(student.id, remote);
       applyAptitudeBaseline(student, remote);
@@ -515,6 +534,7 @@ export async function bootstrapStudentProgress(student) {
 
   await hydrateFarmProgressFromEngagement(student.id);
   const resume = await fetchLessonResume(student.id, getChapterLaunch().lessonId);
+  // A saved lesson checkpoint is authoritative for which farm level to reopen.
   if (resume?.levelNumber >= 1) {
     saveFarmProgress({
       currentLevelId: Math.max(1, Number(resume.levelNumber) || 1),

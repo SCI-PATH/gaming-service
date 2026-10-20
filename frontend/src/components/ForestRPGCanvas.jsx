@@ -7,6 +7,7 @@ import {
   FARM_EVENTS,
 } from './ForestGameBridge.js';
 
+/** Typed quiz fields must receive letters. Movement keys stay with the farm. */
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -28,6 +29,7 @@ function isTypingTarget(el) {
   return false;
 }
 
+/** Same overlays App locks. Walking is ignored while any of them is in the DOM. */
 function overlayBlocksWalk() {
   return Boolean(
     document.querySelector('.science-quiz-overlay') ||
@@ -74,6 +76,7 @@ export default function ForestRPGCanvas({
     onChallengesState,
   };
 
+  /** Create the Phaser game once and fan its events out to App. */
   useEffect(() => {
     const parent = hostRef.current;
     if (!parent || gameRef.current) return undefined;
@@ -476,14 +479,17 @@ export default function ForestRPGCanvas({
   );
 }
 
+/** App and the quiz emit farm actions through the shared bridge. */
 export function emitPlantCrop() {
   ForestGameBridge.emit(FARM_EVENTS.PLANT_CROP);
 }
 
+/** Forward a correct quiz result. The quiz modal emits SCIENCE_CORRECT, which the bridge aliases here. */
 export function emitScienceQuizSuccess(payload) {
   ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_SUCCESS, payload);
 }
 
+/** Tell Phaser the science action failed so the farm can react. */
 export function emitScienceQuizFailure(payload) {
   ForestGameBridge.emit(FARM_EVENTS.SCIENCE_QUIZ_FAILURE, payload);
 }
@@ -498,18 +504,22 @@ export function emitPurchaseUnlock(payload) {
   ForestGameBridge.emit(FARM_EVENTS.PURCHASE_UNLOCK, payload);
 }
 
+/** Pause the farm scene while the unlock shop is open. */
 export function emitUnlockShopOpen() {
   ForestGameBridge.emit(FARM_EVENTS.UNLOCK_SHOP_OPEN);
 }
 
+/** Resume the farm after the unlock shop closes. */
 export function emitUnlockShopClose() {
   ForestGameBridge.emit(FARM_EVENTS.UNLOCK_SHOP_CLOSE);
 }
 
+/** Customer-shop result from the React stall panel back into Phaser. */
 export function emitFarmCustomerShopResult(payload) {
   ForestGameBridge.emit(FARM_EVENTS.FARM_CUSTOMER_SHOP_RESULT, payload);
 }
 
+/** Ask Phaser to unload carried harvest at the stall. Customer sales run in the farm scene. */
 export function emitFarmShopUnload(payload) {
   ForestGameBridge.emit(FARM_EVENTS.FARM_SHOP_UNLOAD, payload);
 }
@@ -537,14 +547,17 @@ export function emitStartItemChallenge(payload) {
   ForestGameBridge.emit(FARM_EVENTS.START_ITEM_CHALLENGE, payload);
 }
 
+/** Push the signed-in student's frustration into the running farm scene. */
 export function emitSyncStudentState(payload) {
   ForestGameBridge.emit(FARM_EVENTS.SYNC_STUDENT_STATE, payload);
 }
 
+/** Pause leave and game-over continue: back to the menu without destroying the game. */
 export function emitReturnToMenu() {
   ForestGameBridge.emit(FARM_EVENTS.RETURN_TO_MENU);
 }
 
+/** Ask Phaser to write the current run before pause, Sage, or logout. */
 export function emitSaveFarmRun() {
   ForestGameBridge.emit(FARM_EVENTS.SAVE_FARM_RUN);
 }

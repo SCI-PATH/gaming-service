@@ -105,6 +105,7 @@ export function IconChevronRight({ size = 16 }) {
   );
 }
 
+/** Lobby and header icon buttons. The label is both the accessible name and the caption. */
 export function GameIconButton({
   label,
   onClick,

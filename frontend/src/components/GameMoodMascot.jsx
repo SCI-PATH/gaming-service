@@ -7,6 +7,7 @@ import { FARM_EVENTS, ForestGameBridge } from '../game/ForestGameBridge.js';
 export default function GameMoodMascot() {
   const [mood, setMood] = useState('ready');
 
+  /** Follows the same SCIENCE_CORRECT / SCIENCE_INCORRECT events the quiz modal emits. */
   useEffect(() => {
     const onCorrect = () => {
       setMood('happy');

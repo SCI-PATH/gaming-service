@@ -41,6 +41,7 @@ export default function FarmCustomerShopModal({
     [customers],
   );
 
+  /** Tell the parent the stall opened. Unload and sales still happen in the Phaser shop. */
   useEffect(() => {
     if (!open) {
       setMessage(null);

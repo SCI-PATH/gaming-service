@@ -17,6 +17,8 @@ export {
 } from './levelMapLabels.js';
 
 /**
+ * Quest-map pins for this farm level. The plan is grade-scoped (Grades 6–9)
+ * so the map shows that grade’s crops, animals, and cleaning jobs.
  * @param {number} levelId
  * @param {{ activeCropIndex?: number, activeCropId?: string, activeCropName?: string }} [progress]
  */

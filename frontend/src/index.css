@@ -1210,6 +1210,10 @@ body {
   box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.25);
 }
 
+.unlock-shop-item.is-demo-pick {
+  outline: 4px solid #e8d078;
+  background: rgba(232, 208, 120, 0.16);
+}
 .unlock-shop-item.is-owned {
   opacity: 0.72;
 }
@@ -10085,6 +10089,119 @@ button.farm-map-bed {
 
 
 /* Demonstration-only DDA research overlay */
+.demo-record-banner {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 40;
+  width: min(280px, calc(100vw - 24px));
+  pointer-events: none;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(8, 18, 12, 0.78);
+  color: #f4f7f2;
+  border: 1px solid rgba(232, 208, 120, 0.55);
+}
+.demo-record-kicker {
+  margin: 0 0 2px;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e8d078;
+}
+.demo-record-score {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.demo-record-score span {
+  margin-left: 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #d5e4d6;
+}
+.demo-record-banner ul {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 900px) {
+  .demo-record-banner ul {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.demo-record-banner li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.demo-record-banner li span {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9bb89f;
+}
+.demo-record-banner li strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.demo-record-status {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: #f3e7b0;
+}
+.sage-tone-banner {
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(232, 208, 120, 0.16);
+  border: 1px solid rgba(232, 208, 120, 0.7);
+  color: #f8f1d2;
+}
+.sage-tone-banner strong {
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+.sage-tone-banner span {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+.science-quiz-input.is-demo-pick,
+.science-quiz-option.is-demo-pick {
+  outline: 4px solid #e8d078;
+  background: rgba(232, 208, 120, 0.28);
+  transform: scale(1.03);
+}
+.science-quiz-answer-typed {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(232, 208, 120, 0.2);
+  color: #f8f1d2;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.dda-research-overlay.is-autoplay {
+  width: min(420px, calc(100vw - 24px));
+  font-size: 0.95rem;
+  z-index: 70;
+}
+.dda-research-overlay.is-autoplay .dda-research-list li strong {
+  max-width: none;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+}
+
 .dda-research-overlay {
   position: fixed;
   right: 12px;

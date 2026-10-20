@@ -18,6 +18,7 @@ export function GameCanvasLoading() {
 }
 
 /** Compact progress shortcut shown during farm play. */
+/** Header shortcut into the research dashboard while a farm level is running. */
 export function GameProgressButton({ onClick, progressPct = 0 }) {
   return (
     <button type="button" className="game-progress-btn" onClick={onClick} title="Research dashboard">

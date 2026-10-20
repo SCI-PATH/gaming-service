@@ -8,6 +8,7 @@ export default function LevelRemediationModal({
   onReviewMindMap,
   onReturnToPath,
 }) {
+  /** onReviewMindMap opens Sage; onPracticeAgain asks App to restart this level. */
   if (!open || !decision) return null;
   const mastery = Number(decision.masteryPercentage);
   const masteryLabel = Number.isFinite(mastery)

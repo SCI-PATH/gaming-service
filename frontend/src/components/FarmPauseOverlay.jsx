@@ -7,6 +7,7 @@ export default function FarmPauseOverlay({
   onResume,
   onLeave,
 }) {
+  /** open is set by App. The overlay class is one ForestRPGCanvas checks before it walks. */
   if (!open) return null;
 
   return (

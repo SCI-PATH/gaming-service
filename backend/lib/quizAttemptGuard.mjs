@@ -8,6 +8,7 @@ import {
   frustrationLevelFromScore,
 } from '../../frontend/src/data/frustrationModel.js';
 
+/** Accept a quiz timing, or reject a negative one. Caps at two hours. */
 export function normalizeResponseMs(value) {
   if (value == null || value === '') return { ok: true, responseMs: null };
   const n = Number(value);
@@ -17,6 +18,7 @@ export function normalizeResponseMs(value) {
   return { ok: true, responseMs: Math.round(Math.min(n, 2 * 60 * 60 * 1000)) };
 }
 
+/** Recompute frustration on the server from timing and this answer. Client scores are unused. */
 export function scoreServerFrustration(body = {}, responseMs = null) {
   const metrics =
     body.metrics && typeof body.metrics === 'object' ? { ...body.metrics } : {};

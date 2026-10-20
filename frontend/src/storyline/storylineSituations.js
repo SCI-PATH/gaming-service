@@ -456,10 +456,12 @@ export const SITUATIONS = {
   },
 };
 
+/** True when the id is one of the eight farm problem scenes. */
 export function isSituationId(id) {
   return SITUATION_IDS.includes(String(id || ''));
 }
 
+/** Guess a farm problem from story text. Longer keyword hits count more; otherwise the beat type picks a default. */
 export function inferSituation(text, challengeType) {
   const hay = String(text || '').toLowerCase();
   let best = null;
@@ -475,6 +477,7 @@ export function inferSituation(text, challengeType) {
     }
   }
   if (best && bestScore > 0) return best;
+  // No keyword hit — obstacle, discover, and tend beats still get a visible problem.
   const type = String(challengeType || '');
   if (type === 'obstacle') return 'broken_fence';
   if (type === 'discover') return 'dry_crop';
@@ -483,12 +486,14 @@ export function inferSituation(text, challengeType) {
   return 'wilted_flower';
 }
 
+/** Next unused quiz for this situation. salt rotates which question a beat receives. */
 export function questionForSituation(situationId, salt = 0, usedIds = null) {
   const list = QUESTIONS[situationId] || QUESTIONS.wilted_flower;
   const start = Math.abs(Number(salt) || 0);
   for (let i = 0; i < list.length; i += 1) {
     const idx = (start + i) % list.length;
     const id = `${situationId}_q${idx}`;
+    // Skip a question this storyline already used so beats do not repeat it.
     if (usedIds && usedIds.has(id)) continue;
     if (usedIds) usedIds.add(id);
     return { ...list[idx], id };
@@ -527,6 +532,7 @@ export function resolveSituation({
   ]
     .filter(Boolean)
     .join(' ');
+  // An explicit situation id wins; otherwise keywords in the beat choose the scene.
   const id = isSituationId(stage?.situation)
     ? stage.situation
     : inferSituation(text, challengeType);

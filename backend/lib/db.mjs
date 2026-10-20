@@ -22,10 +22,12 @@ function ensureDir() {
   }
 }
 
+/** Path of the prototype JSON store (storylines and a file leaderboard). */
 export function dbPath() {
   return DB_PATH;
 }
 
+/** Load app.json, or an empty store when the file is missing or unreadable. */
 export function readDb() {
   ensureDir();
   if (!existsSync(DB_PATH)) {
@@ -49,6 +51,7 @@ export function readDb() {
   }
 }
 
+/** Replace the JSON file. Only storylines and leaderboard keys are kept. */
 export function writeDb(next) {
   ensureDir();
   const payload = {
@@ -64,6 +67,7 @@ export function writeDb(next) {
   return payload;
 }
 
+/** Keep one storyline per student. Used by the read-only /api/storyline route. */
 export function saveStorylineRecord(record) {
   if (!record?.studentId) return null;
   const db = readDb();
@@ -85,6 +89,7 @@ export function saveStorylineRecord(record) {
   return packed;
 }
 
+/** Last stored storyline for this student, or null. */
 export function getStorylineRecord(studentId) {
   if (!studentId) return null;
   const db = readDb();
@@ -97,6 +102,7 @@ function utcDayStartIso(now = new Date()) {
   ).toISOString();
 }
 
+/** Rank farm scores. Demo ids are dropped. Ties break on quiz count, then name. */
 export function rankLeaderboardEntries(rawEntries, opts = {}) {
   const period = opts.period === 'today' ? 'today' : 'all';
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 10));
@@ -104,6 +110,7 @@ export function rankLeaderboardEntries(rawEntries, opts = {}) {
   const dayStart = utcDayStartIso(opts.now);
   const list = Array.isArray(rawEntries) ? rawEntries : Object.values(rawEntries || {});
 
+  // Demo sessions must not appear on the public farm board.
   const eligible = list.filter((row) => !String(row?.studentId || '').startsWith('demo_'));
   const filtered =
     period === 'today'
@@ -139,6 +146,7 @@ export function rankLeaderboardEntries(rawEntries, opts = {}) {
   return { period, limit, entries, you };
 }
 
+/** Raise a student's file-board score. The stored score never goes down. */
 export function upsertLeaderboardEntry(entry = {}) {
   const studentId = String(entry.studentId || '').trim();
   if (!studentId) return null;
@@ -165,6 +173,7 @@ export function upsertLeaderboardEntry(entry = {}) {
   return packed;
 }
 
+/** Rankings from app.json when Neon is off or the connection string is unusable. */
 export function getFileLeaderboard(opts = {}) {
   const db = readDb();
   return rankLeaderboardEntries(db.leaderboard, opts);

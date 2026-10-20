@@ -33,6 +33,19 @@ describe('demo scenarios', () => {
     assert.equal(launch.researchOverlay, true);
   });
 
+  it('starts a grade 6 shop recording without a profile param', () => {
+    const launch = readDemoLaunch('?demoAct=shop&demoGrade=6');
+    assert.equal(launch.act, 'shop');
+    assert.equal(launch.profile, 'smart');
+    assert.equal(launch.grade, 6);
+    assert.equal(launch.enabled, true);
+    assert.equal(launch.isolated, true);
+    const boot = installDemoLaunch('?demoAct=shop&demoGrade=6');
+    assert.equal(boot.student.grade, 6);
+    assert.equal(boot.student.id, 'demo_g6_smart');
+    installDemoLaunch('');
+  });
+
   it('does not treat a platform grade param as a demo session', () => {
     const launch = readDemoLaunch('?grade=7&studentId=abc');
     assert.equal(launch.isolated, false);
@@ -50,7 +63,8 @@ describe('demo scenarios', () => {
     assert.equal(boot.student.chapterId.startsWith('G9_'), true);
     assert.equal(getCurrentStudent().id, boot.student.id);
     assert.notEqual(getCurrentStudent().id, before.id);
-    assert.ok(boot.seed?.pinned);
+    assert.equal(boot.seed?.pinned, false);
+    assert.equal(boot.seed?.autoplay, true);
     assert.equal(readDemoAdaptationSeed()?.profileId, 'weak');
     const restored = installDemoLaunch('');
     assert.equal(restored.student?.id, before.id);

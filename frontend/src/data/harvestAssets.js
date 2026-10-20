@@ -6,6 +6,10 @@
  * Loaded from /assets/harvest — never fetched from GitHub at runtime.
  */
 
+/**
+ * Phaser preload list for farm food, animals, and NPCs.
+ * Rows with frameWidth/frameHeight are spritesheets; the rest are still images.
+ */
 export const HARVEST_LOAD_ITEMS = [
   { textureKey: 'hm_grape', image: '/assets/harvest/food/berryofwildgrape.png' },
   { textureKey: 'hm_fruit', image: '/assets/harvest/food/summerfruit.png' },

@@ -1,3 +1,7 @@
+/**
+ * Preloads farm art, the tilemap, shop customers, and audio, then
+ * starts the soundtrack and opens the menu.
+ */
 import Phaser from 'phaser';
 import { createBrandLoadBar } from '../ui/menuBackdrop.js';
 import { LIBRARY_LOAD_ITEMS } from '../../data/assetLibrary.js';
@@ -8,10 +12,12 @@ import { FARM_LIFE_LOAD_ITEMS } from '../../data/farmLifeAssets.js';
 import { FARM_SHOP_LOAD_ITEMS } from '../../data/farmShopAssets.js';
 
 export default class LoadScene extends Phaser.Scene {
+  /** Phaser key LoadScene. */
   constructor() {
     super({ key: 'LoadScene' });
   }
 
+  /** Draw the brand progress bar and queue images, maps, and sounds. */
   preload() {
     createBrandLoadBar(this);
     this.loadImages();
@@ -19,6 +25,7 @@ export default class LoadScene extends Phaser.Scene {
     this.loadAudio();
   }
 
+  /** Start looping music, keep pixel art sharp, then open the menu. */
   create() {
     this.soundtrack = this.sound.add('music', {
       volume: 0.5,
@@ -41,6 +48,7 @@ export default class LoadScene extends Phaser.Scene {
     this.scene.start('MenuScene');
   }
 
+  /** Title art plus crops, harvests, shop, and storyline images. */
   loadImages() {
     this.load.image('title-bg', '/assets/sprites/title-screen-bg.png');
     this.load.image('enter', '/assets/sprites/press-enter-text.png');
@@ -63,6 +71,7 @@ export default class LoadScene extends Phaser.Scene {
     this.loadStorylineSituationAssets();
   }
 
+  /** Produce icons used on the carry stack and shop bubbles. */
   loadHarvestAssets() {
     for (const item of HARVEST_LOAD_ITEMS) {
       if (item.frameWidth && item.frameHeight) {
@@ -76,12 +85,14 @@ export default class LoadScene extends Phaser.Scene {
     }
   }
 
+  /** Animals, fences, and yard props for paddock and cleaning. */
   loadFarmLifeAssets() {
     for (const item of FARM_LIFE_LOAD_ITEMS) {
       this.load.image(item.textureKey, item.image);
     }
   }
 
+  /** Stall, counter, and the customer sheet for the farm shop. */
   loadFarmShopAssets() {
     for (const item of FARM_SHOP_LOAD_ITEMS) {
       if (item.frameWidth && item.frameHeight) {
@@ -95,12 +106,14 @@ export default class LoadScene extends Phaser.Scene {
     }
   }
 
+  /** Shared creature and prop art used by world pens. */
   loadAssetLibrary() {
     for (const item of LIBRARY_LOAD_ITEMS) {
       this.load.image(item.textureKey, item.image);
     }
   }
 
+  /** Before and after sprites for struggling story beds. */
   loadStorylineSituationAssets() {
     for (const item of SITUATION_LOAD_ITEMS) {
       this.load.image(item.textureKey, item.image);
@@ -129,6 +142,7 @@ export default class LoadScene extends Phaser.Scene {
     }
   }
 
+  /** Looping music plus hurt, slash, item, and enemy-death cues. */
   loadAudio() {
     this.load.audio('music', [
       '/assets/sound/ancient_path.ogg',
@@ -146,6 +160,7 @@ export default class LoadScene extends Phaser.Scene {
     ]);
   }
 
+  /** Tiled farm map, collision art, and the hero and enemy atlas. */
   loadMaps() {
     this.load.image('tileset', '/assets/environment/tileset.png');
     this.load.image('objects', '/assets/environment/objects.png');

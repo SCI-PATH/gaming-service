@@ -1,6 +1,8 @@
 /**
  * Child-friendly speech helpers for Sage.
  * Never expose ability labels; keep language warm and clear.
+ * Spoken lines stay on the farm science idea. Rank words, grader dumps,
+ * and trigger codes are stripped before the browser voice reads them.
  */
 
 const FORBIDDEN_ABILITY =

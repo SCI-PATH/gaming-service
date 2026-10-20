@@ -39,6 +39,7 @@ function sourcesFromChunks(chunks = []) {
   }));
 }
 
+/** Frustration already stored for this student. Missing data uses a moderate band. */
 export async function readExistingFrustration(studentId) {
   const fallback = {
     frustrationScore: 50,
@@ -88,6 +89,7 @@ function insufficientPayload({ question, grade, frustration, retrieval, message 
   };
 }
 
+/** Shorter copy when frustration is high. Facts stay; only the length changes. */
 function paragraphLimit(band) {
   if (band === 'VERY_HIGH') return 140;
   if (band === 'HIGH') return 220;
@@ -236,6 +238,7 @@ export function mindMapFromChunks({ question, chunks = [], correctAnswer = '' } 
   };
 }
 
+/** Missed question to textbook chunks to a frustration-capped paragraph. */
 export async function generateScienceMindMap(body = {}, deps = {}) {
   const query = deps.queryChunks || queryChunks;
   const complete = deps.grokJson || grokJson;
@@ -298,6 +301,7 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     });
   }
 
+  // No chapter hits means Sage must not invent a science paragraph.
   if (!retrieval?.enough || !Array.isArray(retrieval.chunks) || retrieval.chunks.length === 0) {
     return insufficientPayload({ question, grade, frustration, retrieval });
   }
@@ -376,6 +380,7 @@ export async function generateScienceMindMap(body = {}, deps = {}) {
     throw out;
   }
 
+  // Chunks were found, so a model "not enough context" reply still tries the extractive paragraph.
   if (parsed.status === 'insufficient_context') {
     const fallback = fromChunks();
     if (fallback) {

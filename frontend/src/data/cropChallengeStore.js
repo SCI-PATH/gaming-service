@@ -22,6 +22,7 @@ function readAll() {
     const data = JSON.parse(raw);
     const index = Number(data?.index);
     if (!Number.isFinite(index) || index < 0) return emptyState();
+    // A stale save still lands on one of the 100 vegetable jobs.
     return { index: Math.floor(index) % CROP_CHALLENGE_COUNT };
   } catch {
     return emptyState();
@@ -36,10 +37,12 @@ function writeAll(data) {
   }
 }
 
+/** Next vegetable job for this student. */
 export function getCropChallengeIndex() {
   return readAll().index;
 }
 
+/** Store a wrapped index so a bad value cannot walk off the 100-crop list. */
 export function setCropChallengeIndex(index) {
   const next =
     ((Number(index) || 0) % CROP_CHALLENGE_COUNT + CROP_CHALLENGE_COUNT) %
@@ -48,6 +51,7 @@ export function setCropChallengeIndex(index) {
   return next;
 }
 
+/** Move to the next vegetable after this one is sold. */
 export function advanceCropChallengeIndex() {
   return setCropChallengeIndex(getCropChallengeIndex() + 1);
 }

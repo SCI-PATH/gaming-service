@@ -3,6 +3,8 @@
  *
  * Assessment miss → diagnose misconception → keyword nodes and
  * labeled relationships. Mix-up nodes are never treated as true.
+ * Graphs for the in-game farm map (plant parts, gases, water cycle).
+ * Textbook sentences may fill a graph. This is not the learning-path engine map.
  */
 import { looksLikeSymbolicTypedAnswer } from './explainMisconception.js';
 import {
@@ -29,6 +31,7 @@ import {
 } from './conceptLessons.js';
 import { buildTextbookGraph } from './textbookGraph.js';
 
+/** How far the student's farm answer is from the scored idea. */
 export const MISCONCEPTION_TYPES = Object.freeze({
   COMPLETE_MISS: 'complete_miss',
   RELATED: 'related_concept_confusion',
@@ -71,6 +74,7 @@ function usableStudent(miss) {
   return true;
 }
 
+/** Classify a farm miss before a keyword template is chosen. */
 export function diagnoseMisconception(miss = {}) {
   const student = compactText(miss.studentAnswer);
   const correct = compactText(miss.correctAnswer);
@@ -236,6 +240,7 @@ function partBranch(part, { kind, includeExtra = true }) {
   return { nodes, relationships };
 }
 
+/** Roots, stem, leaves, flowers: each node is a job, not a sentence. */
 function plantSystemGraph(miss, diagnosis) {
   const focus = focusPlantPart(miss) || PLANT_PARTS.find((p) => p.id === 'leaves');
   const mix = usableStudent(miss) ? mixupPlantPart(miss, focus) : null;
@@ -305,6 +310,7 @@ function plantSystemGraph(miss, diagnosis) {
   });
 }
 
+/** Carbon dioxide in, oxygen out — the common farm photosynthesis mix-up. */
 function photosynthesisGasGraph(miss, diagnosis) {
   const studentO2 = has(miss.studentAnswer, /oxygen|o2/);
   return graph({
@@ -346,6 +352,7 @@ function photosynthesisGasGraph(miss, diagnosis) {
   });
 }
 
+/** Pollen moving to another flower, not the flower making food. */
 function pollinationGraph(miss, diagnosis) {
   const mixErosion = has(miss.studentAnswer, /evaporat|erosi|condens/);
   return graph({
@@ -378,6 +385,7 @@ function pollinationGraph(miss, diagnosis) {
   });
 }
 
+/** Evaporation, condensation, precipitation, transpiration as linked steps. */
 function waterCycleGraph(miss, diagnosis) {
   const transpiration = has(questionBlob(miss), /transpir/) || has(miss.correctAnswer, /transpir/);
   return graph({
@@ -415,6 +423,7 @@ function waterCycleGraph(miss, diagnosis) {
   });
 }
 
+/** Monocot versus dicot seed leaves, veins, and roots. */
 function diversityGraph(miss, diagnosis) {
   const blob = `${miss.question || ''} ${miss.prompt || ''} ${miss.correctAnswer || ''}`;
   const asksBoth =
@@ -470,6 +479,7 @@ function diversityGraph(miss, diagnosis) {
   });
 }
 
+/** Charge parts (capacitor, resistor) when the farm item is about electricity. */
 function chargeGraph(miss, diagnosis) {
   const mixR = has(miss.studentAnswer, /resistor/);
   return graph({
@@ -497,6 +507,7 @@ function chargeGraph(miss, diagnosis) {
   });
 }
 
+/** True/false claim: the statement and why the other choice fails. */
 function trueFalseGraph(miss, diagnosis) {
   const claim = compactText(miss.question || miss.prompt);
   const focus = focusPlantPart(miss);
@@ -553,6 +564,7 @@ function keywordFromCorrect(miss) {
   return phraseLabel(c, 72);
 }
 
+/** Fallback keyword tree when no farm lesson template matches. */
 function genericGraph(miss, diagnosis) {
   const correct = keywordFromCorrect(miss) || focusPlantPart(miss)?.label || 'Key idea';
   const student = usableStudent(miss) ? shortLabel(miss.studentAnswer, 24) : '';
@@ -640,6 +652,7 @@ function genericGraph(miss, diagnosis) {
   });
 }
 
+/** Flowering plants versus plants that use spores or cones. */
 function floweringContrastGraph(miss, diagnosis) {
   const student = usableStudent(miss) ? compactText(miss.studentAnswer) : '';
   const mixSize = has(student, /size|taller|bigger|smaller|look/);
@@ -715,6 +728,7 @@ function floweringContrastGraph(miss, diagnosis) {
   });
 }
 
+/** Lesson template first, then a textbook graph, then a generic tree. */
 function pickTemplate(miss, diagnosis) {
   if (
     (photosynthesisInputsLesson(miss) && has(miss.correctAnswer, /carbon dioxide|co2/)) ||
@@ -735,6 +749,7 @@ function pickTemplate(miss, diagnosis) {
     return plantSystemGraph(miss, diagnosis);
   }
   const textbook = buildTextbookGraph(miss);
+  // Textbook graph only if it still contains the engine's correct idea.
   if (textbook && validateConceptGraph(textbook, miss).ok) {
     return textbook;
   }
@@ -782,6 +797,7 @@ function ensureAssessmentNodes(graph, miss) {
   return { ...graph, nodes, relationships };
 }
 
+/** True when every scored concept appears on a non-mixup node. */
 export function graphIncludesCorrectIdea(graph, missOrAnswer) {
   const miss = typeof missOrAnswer === 'object' && missOrAnswer ? missOrAnswer : { correctAnswer: missOrAnswer };
   const concepts = scoredConceptList(miss);
@@ -828,6 +844,7 @@ export function graphIncludesCorrectIdea(graph, missOrAnswer) {
   });
 }
 
+/** Reject tiny, huge, placeholder, or key-missing graphs before they render. */
 export function validateConceptGraph(graph, miss) {
   if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length < 3) {
     return { ok: false, reason: 'too_small' };
@@ -851,6 +868,7 @@ export function validateConceptGraph(graph, miss) {
   return { ok: true };
 }
 
+/** Parent/child tree for the on-screen farm map. Orphans stay in leftover. */
 export function layoutConceptTree(graph) {
   const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
   const rels = Array.isArray(graph?.relationships) ? graph.relationships : [];

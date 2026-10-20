@@ -64,6 +64,7 @@ function findExistingPoint(out, prompt, at, correct) {
   });
 }
 
+/** Merge saved question rows with the live Sage history the dashboard is showing. */
 export function mergeQuestionPoints(points = [], liveHistory = []) {
   const out = (Array.isArray(points) ? points : []).filter(Boolean).map((p) => {
     const answers = answersFrom(p);
@@ -112,6 +113,7 @@ export function mergeQuestionPoints(points = [], liveHistory = []) {
   return out.sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
 }
 
+/** One row per quiz attempt for the dashboard: type, prompt, and whether it was correct. */
 export function buildQuizRoundRows(points = [], misconceptions = [], liveHistory = []) {
   const attempts = (misconceptions || []).flatMap((m) =>
     (m.attempts || []).map((a) => ({

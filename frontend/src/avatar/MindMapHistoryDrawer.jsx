@@ -1,5 +1,7 @@
 /**
  * Separate history section — review mind maps saved after incorrect answers.
+ * These are past in-game Sage maps from farm misses, kept off the live chat.
+ * Not the learning-path engine's map.
  */
 import { useEffect, useState } from 'react';
 import {
@@ -15,6 +17,7 @@ export default function MindMapHistoryDrawer({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return undefined;
+    // Refresh when another miss is saved while the drawer is open.
     setEntries(loadMindMapHistory());
     return subscribeMindMapHistory(setEntries);
   }, [open]);

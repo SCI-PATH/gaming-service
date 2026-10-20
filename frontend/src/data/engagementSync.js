@@ -58,6 +58,10 @@ async function post(path, body) {
   }
 }
 
+/**
+ * Resume cursor from Neon. If the student route misses, the leaderboard
+ * row still supplies the current level. Cash is left at 0 in that fallback.
+ */
 export async function fetchEngagementStudent(studentId) {
   const id = String(studentId || '').trim();
   if (!id) return null;
@@ -97,6 +101,7 @@ export async function fetchEngagementStudent(studentId) {
   }
 }
 
+/** Session id for quiz, frustration, and purchase posts this browser tab. */
 export function getEngagementSessionId() {
   try {
     return sessionStorage.getItem(SESSION_KEY) || null;
@@ -105,6 +110,7 @@ export function getEngagementSessionId() {
   }
 }
 
+/** Student id remembered at login, used when a caller does not pass a student. */
 export function getEngagementStudentId() {
   try {
     return sessionStorage.getItem(STUDENT_KEY) || null;
@@ -129,6 +135,10 @@ function rememberSession(sessionId) {
   }
 }
 
+/**
+ * Open a Neon session on farm login.
+ * Grade is sent as a band. Demo profiles are marked so they stay out of research.
+ */
 export async function syncStudentLogin(student, options = {}) {
   if (!student?.id) return null;
   rememberStudent(student.id);
@@ -175,6 +185,7 @@ export async function syncStudentLogin(student, options = {}) {
   return started;
 }
 
+/** End the Neon session and drop the local session id. */
 export async function syncStudentLogout(extra = {}) {
   const sessionId = getEngagementSessionId();
   if (!sessionId) return null;
@@ -190,6 +201,7 @@ export async function syncStudentLogout(extra = {}) {
   return result;
 }
 
+/** Post the finished level, then each quiz attempt, including response time and band. */
 export async function syncLevelPerformance(levelId, payload = {}, student = null) {
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId) return null;
@@ -237,6 +249,10 @@ export async function syncLevelPerformance(levelId, payload = {}, student = null
   return level;
 }
 
+/**
+ * Post one science answer, then the frustration score Neon computed from it.
+ * Demo students are tagged so the score is not treated as research data.
+ */
 export async function syncQuizAttempt(attempt = {}, student = null) {
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId) return { ok: false, error: 'student_required' };
@@ -271,6 +287,7 @@ export async function syncQuizAttempt(attempt = {}, student = null) {
   if (saved?.ok === false && !saved?.skipped) return saved;
   const score = saved?.frustrationScore;
   if (score == null) return saved;
+  // Demo recordings sync the score but must not count as a real student's research row.
   const demoSession =
     Boolean(student?.isDemoSession) || String(studentId).startsWith('demo_');
   await trackPending(
@@ -292,6 +309,7 @@ export async function syncQuizAttempt(attempt = {}, student = null) {
   return saved;
 }
 
+/** Post a shop purchase: price paid, chapter, and the cash left in the wallet. */
 export async function syncUnlock(itemId, opts = {}, student = null) {
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId || !itemId) return null;
@@ -323,6 +341,7 @@ export async function syncUnlock(itemId, opts = {}, student = null) {
   });
 }
 
+/** Post a 0–100 frustration snapshot for Socrates and the dashboard. */
 export async function syncFrustration(payload = {}, student = null) {
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId) return null;
@@ -371,6 +390,7 @@ export async function fetchFrustration(student = null, opts = {}) {
   return get(`/api/engagement/frustration?${params.toString()}`);
 }
 
+/** Post a Sage conversation: trigger, frustration score, and the mentor reply. */
 export async function syncMentorIntervention(payload = {}, student = null) {
   const studentId =
     student?.id ||
@@ -410,7 +430,9 @@ export async function syncMentorIntervention(payload = {}, student = null) {
 /** Per-tick shop HUD noise — keep local, do not POST to Neon. */
 const SKIP_GAMEPLAY_EVENT_TYPES = new Set(['CUSTOMER_PATIENCE_CHANGED']);
 
+/** Post a farm event such as a customer leaving. Per-tick patience changes are skipped. */
 export async function syncGameplayEvent(eventType, payload = {}, student = null) {
+  // Patience ticks stay on the HUD. Everything else can be a research event.
   if (!eventType || SKIP_GAMEPLAY_EVENT_TYPES.has(eventType)) return null;
   const studentId = student?.id || getEngagementStudentId();
   if (!studentId) return null;

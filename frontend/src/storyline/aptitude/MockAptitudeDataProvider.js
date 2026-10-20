@@ -32,6 +32,7 @@ export const MockAptitudeDataProvider = {
       scienceTopic: packed.scienceTopic,
       performanceLabel: packed.performanceLabel,
       source: 'mock_aptitude_test',
+      // Copy metrics so a caller cannot mutate the frozen catalog.
       aptitudeData: { ...packed.aptitudeData },
       ...(meta ? { username: meta.username } : {}),
     };
@@ -44,11 +45,13 @@ export const MockAptitudeDataProvider = {
 
 export const RealAptitudeDataProvider = {
   id: 'real',
+  /** Aptitude row saved after the real test, not the three mock profiles. */
   getByStudentId(studentId) {
     if (!studentId) return null;
     return readStoredAptitudeResult(studentId);
   },
   listStudentIds() {
+    // Real results are looked up by id; this provider does not list every student.
     return [];
   },
 };

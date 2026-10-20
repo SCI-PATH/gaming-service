@@ -36,6 +36,7 @@ function titleWord(value) {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+/** Quest-map name for a crop bed. Unknown crops become “Name Bed”. */
 export function bedLabelForCrop(cropId, cropName) {
   const id = String(cropId || '').trim();
   if (BED_NAME[id]) return BED_NAME[id];
@@ -43,6 +44,7 @@ export function bedLabelForCrop(cropId, cropName) {
   return name ? `${name} Bed` : null;
 }
 
+/** Short pin text: Milk, Eggs, or the animal’s name. */
 export function compactAnimalLabel(animal) {
   const produce = String(animal?.produceName || '').toLowerCase();
   if (produce === 'milk') return 'Milk';
@@ -50,10 +52,12 @@ export function compactAnimalLabel(animal) {
   return titleWord(animal?.animalName || animal?.id) || 'Animal';
 }
 
+/** Short pin text for a cleaning job. */
 export function compactCleanLabel(clean) {
   return titleWord(clean?.messName || clean?.id) || 'Clean';
 }
 
+/** Full quest-map label for the animal pen. */
 export function animalMarkerLabel(animal) {
   if (!animal) return null;
   const produce = String(animal.produceName || '').toLowerCase();
@@ -63,12 +67,17 @@ export function animalMarkerLabel(animal) {
   return name ? `${name} Pen` : null;
 }
 
+/** Full quest-map label for the cleaning yard. */
 export function cleaningMarkerLabel(clean) {
   if (!clean) return null;
   const name = titleWord(clean.messName || clean.id);
   return name ? `${name} Yard` : null;
 }
 
+/**
+ * Turn a level’s crop / animal / cleaning plan into quest-map pins.
+ * Bed status follows the active crop: completed, active, or upcoming.
+ */
 export function assembleMapMarkers(plan, zones, progress = {}) {
   const plots = zones?.plots || [];
   const activeIndex = Math.max(0, Number(progress.activeCropIndex) || 0);
@@ -81,6 +90,7 @@ export function assembleMapMarkers(plan, zones, progress = {}) {
     const label = bedLabelForCrop(crop.cropId, crop.cropName);
     if (!label) return null;
     let status = 'upcoming';
+    // Match the live crop by id or name when the farm reports one.
     if (activeId) {
       const names = [crop.cropId, crop.id, crop.cropName].map((value) =>
         String(value || '').toLowerCase(),

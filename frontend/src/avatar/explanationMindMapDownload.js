@@ -1,6 +1,8 @@
 /**
  * Download the explanation already on screen as a mind map.
  * The explanation text is not regenerated here.
+ * This is the in-game Sage map (HTML of the farm-miss explanation).
+ * It is not an export from the learning-path engine.
  */
 import {
   parseExplanationToTree,
@@ -26,6 +28,7 @@ function fileStamp() {
   return `science-explanation-mind-map-${day}`;
 }
 
+/** Browser fallback: parse the on-screen explanation when the API is down. */
 function localMaps(branches) {
   return branches
     .map((branch) => {
@@ -91,6 +94,7 @@ export async function downloadExplanationMindMap(branches = []) {
   try {
     maps = await fetchMindMaps(items);
   } catch {
+    // Keep the download working from the explanation Sage already showed.
     maps = localMaps(list);
   }
   const html = renderMindMapHtml(maps);

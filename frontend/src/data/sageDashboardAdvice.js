@@ -58,6 +58,7 @@ export function buildSageDashboardAdvice(input = {}) {
   let mood = 'proud';
 
   if (band === 'low') {
+    // Low frustration: invite a slightly harder question and mention a streak.
     headline = `${name}, your frustration score is low — that means your brain is ready.`;
     const stretch = topic
       ? `You could try a tougher question on ${topic} to keep growing.`
@@ -74,6 +75,7 @@ export function buildSageDashboardAdvice(input = {}) {
       : 'Challenge yourself with one extra science question, then keep farming.';
     mood = 'proud';
   } else if (band === 'moderate') {
+    // Middle band: name the sticky signal (misses, hints, or slow answers) without calling the student weak.
     headline = `${name}, your frustration score is in the middle — a little stuck is normal.`;
     if (fails >= 2) {
       body = `A few misses in a row can make science feel heavier. Slow down, read the last sentence twice, then pick.`;
@@ -92,6 +94,7 @@ export function buildSageDashboardAdvice(input = {}) {
       : 'Take a short break, then use a hint on the next farm question if it feels tricky.';
     mood = 'encouraging';
   } else {
+    // High frustration: pause the grind and send the student back to Sage.
     headline = `${name}, your frustration score is high — that is a signal to be kind to yourself, not to give up.`;
     body =
       `You do not need to rush. Breathe, skip the timer in your head, and go back to the idea in tiny steps.`;

@@ -72,6 +72,7 @@ export function getShopDifficulty(frustrationScore = 0, frustrationLevel = null)
   const level = resolveLevel(score, frustrationLevel);
   const adapt = buildFrustrationAdaptation(score);
 
+  // Very high frustration: one customer, a tiny order, and patience that runs out fast.
   if (level === 'very_high') {
     return {
       level,
@@ -80,16 +81,17 @@ export function getShopDifficulty(frustrationScore = 0, frustrationLevel = null)
       minItemsPerOrder: 1,
       maxItemsPerOrder: 1,
       maxQtyPerItem: 1,
-      patienceMs: 120000,
-      tickMs: 1400,
-      patienceDrainPerTick: 0.55,
+      patienceMs: 18000,
+      tickMs: 600,
+      patienceDrainPerTick: 2.6,
       highlightHelp: true,
       showHints: true,
       bubbleScale: 1.35,
-      label: 'Supportive shop',
+      label: 'Angry queue',
       adaptLabel: adapt.gameplay?.label || 'Maximum farm support',
     };
   }
+  // High frustration: a short queue and hints, still easier than a calm shop.
   if (level === 'high') {
     return {
       level,
@@ -98,16 +100,17 @@ export function getShopDifficulty(frustrationScore = 0, frustrationLevel = null)
       minItemsPerOrder: 1,
       maxItemsPerOrder: 2,
       maxQtyPerItem: 1,
-      patienceMs: 90000,
-      tickMs: 1000,
-      patienceDrainPerTick: 0.9,
+      patienceMs: 28000,
+      tickMs: 700,
+      patienceDrainPerTick: 2.0,
       highlightHelp: true,
       showHints: true,
       bubbleScale: 1.2,
-      label: 'Gentle shop',
+      label: 'Short tempers',
       adaptLabel: adapt.gameplay?.label || 'Supportive farm pace',
     };
   }
+  // Moderate: a normal queue. Low frustration falls through to the patient, fuller shop.
   if (level === 'moderate') {
     return {
       level,
@@ -116,9 +119,9 @@ export function getShopDifficulty(frustrationScore = 0, frustrationLevel = null)
       minItemsPerOrder: 1,
       maxItemsPerOrder: 3,
       maxQtyPerItem: 2,
-      patienceMs: 60000,
-      tickMs: 750,
-      patienceDrainPerTick: 1.5,
+      patienceMs: 55000,
+      tickMs: 800,
+      patienceDrainPerTick: 1.15,
       highlightHelp: false,
       showHints: true,
       bubbleScale: 1.05,
@@ -133,13 +136,13 @@ export function getShopDifficulty(frustrationScore = 0, frustrationLevel = null)
     minItemsPerOrder: 2,
     maxItemsPerOrder: 3,
     maxQtyPerItem: 2,
-    patienceMs: 42000,
-    tickMs: 600,
-    patienceDrainPerTick: 2.2,
+    patienceMs: 110000,
+    tickMs: 1400,
+    patienceDrainPerTick: 0.45,
     highlightHelp: false,
     showHints: false,
     bubbleScale: 1,
-    label: 'Lively shop',
+    label: 'Patient queue',
     adaptLabel: adapt.gameplay?.label || 'Challenge farm pace',
   };
 }
@@ -203,6 +206,7 @@ export function generateCustomerOrder(stock = {}, difficulty = null) {
   return generateCustomerOrderFromPool(ids, difficulty);
 }
 
+/** Queue customer plus a cash reward a little above the order's produce value. */
 export function createCustomerFromPool(itemIds, difficulty, unitValue = 10) {
   const order = generateCustomerOrderFromPool(itemIds, difficulty);
   const lineValue = order.items.reduce(
@@ -322,9 +326,11 @@ export function createWorldShop({
   return shop;
 }
 
+/** Join the queue up to the frustration cap. No produce pool means nobody waits. */
 export function addCustomerToQueue(shop, { silent = false } = {}) {
   if (!shop || shop.closed) return null;
   const living = livingCustomers(shop);
+  // High frustration keeps this cap small so the stall stays manageable.
   if (living.length >= shop.difficulty.maxCustomers) return null;
   if (!shop.sellableItemIds?.length) return null;
 
@@ -405,6 +411,7 @@ export function adaptWorldShopFrustration(shop, frustrationScore, frustrationLev
   const nextDiff = getShopDifficulty(score, frustrationLevel);
   shop.frustrationScore = score;
   shop.difficulty = nextDiff;
+  // A rising score gives current customers a little extra patience.
   if (score > previous) {
     for (const customer of livingCustomers(shop)) {
       customer.patience = Math.min(
@@ -647,6 +654,10 @@ function completeCustomer(shop, customer) {
   return { ok: true, customer, reward, event: ev };
 }
 
+/**
+ * Drain patience on the difficulty tick.
+ * High frustration drains faster. At zero the customer leaves and counts as a shop failure.
+ */
 export function tickWorldShopPatience(shop, now = Date.now()) {
   if (!shop || shop.closed) return { events: [], left: [] };
   const tickMs = shop.difficulty.tickMs || 700;
@@ -680,6 +691,7 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
     }
 
     const ratio = c.patience / c.maxPatience;
+    // Under 35% patience the customer looks impatient, except the one being served.
     if (ratio <= 0.35 && c.status !== CUSTOMER_STATUS.IMPATIENT) {
       if (c.id !== shop.activeCustomerId) {
         c.status = CUSTOMER_STATUS.IMPATIENT;
@@ -695,6 +707,7 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
       c.speech = '🙂 I am waiting for my order.';
     }
 
+    // A leave feeds the frustration model's shop-customers-left signal.
     if (c.patience <= 0) {
       c.status = CUSTOMER_STATUS.LEFT;
       c.served = false;
@@ -733,6 +746,7 @@ export function tickWorldShopPatience(shop, now = Date.now()) {
   return { events, left, shop };
 }
 
+/** HUD copy of stock, queue, coins, and the frustration score that set this shop. */
 export function snapshotWorldShop(shop) {
   if (!shop) return null;
   return {
@@ -758,6 +772,7 @@ export function snapshotWorldShop(shop) {
   };
 }
 
+/** Close the stall and record how much the frustration score moved during the visit. */
 export function closeWorldShop(shop, frustrationAfter = null) {
   if (!shop) return null;
   shop.closed = true;
@@ -793,6 +808,7 @@ export function closeWorldShop(shop, frustrationAfter = null) {
   };
 }
 
+/** Face for the customer HUD. Same 65% and 35% patience cutoffs as mood alerts. */
 export function patienceMood(customer) {
   if (!customer) return { label: '—', face: '🙂', ratio: 1 };
   const ratio = customer.patience / Math.max(1, customer.maxPatience);
@@ -801,6 +817,7 @@ export function patienceMood(customer) {
   return { label: 'Impatient', face: '😠', ratio };
 }
 
+/** Remaining quantity on each line of the order bubble. */
 export function orderLineProgress(customer) {
   if (!customer) return [];
   return customer.requestedItems.map((l) => ({
@@ -810,6 +827,7 @@ export function orderLineProgress(customer) {
   }));
 }
 
+/** Customer at the counter, or the first person still in the queue. */
 export function getActiveCustomer(shop) {
   if (!shop) return null;
   return (
@@ -821,6 +839,7 @@ export function getActiveCustomer(shop) {
 
 /* ── Legacy modal session helpers (thin wrappers) ── */
 
+/** Older modal shop. The cart is treated as stall stock so the same fulfill path runs. */
 export function createShopSession(opts = {}) {
   const stock = inventoryFromCartStack(opts.cartStack || [], {
     cropId: opts.cropId,
@@ -837,6 +856,7 @@ export function createShopSession(opts = {}) {
   return shop;
 }
 
+/** Hand one carried item to the queue and pay if an order completes. */
 export function deliverItemToActiveCustomer(session, itemId) {
   const stock = session.shopStock || session.stock || {};
   if ((stock[itemId] || 0) < 1) return { ok: false, reason: 'out_of_stock' };
@@ -855,14 +875,17 @@ export function deliverItemToActiveCustomer(session, itemId) {
   };
 }
 
+/** The physical shop is first-in-first-out, so picking a customer is refused. */
 export function selectCustomer() {
   return { ok: false, reason: 'fifo_only' };
 }
 
+/** Modal-shop alias for the world patience tick. */
 export function tickShopPatience(session) {
   return tickWorldShopPatience(session);
 }
 
+/** Close the modal shop and return unsold stock as a carry stack. */
 export function closeShopSession(session, frustrationAfter = null) {
   const snap = closeWorldShop(session, frustrationAfter);
   if (!snap) return null;

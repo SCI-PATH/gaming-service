@@ -14,6 +14,7 @@ import {
 } from '../../data/worldChallenges.js';
 
 export default class WorldChallengeLayer {
+  /** Pens and wandering nodes for world challenges that are still open. */
   constructor(scene) {
     this.scene = scene;
     /** @type {Map<string, object>} */
@@ -24,6 +25,7 @@ export default class WorldChallengeLayer {
     this.focusedId = null;
   }
 
+  /** Group unfinished nodes by task and place one pen plus its animals or plants. */
   spawn() {
     this.clear();
     rebuildActiveNodes();
@@ -45,6 +47,7 @@ export default class WorldChallengeLayer {
       .setVisible(false);
   }
 
+  /** Destroy pens, sprites, and the focus dot. */
   clear() {
     for (const entry of this.entries.values()) {
       this.destroyEntry(entry);
@@ -63,6 +66,7 @@ export default class WorldChallengeLayer {
     this.focusedId = null;
   }
 
+  /** Remove one node sprite, tool, and shadow. */
   destroyEntry(entry) {
     const scene = this.scene;
     scene?.tweens?.killTweensOf(entry?.visual);
@@ -74,6 +78,7 @@ export default class WorldChallengeLayer {
     entry?.shadow?.destroy?.();
   }
 
+  /** Pixel center of a node tile. */
   worldXY(node) {
     return {
       x: node.tileX * TILE_SIZE + TILE_SIZE / 2,
@@ -81,6 +86,7 @@ export default class WorldChallengeLayer {
     };
   }
 
+  /** First texture in the list that this scene has loaded. */
   firstExistingKey(keys) {
     const textures = this.scene?.textures;
     if (!textures) return null;
@@ -90,6 +96,7 @@ export default class WorldChallengeLayer {
     return null;
   }
 
+  /** Place an image or spritesheet scaled to the requested tile width. */
   addSprite(x, y, key, mapTileWidth, depth, asSprite = false) {
     const scene = this.scene;
     if (!key || !scene.textures.exists(key)) return null;
@@ -126,6 +133,7 @@ export default class WorldChallengeLayer {
     return sprite;
   }
 
+  /** Paint a fence when the Kenney fence texture is missing. */
   drawPixelFence(g, x, y, w, h) {
     const post = 0x6b3f18;
     const postTop = 0x8a5a28;
@@ -169,6 +177,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Ground, fence, and a click target that starts that pen quiz. */
   placePen(nodes) {
     const scene = this.scene;
     const node = nodes[0];
@@ -217,6 +226,7 @@ export default class WorldChallengeLayer {
     });
   }
 
+  /** Stamp fence sprites around a pen. */
   placeKenneyFence(x, y, w, h) {
     const key = this.firstExistingKey(['kf_fence', 'kf_fence_farm']);
     if (!key) return [];
@@ -245,6 +255,7 @@ export default class WorldChallengeLayer {
     return pieces;
   }
 
+  /** Plant, animal, or collectible inside the pen, with a wander box if it moves. */
   placeItem(node) {
     const scene = this.scene;
     const { x, y } = this.worldXY(node);
@@ -322,6 +333,7 @@ export default class WorldChallengeLayer {
     });
   }
 
+  /** Chicks move faster than cows. Other animals use a middle speed. */
   animalSpeed(key) {
     if (!key) return 18;
     if (key.includes('chick') || key.includes('chicken') || key.includes('duck')) {
@@ -331,11 +343,13 @@ export default class WorldChallengeLayer {
     return 20;
   }
 
+  /** Step wandering animals and move the focus dot toward the nearest pen. */
   update(playerX, playerY, time) {
     this.updateAnimals(time);
     this.updatePrompt(playerX, playerY);
   }
 
+  /** Walk, rest, and flip animals that are not frozen by a resolve animation. */
   updateAnimals(time) {
     const scene = this.scene;
     if (!scene) return;
@@ -375,6 +389,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Set sprite position and a small bob. Keep the shadow under the body. */
   poseAnimal(entry, time, amount) {
     const spr = entry.visual;
     if (!spr) return;
@@ -386,6 +401,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Freeze a task group, then play plant, harvest, feed, or a generic morph. */
   playCluster(taskId, action, player) {
     for (const entry of this.entries.values()) {
       if (entry.def?.taskId === taskId) entry.frozen = true;
@@ -405,6 +421,7 @@ export default class WorldChallengeLayer {
     this.playMorph(taskId, action);
   }
 
+  /** Grow each plant in the task from a tiny scale up to full size. */
   playPlant(taskId) {
     const scene = this.scene;
     let index = 0;
@@ -438,6 +455,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Tween harvested sprites toward the hero and fade them out. */
   playHarvest(taskId, player) {
     const scene = this.scene;
     let index = 0;
@@ -466,6 +484,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Drop hay and swap the animal to its after texture. */
   playFeed(taskId) {
     const hayKey = this.firstExistingKey(['kf_hay', 'hm_hay']);
     for (const entry of this.entries.values()) {
@@ -491,6 +510,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Clean fades clutter away. Other actions swap to the after texture. */
   playMorph(taskId, action) {
     for (const entry of this.entries.values()) {
       if (entry.def?.taskId !== taskId) continue;
@@ -536,6 +556,7 @@ export default class WorldChallengeLayer {
     }
   }
 
+  /** Closest pen to the hero, within a short reach. */
   findNearest(playerX, playerY, maxDist = TILE_SIZE * 2.4) {
     let best = null;
     let bestD = maxDist;
@@ -551,6 +572,7 @@ export default class WorldChallengeLayer {
     return best;
   }
 
+  /** Show a dot on the pen the hero is close enough to start. */
   updatePrompt(playerX, playerY) {
     const id = this.findNearest(playerX, playerY);
     if (this.focusedId && this.focusedId !== id) {
@@ -572,6 +594,7 @@ export default class WorldChallengeLayer {
     this.prompt.setVisible(true);
   }
 
+  /** Pen that owns this node, by task id or node id. */
   penForNode(nodeId) {
     const entry = this.entries.get(nodeId);
     if (entry?.def?.taskId && this.pens.has(entry.def.taskId)) {
@@ -583,6 +606,7 @@ export default class WorldChallengeLayer {
     return null;
   }
 
+  /** Plant, collect, feed, or another verb for this node task. */
   getAction(nodeId) {
     const entry = this.entries.get(nodeId);
     const task = getWorldTask(entry?.def?.taskId);

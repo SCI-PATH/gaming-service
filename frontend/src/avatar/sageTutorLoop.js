@@ -6,6 +6,9 @@
  * the only source of truth. The LLM never authors the key.
  *
  * Loop: Understand → Explore → Connect → Respond → Retry → Master
+ * Speaks the farm miss in a tone set by the frustration score. High scores
+ * use shorter lines and stronger hints. The in-game map stays simplified
+ * when frustration is high. The learning-path engine is not this loop.
  */
 import { shortConceptLabel, looksLikeSymbolicTypedAnswer } from './explainMisconception.js';
 import {
@@ -14,6 +17,7 @@ import {
 } from './normalizeSageMindMapInput.js';
 import { friendlyStudentName, sanitizeKidSpeech } from './kidFriendlySpeech.js';
 
+/** What Sage should do after this spoken turn: wait, hint, challenge, or stop. */
 export const NEXT_ACTIONS = Object.freeze({
   WAIT_FOR_STUDENT: 'WAIT_FOR_STUDENT',
   OFFER_HINT: 'OFFER_HINT',
@@ -22,6 +26,7 @@ export const NEXT_ACTIONS = Object.freeze({
   INSUFFICIENT_KNOWLEDGE: 'INSUFFICIENT_KNOWLEDGE',
 });
 
+/** Where the farm conversation is inside the tutor loop. */
 export const TEACHING_PHASES = Object.freeze({
   EXPLORE: 'explore',
   CONNECT: 'connect',
@@ -57,6 +62,7 @@ function optionText(opt) {
   return String(opt.text || opt.label || opt.value || opt.option || '').trim();
 }
 
+/** MCQ, true/false, fill-in, or short answer from the farm question fields. */
 export function detectQuestionType(input = {}) {
   const explicit = String(
     input.questionType || input.question_type || input.type || '',
@@ -133,6 +139,10 @@ export function shouldCompareStudentAnswer(state = {}) {
   return !looksLikeSymbolicTypedAnswer(state.studentAnswer);
 }
 
+/**
+ * Pace, hint strength, and map complexity for one frustration level.
+ * The level name is for delivery only. Sage must not say the score aloud.
+ */
 export function frustrationDelivery(scoreOrLevel) {
   const score = Number(scoreOrLevel);
   let level = 'moderate';
@@ -200,6 +210,7 @@ export function frustrationDelivery(scoreOrLevel) {
   return table[level] || table.moderate;
 }
 
+/** Reject student text that tries to override Sage's teaching rules. */
 export function isPromptInjection(text) {
   const s = lower(text);
   if (!s) return false;
@@ -211,6 +222,7 @@ export function isPromptInjection(text) {
   );
 }
 
+/** False when the farm item has no prompt or no engine key to teach from. */
 export function hasSufficientKnowledge(state = {}) {
   if (state.forceInsufficient || state.knowledgeStatus === INSUFFICIENT) {
     return false;
@@ -220,6 +232,7 @@ export function hasSufficientKnowledge(state = {}) {
   return Boolean(question && correct);
 }
 
+/** Earlier farm misses that share a science word with this question. */
 export function relatedPreviousMistakes(history = [], current = {}) {
   const topic = lower(current.topic || '');
   const wrong = lower(current.studentAnswer || '');
@@ -260,6 +273,7 @@ function shareScienceToken(a, b) {
   return tokens(a).some((w) => setB.has(w));
 }
 
+/** Next farm item: easier when frustration is high, harder when it is low. */
 export function recommendDifficulty({
   demonstratedUnderstanding = false,
   guessed = false,
@@ -373,6 +387,7 @@ function interactionQuestion(state) {
   return 'In your own words, what is this question really asking?';
 }
 
+/** Keyword map for this miss, shrunk when frustration delivery asks for micro steps. */
 export function buildMisconceptionMindMap(state = {}, delivery = null) {
   const d = delivery || frustrationDelivery(state.frustrationScore);
   const complexity = d.mindMapComplexity;
@@ -434,6 +449,7 @@ export function buildMisconceptionMindMap(state = {}, delivery = null) {
   };
 }
 
+/** Flat teaching state: farm question, answers, hints, and frustration score. */
 export function compactTeachingState(context = {}, session = {}) {
   const focus = context.intervention_focus || {};
   const cq = context.current_question || {};
@@ -650,6 +666,7 @@ function joinSpeech(parts, sentenceMax) {
 }
 
 function mayRevealCorrect(state, delivery, intent) {
+  // Very high frustration, or a late hint, may finally say the engine key.
   if (state.hintLevel >= 3) return true;
   if (delivery.level === 'very_high' && (intent === 'ask_hint' || intent === 'ask_answer' || intent === 'unsure')) {
     return true;
@@ -658,6 +675,7 @@ function mayRevealCorrect(state, delivery, intent) {
   return false;
 }
 
+/** One spoken tutor turn. Tone and length come from frustrationDelivery. */
 export function composeTutorTurn({
   studentMessage = '',
   context = {},
@@ -861,6 +879,7 @@ function packTurn({
   };
 }
 
+/** True if a reply names the engine key before the student is ready to hear it. */
 export function revealsCorrectTooEarly(reply, state = {}, mayReveal = false) {
   if (mayReveal) return false;
   const r = lower(reply);
@@ -873,6 +892,7 @@ export function revealsCorrectTooEarly(reply, state = {}, mayReveal = false) {
   return false;
 }
 
+/** True if the model invented a correct answer that is not the engine key. */
 export function inventsDifferentCorrect(reply, correctAnswer) {
   const right = lower(correctAnswer);
   if (!right || right.length < 3) return false;
@@ -886,6 +906,7 @@ export function inventsDifferentCorrect(reply, correctAnswer) {
   return true;
 }
 
+/** True if Sage answered the check question she just asked. */
 export function answersOwnQuestion(reply) {
   const text = String(reply || '').trim();
   const q = text.search(/\?/);
@@ -895,6 +916,7 @@ export function answersOwnQuestion(reply) {
   return /because|the (correct )?answer|carbon dioxide|is actually/i.test(after);
 }
 
+/** Remove spoken mentions of the frustration score or level. */
 export function stripFrustrationLeak(reply) {
   return String(reply || '')
     .replace(
@@ -905,6 +927,7 @@ export function stripFrustrationLeak(reply) {
     .trim();
 }
 
+/** Keep speech that leads up to a question; drop anything after the ask. */
 export function truncateAfterQuestion(reply) {
   const text = String(reply || '').trim();
   const q = text.indexOf('?');
@@ -912,6 +935,7 @@ export function truncateAfterQuestion(reply) {
   return text.slice(0, q + 1).trim();
 }
 
+/** Drop a sentence that claims a different correct answer than the engine key. */
 export function stripInventedCorrectClaim(reply, correctAnswer) {
   const right = String(correctAnswer || '').trim();
   if (!right) return String(reply || '');
@@ -944,6 +968,7 @@ export function guardModelTutorReply(modelReply, localTurn, state = {}) {
   return model;
 }
 
+/** Use the tutor loop once a farm assessment is frozen on the session. */
 export function shouldEnterTutorLoop(session = {}, context = {}, studentMessage = '') {
   const state = compactTeachingState(context, session);
   if (!state.questionText && !state.correctAnswer) return false;
@@ -961,6 +986,7 @@ export function shouldEnterTutorLoop(session = {}, context = {}, studentMessage 
   return Boolean(state.questionText && state.correctAnswer);
 }
 
+/** Extra system rules so a model reply stays inside this farm tutor loop. */
 export function tutorLoopSystemAddon(context = {}) {
   const state = compactTeachingState(context, {});
   const delivery = frustrationDelivery(state.frustrationScore);

@@ -1,6 +1,8 @@
 /**
  * Classify performance tier for avatar dialogue personalization.
  * WEAK | AVERAGE | SMART (ADVANCED)
+ * Farm accuracy, retries, and streaks pick the tier Sage uses for tone.
+ * Mind maps are allowed only after incorrect farm answers, never for praise.
  */
 
 export const PERFORMANCE_TIERS = {
@@ -72,11 +74,13 @@ export function classifyPerformanceTier(metrics = {}, opts = {}) {
     return PERFORMANCE_TIERS.SMART;
   }
 
+  // Too few farm answers to trust accuracy; retries still mark a weak start.
   if (total < 3) {
     if (retries >= 3 || consecutiveFails >= 2) return PERFORMANCE_TIERS.WEAK;
     return PERFORMANCE_TIERS.MEDIUM;
   }
 
+  // Repeated misses or a sharp drop → softer Sage scaffolding.
   if (
     accuracy <= 50 ||
     (retries >= 3 && accuracy < 65) ||
@@ -86,6 +90,7 @@ export function classifyPerformanceTier(metrics = {}, opts = {}) {
     return PERFORMANCE_TIERS.WEAK;
   }
 
+  // Fast, accurate farm play → stretch tone, still no mind map by itself.
   if (
     accuracy >= 85 &&
     retries <= 1 &&

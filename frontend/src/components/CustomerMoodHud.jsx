@@ -6,13 +6,15 @@ function customerLabel(c, i) {
   return `Customer ${n}`;
 }
 
+/** Side-panel moods for Phaser shop customers. App fills this from FARM_SHOP_STATE. */
 export default function CustomerMoodHud({
   customers = [],
   alerts = [],
   onDismissAlert,
   showToasts = true,
+  pinned = false,
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(pinned);
   const [pickedId, setPickedId] = useState(null);
 
   const living = useMemo(
@@ -26,6 +28,10 @@ export default function CustomerMoodHud({
   const pickedMood = customerMoodState(picked);
   const latest = alerts[0] || null;
   const unread = alerts.filter((a) => !a.read).length;
+
+  useEffect(() => {
+    if (pinned) setOpen(true);
+  }, [pinned, living.length]);
 
   useEffect(() => {
     if (!latest || latest.read) return undefined;

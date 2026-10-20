@@ -7,6 +7,10 @@ import { getChapterLaunch } from './chapterPath.js';
 import { getEngagementSessionId } from './engagementSync.js';
 import { decideFarmLessonProgression } from './farmLessonProgression.js';
 
+/**
+ * Local pass or retry when the engagement database is down.
+ * Uses the same farm-lesson thresholds: high frustration or a weak quiz repeats the lesson.
+ */
 function localLevelOutcome(payload = {}) {
   const local = decideFarmLessonProgression({
     frustrationScore: payload.frustrationScore,
@@ -39,6 +43,10 @@ function localLevelOutcome(payload = {}) {
   };
 }
 
+/**
+ * Ask the server whether this lesson repeats or the next farm level opens.
+ * Falls back to the local thresholds when the database is skipped or unreachable.
+ */
 export async function submitLevelOutcome(body = {}) {
   const launch = getChapterLaunch();
   const payload = {

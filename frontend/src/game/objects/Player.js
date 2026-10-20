@@ -1,8 +1,13 @@
+/**
+ * Farm hero. Stays movable after a level change so a shop visit
+ * cannot wedge the body inside a tile.
+ */
 import Phaser from 'phaser';
 import PlayerModel from './PlayerModel';
 import { IDLE_FRAMES, TILE_SIZE } from '../config/constants';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
+  /** Place the hero on a tile and attach the health and score model. */
   constructor(scene, tileX, tileY, texture, frame) {
     super(scene, tileX * TILE_SIZE, tileY * TILE_SIZE, texture, frame);
 

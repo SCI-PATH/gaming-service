@@ -3,7 +3,9 @@
  * A healthy score unlocks the next level.
  */
 
+/** At or above this score the chapter stays locked for another try. */
 export const FRUSTRATION_THRESHOLD = 61;
+/** Quiz accuracy below this also repeats the topic, even if frustration is calm. */
 export const MASTERY_THRESHOLD = 0.65;
 
 /** Level clock from the latest frustration score. Unknown score uses the middle band. */
@@ -33,6 +35,7 @@ const CHAPTER_REWARD_ITEMS = Object.freeze([
   'bull',
 ]);
 
+/** More frustration means a longer level clock. A missing score uses the middle band. */
 export function levelDurationMsFromFrustration(score) {
   if (score == null || score === '') return LEVEL_DURATION_MS.medium;
   const raw = Number(score);
@@ -49,11 +52,13 @@ export function chapterRewardItemId(chapterOrdinal) {
   return CHAPTER_REWARD_ITEMS[i % CHAPTER_REWARD_ITEMS.length];
 }
 
+/** Pass opens the next farm level. Remediation keeps the student on this topic. */
 export const LEVEL_OUTCOME = Object.freeze({
   REMEDIATION_REQUIRED: 'REMEDIATION_REQUIRED',
   LEVEL_PASSED: 'LEVEL_PASSED',
 });
 
+/** Share of quiz answers that were correct. No answers counts as zero. */
 export function masteryPercentage(correct, incorrect) {
   const right = Math.max(0, Number(correct) || 0);
   const wrong = Math.max(0, Number(incorrect) || 0);
@@ -62,6 +67,7 @@ export function masteryPercentage(correct, incorrect) {
   return right / total;
 }
 
+/** Band label stored with the level-end snapshot. */
 export function frustrationLevelFromScore(score) {
   const s = Math.max(0, Math.min(100, Number(score) || 0));
   if (s <= 30) return 'low';
@@ -87,6 +93,7 @@ export function frustrationScoreFromSnapshots(rows = [], fallback = 0) {
     : 0;
 }
 
+/** High frustration or low mastery repeats the lesson. Otherwise the next level unlocks. */
 export function decideLevelOutcome({
   frustrationScore = 0,
   correct = 0,
@@ -118,6 +125,7 @@ export function decideLevelOutcome({
   };
 }
 
+/** Short Sage line shown when a level passes or must be practiced again. */
 export function mentorReplyForOutcome(decision) {
   if (!decision?.retryLesson) {
     return 'You handled this topic with a steady pace. The next level is open.';

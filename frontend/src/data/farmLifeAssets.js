@@ -2,6 +2,7 @@
  * Kenney Tiny Farm + Tiny Town (CC0) sprites for world challenges.
  * Downloaded locally — never fetched at runtime. Credit Kenney.nl (optional).
  */
+/** Preload list for paddock, yard, and crop sprites. Rows are tile ids, not challenge content. */
 export const KENNEY_FARM_LOAD_ITEMS = [
   'axe',
   'barn',
@@ -80,4 +81,5 @@ export const KENNEY_FARM_LOAD_ITEMS = [
   image: `/assets/kenney/sprites/kf_${id}.png`,
 }));
 
+/** Same preload list under the name world layers import. */
 export const FARM_LIFE_LOAD_ITEMS = [...KENNEY_FARM_LOAD_ITEMS];

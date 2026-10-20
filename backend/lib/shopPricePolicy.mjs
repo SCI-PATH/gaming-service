@@ -3,6 +3,7 @@
  * Kept in backend/lib so Docker images that only copy /app/lib do not import ../frontend.
  */
 
+/** How far frustration can move a shop price off the catalog base. */
 export const SHOP_PRICE_LIMITS = Object.freeze({
   minMultiplier: 0.45,
   maxMultiplier: 1.15,
@@ -78,6 +79,7 @@ export function shopMultiplierForAverage(averageScore) {
   );
 }
 
+/** Final coin price. Higher frustration lowers the multiplier; the floor is minPrice. */
 export function priceFromAverageFrustration(basePrice, averageScore) {
   const base = Math.max(0, Number(basePrice) || 0);
   const mult = shopMultiplierForAverage(averageScore);
@@ -86,6 +88,7 @@ export function priceFromAverageFrustration(basePrice, averageScore) {
   return Math.max(SHOP_PRICE_LIMITS.minPrice, rounded);
 }
 
+/** Catalog base for a known farm item, or null when the id is not sold. */
 export function basePriceForItem(itemId) {
   const price = SHOP_BASE_PRICES[String(itemId || '').trim()];
   return Number.isFinite(price) ? price : null;

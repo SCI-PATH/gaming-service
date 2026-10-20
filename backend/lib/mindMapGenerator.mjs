@@ -349,6 +349,7 @@ function slug(text, fallback = 'n') {
   return s || fallback;
 }
 
+/** Pedagogy branches become the node graph drawn beside the farm quiz. */
 export function structuredToConceptGraph(centralConcept, pedagogy) {
   const rootId = 'root';
   const nodes = [
@@ -426,6 +427,7 @@ function collectMapText(mapOrBranch) {
   return parts.join(' \n ');
 }
 
+/** Reject a map that drops the scored key or talks about the student's wrong pick. */
 export function validatePedagogicalMindMap(map, attempts = []) {
   const branches = Array.isArray(map?.branches) ? map.branches : [];
   if (!map || !compactText(map.title || map.central_idea || map.root)) {
@@ -829,6 +831,7 @@ export async function generateMindMapFromMistakes(body = {}, deps = {}) {
   const studentId = String(body.studentId || '').trim();
 
   const branches = [];
+  // One textbook paragraph per missed farm question, capped by the frustration band.
   for (const a of capped) {
     const question = compactText(a.prompt || a.question);
     const grade = [6, 7, 8, 9].includes(Number(a.grade))

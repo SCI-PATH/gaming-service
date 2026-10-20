@@ -47,6 +47,10 @@ export const FRUSTRATION_WEIGHTS = Object.freeze({
   conceptStruggleWeight: 3, // same idea missed repeatedly
 });
 
+/**
+ * Knees and caps for the 0–100 score.
+ * Shop prices, enemy pressure, and lesson retry all read these thresholds.
+ */
 export const FRUSTRATION_CONFIG = Object.freeze({
   weights: FRUSTRATION_WEIGHTS,
   /** Companion-signal rule: at least this many active signals before score can exceed 40 */
@@ -583,6 +587,7 @@ export function shouldOpenFrustrationAgent(result) {
  */
 export function shouldRetryLessonAfterFarm(scoreOrLevel) {
   const n = Number(scoreOrLevel);
+  // A numeric score retries at 61. A band name retries on high or very_high.
   if (Number.isFinite(n)) {
     return n >= (FRUSTRATION_CONFIG.lessonRetryScore ?? 61);
   }

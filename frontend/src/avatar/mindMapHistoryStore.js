@@ -1,6 +1,8 @@
 /**
  * Persistent mind-map history for incorrect-answer maps only.
  * Stored in localStorage; reviewed in a separate history UI (not live modal chat).
+ * Entries are in-game Sage maps from farm misses, also posted back with the
+ * quiz explanation. They are not learning-path engine maps.
  */
 
 import { getCurrentStudent } from '../data/mockStudents.js';
@@ -127,6 +129,7 @@ export function mergeRemoteMindMaps(history = []) {
   return next;
 }
 
+/** Best-effort save so a later login can restore this farm explanation. */
 function persistExplanation(entry) {
   if (typeof fetch === 'undefined') return;
   const studentId = entry.studentId;
@@ -147,6 +150,7 @@ function persistExplanation(entry) {
   }).catch(() => {});
 }
 
+/** Wipe this device's Sage map history and notify open drawers. */
 export function clearMindMapHistory() {
   saveMindMapHistory([]);
   if (typeof window !== 'undefined') {

@@ -1,3 +1,7 @@
+/**
+ * Sage avatar chat for a farm quiz turn.
+ * Builds the tutor prompt, calls the model, and speaks a local reply when the provider is offline.
+ */
 import {
   getSystemPromptForMode,
   getDynamicSystemAddon,
@@ -26,6 +30,7 @@ import {
 import { excerptForQuestion } from './textbookRetrieve.mjs';
 import { resolveChapter } from './curriculumChapters.mjs';
 
+/** Fields the performance mentor needs from the live farm quiz context. */
 function sessionExtras(context = {}, name = '') {
   return {
     studentName: name || context?.student_profile?.display_name,
@@ -233,6 +238,7 @@ export function buildMessages(body = {}) {
     : `Speak CORRECT-ONLY in the LIVE sentence budget (no headings): the miss is blank/symbolic — teach the assessment-engine idea only.`;
 
   let instruct;
+  // A real student turn teaches the miss. An auto-open only asks the diagnostic.
   if (studentMessage && !auto) {
     instruct =
       `TURN TYPE: FOLLOW-UP — MISTAKE-DRIVEN SCIENCE TUTOR. ` +
@@ -291,6 +297,7 @@ export function buildMessages(body = {}) {
   ];
 }
 
+/** Stand-in line when Sage opened itself from a farm behavior signal, not student speech. */
 function defaultStudentMessage(mode, context = {}) {
   const nonWrong = String(
     context?.non_wrong_scenario_code ||
@@ -391,6 +398,7 @@ export async function handleAvatarChat(body = {}) {
   }
 }
 
+/** Hide raw provider errors from the kid UI. The spoken reply is already the fallback. */
 function softErrorForClient(message) {
   const s = String(message || '');
   if (/rate.?limit|429|tokens per day|TPD/i.test(s)) {
@@ -401,6 +409,7 @@ function softErrorForClient(message) {
   return s || null;
 }
 
+/** Avatar face from the intervention mode, or from words like "too hard". */
 function inferMood(mode, context, studentMessage) {
   if (mode === INTERVENTION_MODES.CONGRATULATE_AND_ADVANCE) return 'proud';
   if (mode === INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE) {
@@ -510,6 +519,7 @@ export async function handleAvatarChatStream(body = {}, write) {
         knowledgeFallback: Boolean(streamed.knowledgeFallback),
       };
     }
+    // An empty model stream still has to say something the farm UI can show.
     if (!full.trim()) {
       full = buildFallbackReply(context, studentMessage, history);
       send({ type: 'token', text: full });
@@ -582,6 +592,7 @@ export async function handleAvatarChatStream(body = {}, write) {
   }
 }
 
+/** Type the offline reply out as tokens so the farm chat still streams. */
 function streamTextChunks(text, onToken) {
   const words = String(text).split(/(\s+)/).filter(Boolean);
   return new Promise((resolve) => {

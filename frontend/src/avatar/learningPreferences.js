@@ -2,6 +2,7 @@
  * Parse & store student learning preferences from chat / chips.
  */
 
+/** Farm science activity shapes the student can name in chat. */
 export const QUESTION_FORMATS = [
   { id: 'mcq', label: 'Multiple-choice', text: 'I prefer multiple-choice questions.' },
   { id: 'puzzle', label: 'Puzzles', text: 'I enjoy puzzle-style science challenges.' },
@@ -43,6 +44,7 @@ export function extractLearningPreferences(message, prev = {}) {
     if (hit) enjoyMost = hit.id;
   }
 
+  // Self-report of hard vs easy farm work; later chips can override.
   let difficultyNote = prev.difficultyNote || null;
   if (/confus|hard|difficult|overwhelm|don't understand/i.test(text)) {
     difficultyNote = text.slice(0, 220);
@@ -64,6 +66,7 @@ export function extractLearningPreferences(message, prev = {}) {
   };
 }
 
+/** Blank preference record before the student has named a format. */
 export function emptyPreferences() {
   return {
     preferredFormats: [],
@@ -74,6 +77,7 @@ export function emptyPreferences() {
   };
 }
 
+/** Snake-case copy for the mentor payload so Sage can honor format and pace. */
 export function formatPreferencesForPayload(prefs = {}) {
   return {
     preferred_question_formats: prefs.preferredFormats || [],

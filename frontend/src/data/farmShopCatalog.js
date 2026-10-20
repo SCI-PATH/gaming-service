@@ -60,6 +60,7 @@ export function getCropShopItems() {
   return out;
 }
 
+/** One shop row per animal produce name. Sack and feed sprites are left out of bubbles. */
 export function getAnimalProduceShopItems() {
   const seen = new Set();
   const out = [];
@@ -87,6 +88,7 @@ export function getAnimalProduceShopItems() {
     });
   }
   // Ensure milk exists even if catalog shape varies
+  // Milk is always sellable even if the animal catalog shape changes.
   if (!seen.has('milk')) {
     out.push({
       id: 'milk',
@@ -99,6 +101,7 @@ export function getAnimalProduceShopItems() {
   return out;
 }
 
+/** Yard waste sells as one compost item. The bubble uses the emoji, not a prop sprite. */
 export function getCleaningShopItems() {
   return [
     {
@@ -149,6 +152,7 @@ export function getBubbleItemVisual(itemId) {
   };
 }
 
+/** Crops, animal produce, and compost — the pool customer orders are drawn from. */
 export function getAllShopCatalogItems() {
   return [
     ...getCropShopItems(),
@@ -157,6 +161,7 @@ export function getAllShopCatalogItems() {
   ];
 }
 
+/** Catalog row for an id. Unknown ids still get a name so an order line can render. */
 export function getShopItemById(itemId) {
   return (
     getAllShopCatalogItems().find((i) => i.id === itemId) || {
@@ -195,6 +200,7 @@ export function inventoryFromCartStack(cartStack = [], fallbacks = {}) {
   return stock;
 }
 
+/** Expand { itemId: qty } back into the token list the player carries. */
 export function cartStackFromInventory(stock = {}) {
   const stack = [];
   for (const [id, qty] of Object.entries(stock)) {
@@ -204,6 +210,7 @@ export function cartStackFromInventory(stock = {}) {
   return stack;
 }
 
+/** Total items in a stock map, used by the shop HUD and logout snapshot. */
 export function countInventory(stock = {}) {
   return Object.values(stock).reduce((a, b) => a + (Number(b) || 0), 0);
 }

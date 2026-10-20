@@ -40,6 +40,7 @@ function envUrl(key, fallback) {
   try {
     if (typeof window !== 'undefined') {
       const host = window.location.hostname;
+      // A local farm dev server still returns the student to the local SCI-PATH app.
       if (host === 'localhost' || host === '127.0.0.1') {
         if (fallback.includes(':3000')) {
           return `${window.location.protocol}//${host}:3000`;
@@ -52,6 +53,7 @@ function envUrl(key, fallback) {
   return String(fallback || '').replace(/\/+$/, '');
 }
 
+/** SCI-PATH origin. Localhost farm play talks to the app on port 3000. */
 export function getScipathAppUrl() {
   return envUrl('VITE_SCIPATH_APP_URL', DEFAULT_SCIPATH_APP);
 }
@@ -103,6 +105,7 @@ export function chapterFarmCursor(prev = {}, startLevel = 1, lessonId = '') {
   };
 }
 
+/** Unlock granted for finishing this farm level. The list repeats after the last item. */
 export function chapterRewardItemId(levelId) {
   const i = Math.max(0, Math.floor(Number(levelId) || 1) - 1);
   return CHAPTER_REWARD_ITEMS[i % CHAPTER_REWARD_ITEMS.length];
@@ -152,6 +155,7 @@ function readStoredLaunch() {
   return emptyLaunch();
 }
 
+/** Remember the chapter handoff in both session and local storage. */
 export function persistChapterLaunch(patch = {}) {
   const next = { ...readStoredLaunch(), ...patch };
   const raw = JSON.stringify(next);
@@ -168,10 +172,12 @@ export function persistChapterLaunch(patch = {}) {
   return next;
 }
 
+/** Chapter, next lesson, and reward from the last SCI-PATH launch. */
 export function getChapterLaunch() {
   return readStoredLaunch();
 }
 
+/** True when this farm session was opened from a learning-path lesson. */
 export function isLearningPathLinked() {
   const launch = readStoredLaunch();
   return Boolean(launch.fromLearningPath && launch.lessonId);
@@ -220,8 +226,10 @@ export function readChapterLaunchFromSearch(search) {
   };
 }
 
+/** Save a learning-path URL. A plain farm open keeps the previous launch. */
 export function applyChapterLaunch(search) {
   const parsed = readChapterLaunchFromSearch(search);
+  // No lesson on the URL — do not wipe a launch that is already stored.
   if (!parsed.fromLearningPath && !parsed.lessonId) return readStoredLaunch();
   return persistChapterLaunch(parsed);
 }
@@ -241,12 +249,14 @@ export function grantLearningPathReward(levelId, itemId) {
   return id;
 }
 
+/** Names of unlocks this student already owns, for the return-to-path banner. */
 export function ownedUnlockLabels() {
   return getOwnedUnlockIds()
     .map((id) => getUnlockItem(id)?.name || id)
     .filter(Boolean);
 }
 
+/** Unlocks bought or granted on this farm level. */
 export function newlyUnlockedLabels(levelId) {
   const level = Math.max(1, Number(levelId) || 1);
   return getOwnedUnlockIds()
@@ -255,6 +265,10 @@ export function newlyUnlockedLabels(levelId) {
     .filter(Boolean);
 }
 
+/**
+ * URL back to SCI-PATH after the farm level.
+ * A retry omits the next lesson. Frustration score and mastery ride along as query params.
+ */
 export function buildLearningPathReturnUrl({
   lessonId,
   levelId,
@@ -282,6 +296,7 @@ export function buildLearningPathReturnUrl({
   const title = chapterTitle || launch.chapterTitle;
   if (title) url.searchParams.set('chapterTitle', title);
   const retry = Boolean(retryLesson);
+  // High frustration or low mastery: ask SCI-PATH to repeat this lesson.
   if (retry) {
     url.searchParams.set('retryLesson', '1');
   } else {
@@ -322,6 +337,7 @@ function scipathOrigin() {
   return String(origin).replace(/\/+$/, '');
 }
 
+/** SCI-PATH logout route. It revokes the login token. */
 export function getScipathLogoutUrl() {
   return `${scipathOrigin()}/logout`;
 }
@@ -352,6 +368,7 @@ export function openAuthenticatedHome() {
   return href;
 }
 
+/** Open the learning-path list, preferring the origin that launched this farm. */
 export function openLearningPathHome() {
   const launch = readStoredLaunch();
   const app = getScipathAppUrl();
@@ -370,6 +387,7 @@ export function openLearningPathHome() {
   return href;
 }
 
+/** Leave the farm for the chapter return URL, including frustration and unlocks. */
 export function returnToLearningPath(opts = {}) {
   const href = buildLearningPathReturnUrl(opts);
   if (typeof window !== 'undefined') {

@@ -13,6 +13,7 @@ export default function PlayWizard({
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
+  /** Collapse the bubble after a few seconds so it does not cover the farm. */
   useEffect(() => {
     if (!step?.id) return;
     setCollapsed(false);

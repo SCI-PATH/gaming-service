@@ -598,10 +598,12 @@ export function getAvailableStagesForItem(itemId, purchasedAtLevel, currentLevel
   return def.stages.filter((s) => ownedLevels >= s.minLevelsOwned);
 }
 
+/** Challenge definition for one shop item, or null. */
 export function getChallengeDef(itemId) {
   return UNLOCK_CHALLENGES[itemId] ?? null;
 }
 
+/** One quiz stage inside an item’s challenge, or null. */
 export function getStage(itemId, stageId) {
   return getChallengeDef(itemId)?.stages.find((s) => s.id === stageId) ?? null;
 }

@@ -32,6 +32,7 @@ export function bindPressEnter(scene, onEnter, { allowInInput = false } = {}) {
   return go;
 }
 
+/** Clicking the press-enter image does the same thing as the Enter key. */
 export function makeEnterImageClickable(scene, image, onEnter) {
   if (!image) return;
   image.setInteractive({ useHandCursor: true });

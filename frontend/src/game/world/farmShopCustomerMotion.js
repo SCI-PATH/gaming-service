@@ -3,6 +3,7 @@
  */
 import { FARM_SHOP_CUSTOMER_SHEET } from '../../data/farmShopAssets.js';
 
+/** Stable frame index so the same customer id keeps the same face. */
 function hashPick(seed, length) {
   let h = 0;
   const s = String(seed || '0');
@@ -50,6 +51,7 @@ export function startCustomerQueueWalk(scene, sprite, queueIndex = 0) {
   ];
 }
 
+/** Stop the bob tweens when a customer leaves the queue. */
 export function stopCustomerQueueWalk(tweens = []) {
   for (const tween of tweens) {
     try {

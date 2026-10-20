@@ -136,6 +136,7 @@ export const CLEANING_CHALLENGES = ROUND_COUNTS.flatMap((sweepCount, round) =>
 
 export const CLEANING_CHALLENGE_COUNT = CLEANING_CHALLENGES.length;
 
+/** Yard job at this index. The index wraps the cleaning list. */
 export function getCleaningChallenge(index = 0) {
   const i =
     ((Number(index) || 0) % CLEANING_CHALLENGE_COUNT +
@@ -144,14 +145,20 @@ export function getCleaningChallenge(index = 0) {
   return CLEANING_CHALLENGES[i];
 }
 
+/**
+ * How many messes to clear. Strong mastery asks for two extra.
+ * Emerging mastery keeps the round's base count.
+ */
 export function cleaningSweepTarget(challenge, mastery) {
   const base = Math.max(3, Number(challenge?.sweepCount) || 4);
   const band = bandFromMastery(mastery);
   if (band === DDA_BANDS.STRONG) return base + 2;
+  // Emerging students are not asked for more than the round already requires.
   if (band === DDA_BANDS.EMERGING) return base;
   return base + 1;
 }
 
+/** Quest line: clear the mess, then sell the waste as compost. */
 export function cleaningGoalText(challenge, sweepTarget) {
   const mess = challenge?.messName || 'mess';
   const waste = challenge?.wasteName || 'waste';

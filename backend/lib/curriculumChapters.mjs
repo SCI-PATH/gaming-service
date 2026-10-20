@@ -134,6 +134,7 @@ export const CURRICULUM_CHAPTERS = [
   { grade: 9, index: 18, chapter_id: 'G9_C18', lesson_id: 'g9_sci_18', topic_id: 'G9_S19_NAT_SUSTAIN', chapter_name: 'Sustainable Use of Natural Resources', pdf_id: 'part2', page_start: 164, page_end: 180 },
 ];
 
+/** Compare chapter titles without punctuation or case differences. */
 export function normalizeTitle(value) {
   return String(value || '')
     .toLowerCase()
@@ -143,6 +144,7 @@ export function normalizeTitle(value) {
     .trim();
 }
 
+/** Chapter that owns this PDF page. Part 1 and Part 2 ranges stay separate. */
 export function chapterForPage(grade, pdfId, page) {
   return (
     CURRICULUM_CHAPTERS.find(
@@ -165,6 +167,7 @@ export function chromaChapterId(value) {
   return `G${match[1]}_C${String(Number(match[2])).padStart(2, '0')}`;
 }
 
+/** Pick the EduPub chapter for a farm miss by id, skill id, or title. */
 export function resolveChapter(miss = {}) {
   const grade = Number(String(miss.grade || '').replace(/.*?(\d).*/, '$1')) || 0;
   const topicId = String(miss.topic_id || miss.topicId || '').trim();

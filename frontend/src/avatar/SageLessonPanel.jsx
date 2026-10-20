@@ -1,5 +1,7 @@
 /**
  * Structured SAGE teaching: define both answers, then compare by name.
+ * Rendered inside the farm mentor when a miss has five teaching sections.
+ * Speech reads the same sections; this panel is the written form.
  */
 export default function SageLessonPanel({ sections = [], lesson = null }) {
   const list = Array.isArray(sections) && sections.length
@@ -15,6 +17,7 @@ export default function SageLessonPanel({ sections = [], lesson = null }) {
         <li key={s.id || s.title} className={`sage-lesson-block is-${s.id || 'part'}`}>
           <h3 className="sage-lesson-title">{s.title}</h3>
           {s.quote ? <p className="sage-lesson-quote">{s.quote}</p> : null}
+          {/* Name the idea, then its job — student pick and engine key stay apart. */}
           {s.id === 'your_answer' || s.id === 'correct_answer' ? (
             <>
               {s.scientificDefinition || s.body ? (
@@ -31,6 +34,7 @@ export default function SageLessonPanel({ sections = [], lesson = null }) {
               ) : null}
             </>
           ) : s.id === 'difference' ? (
+            /* Side-by-side jobs, then the one scientific difference. */
             <>
               <ul className="sage-lesson-diff">
                 {s.studentConcept ? (

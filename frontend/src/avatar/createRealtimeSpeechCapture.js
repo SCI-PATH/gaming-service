@@ -1,6 +1,8 @@
 /**
  * Continuous browser speech capture (Web Speech API).
  * Live interim text + final phrases for real-time student voice input.
+ * The student's mic during a farm lesson, so they can answer Sage aloud.
+ * Starting capture cancels her TTS so the two voices do not fight.
  */
 
 export function getSpeechRecognitionCtor() {

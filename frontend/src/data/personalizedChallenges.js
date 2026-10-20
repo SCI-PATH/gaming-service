@@ -198,6 +198,7 @@ export function personalizeCropChallenge(
   };
 }
 
+/** Same frustration sizing as crops, for the animal pen’s collect target. */
 export function personalizeAnimalChallenge(
   challenge,
   {
@@ -236,6 +237,7 @@ export function personalizeAnimalChallenge(
   };
 }
 
+/** Same frustration sizing as crops, for how much of the yard to sweep. */
 export function personalizeCleaningChallenge(
   challenge,
   {

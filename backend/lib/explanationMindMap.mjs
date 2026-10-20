@@ -29,10 +29,12 @@ Return JSON only:
 }
 Use 2 to 5 topics. Each topic has 0 to 3 children. Short noun phrases. No markdown.`;
 
+/** One line, capped, so the model prompt stays on the finished explanation. */
 function clip(value, max = 1200) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+/** Pull the first JSON object out of a model reply that may include fences. */
 function readJsonContent(content) {
   const text = String(content || '')
     .replace(/```json/gi, '')
@@ -48,6 +50,7 @@ function readJsonContent(content) {
   }
 }
 
+/** Tree plus Mermaid and SVG the farm can show or download. */
 function pack(tree, source, explanation, question, concept) {
   const mermaid = treeToMermaid(tree);
   return {
@@ -106,10 +109,12 @@ export async function generate_mindmap_data(
     console.warn(`[explanation-mindmap] hierarchy model skipped: ${message}`);
   }
 
+  // Model miss: split the explanation into branches locally so the map still appears.
   const tree = parseExplanationToTree(explanation, question, concept, correctAnswer);
   return pack(tree, 'parsed', explanation, question, concept);
 }
 
+/** Up to six explanations from one quiz review, each turned into its own map. */
 export async function generateExplanationMindMaps(body = {}, deps = {}) {
   const items = Array.isArray(body.items) && body.items.length
     ? body.items

@@ -1,6 +1,9 @@
 /**
  * Personalized AI Learning Companion — tier dialogue, incorrect-answer maps, fresh sessions.
  * Active modal never shows prior chat or history maps; history lives in a separate drawer.
+ * Sage's farm-lesson window. She speaks the opener and the in-game mind map,
+ * with pace set by the frustration score. The map shown here is the game map,
+ * not the learning-path engine map. History maps stay in the drawer.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
@@ -35,7 +38,8 @@ import {
   buildInterventionFocus,
   describeFocusCode,
 } from './interventionFocus.js';
-import { resolveSageVoice } from './sageSpokenVoice.js';
+import { resolveSageVoice, sageToneLabel } from './sageSpokenVoice.js';
+import { buildFrustrationAdaptation } from '../data/frustrationModel.js';
 import {
   asQuestionText,
   friendlyStudentName,
@@ -55,6 +59,7 @@ import {
 import { inferConceptFromText } from './conceptMaps.js';
 import { handoffToSocrates } from '../data/socratesHandoff.js';
 
+/** Plain text of one quiz choice, whether it arrived as a string or an object. */
 function choiceText(opt) {
   if (opt == null) return '';
   if (typeof opt === 'string') return opt.replace(/\s+/g, ' ').trim();
@@ -63,6 +68,7 @@ function choiceText(opt) {
     .trim();
 }
 
+/** Same choice ignoring the leading A/B/C letter. */
 function sameChoice(a, b) {
   const x = choiceText(a)
     .replace(/^\(?[A-Da-d]\)?[.)]\s+/, '')
@@ -76,6 +82,7 @@ function sameChoice(a, b) {
   return false;
 }
 
+/** Choices for the miss card: the student's pick and the engine key, when both exist. */
 function quizChoicesForMiss(miss) {
   if (!miss) return [];
   const raw = miss.options || miss.attempt?.options || [];
@@ -108,6 +115,7 @@ function quizChoicesForMiss(miss) {
   return rows;
 }
 
+/** Farm question and answers frozen into the mentor session when Sage opens. */
 function sageFreezeExtras({
   interventionFocus = {},
   quiz = null,
@@ -159,6 +167,7 @@ function sageFreezeExtras({
   };
 }
 
+/** The farm question on screen while Sage talks, marked with the student's pick. */
 function ActiveMissQuiz({ miss }) {
   if (!miss) return null;
   const question = asQuestionText(miss.prompt || miss.question, 280);
@@ -197,6 +206,7 @@ function ActiveMissQuiz({ miss }) {
   );
 }
 
+/** Modal shell: speech, chat, and the in-game map for one farm intervention. */
 export default function AvatarAssistantModal({
   open = false,
   student = null,
@@ -216,6 +226,9 @@ export default function AvatarAssistantModal({
   onLearningMessage = null,
   onShowMindMap = null,
   onClose,
+  showToneBanner = false,
+  demoShowcase = false,
+  toneScore = null,
 }) {
   const titleId = useId();
   const inputRef = useRef(null);
@@ -250,6 +263,7 @@ export default function AvatarAssistantModal({
     scenario || telemetry.scenario || null;
 
   const m = metrics || telemetry.metrics || {};
+  // Pace and sentence cap for this open. The score is never spoken.
   const sageVoice = useMemo(
     () =>
       resolveSageVoice({
@@ -330,6 +344,7 @@ export default function AvatarAssistantModal({
   ]);
 
   const shouldOfferMap = useMemo(() => {
+    if (demoShowcase) return true;
     if (interventionFocus?.require_mind_map) return true;
     if (typeof offerMindMapProp === 'boolean' && offerMindMapProp) return true;
     if (telemetry.offerMindMap === true) return true;
@@ -388,6 +403,7 @@ export default function AvatarAssistantModal({
     resolvedScenario,
     misconceptions,
     offerMindMapProp,
+    demoShowcase,
     telemetry.offerMindMap,
     telemetry.non_wrong_scenario_code,
     telemetry.scenarioCode,
@@ -482,6 +498,26 @@ export default function AvatarAssistantModal({
     mindMapProp,
     telemetry.mindMap,
   ]);
+
+  useEffect(() => {
+    if (!demoShowcase || !open || !mindMap) return undefined;
+    setMapVisible(true);
+    let step = 0;
+    const id = window.setInterval(() => {
+      step += 1;
+      const pane = document.querySelector('.avatar-split-map-scroll');
+      if (pane) {
+        const max = Math.max(0, pane.scrollHeight - pane.clientHeight);
+        pane.scrollTop = Math.min(max, step * 42);
+      }
+      listRef.current && (listRef.current.scrollTop = Math.min(
+        listRef.current.scrollHeight,
+        step * 28,
+      ));
+      if (step > 16) window.clearInterval(id);
+    }, 320);
+    return () => window.clearInterval(id);
+  }, [demoShowcase, open, mindMap]);
 
   const activeMiss = useMemo(() => {
     const branches = mindMap?.branches || [];
@@ -666,6 +702,7 @@ export default function AvatarAssistantModal({
     });
   }, []);
 
+  /** Speak one line at the frustration rate. Mute skips the browser voice. */
   const speakText = useCallback(
     async (text) => {
       if (mutedRef.current || voiceMuted) {
@@ -737,6 +774,7 @@ export default function AvatarAssistantModal({
     [voiceMuted],
   );
 
+  /** Read each in-game map card and highlight the words as they are spoken. */
   const narrateMindMap = useCallback(
     async (map) => {
       if (!map || mutedRef.current || voiceMuted) return;
@@ -1267,6 +1305,7 @@ export default function AvatarAssistantModal({
     }
   };
 
+  /** Student or silent coach turn. The mic stops first so speech and listening do not overlap. */
   const sendMessage = async (rawText, { silentUser = false } = {}) => {
     const studentMessage = String(rawText || '').trim();
     if (!studentMessage) return;
@@ -1675,6 +1714,17 @@ export default function AvatarAssistantModal({
       null,
     280,
   );
+  const toneVoice = showToneBanner
+    ? resolveSageVoice({
+        frustrationScore: toneScore ?? telemetry.frustrationScore ?? m.frustration_score,
+        frustrationLevel: telemetry.frustrationLevel,
+      })
+    : sageVoice;
+  const toneMap = showToneBanner
+    ? buildFrustrationAdaptation(
+        toneScore ?? telemetry.frustrationScore ?? m.frustration_score ?? toneVoice.level,
+      )
+    : null;
 
   return (
     <div
@@ -1693,6 +1743,14 @@ export default function AvatarAssistantModal({
         <h2 id={titleId} className="avatar-sr-only">
           Sage, science mentor
         </h2>
+        {showToneBanner ? (
+          <p className="sage-tone-banner">
+            <strong>Sage tone: {sageToneLabel(toneVoice.level)}</strong>
+            <span>
+              {toneMap?.mindMap?.maxBranches || '—'} mind-map branches · {toneVoice.voiceHint}
+            </span>
+          </p>
+        ) : null}
         <button
           type="button"
           className="avatar-close is-voice-close"
@@ -1716,6 +1774,7 @@ export default function AvatarAssistantModal({
                   map={mindMap}
                   misconceptions={misconceptions}
                   compact
+                  autoShowcase={demoShowcase}
                   onNodeSelect={handleMissSelect}
                   onMapChange={handleMapChange}
                   speechFocus={speechMapFocus}
@@ -2021,6 +2080,7 @@ export default function AvatarAssistantModal({
   );
 }
 
+/** Portrait mood: proud for a milestone, encouraging for a stretch, else warm support. */
 function moodForMode(mode, tier = 'AVERAGE') {
   if (
     mode === INTERVENTION_MODES.CONGRATULATE_AND_ADVANCE ||
@@ -2035,6 +2095,7 @@ function moodForMode(mode, tier = 'AVERAGE') {
   return AVATAR_MOODS.empathetic;
 }
 
+/** Short label for the intervention chip in the modal header. */
 function modeLabel(mode) {
   switch (mode) {
     case INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE:
@@ -2046,6 +2107,7 @@ function modeLabel(mode) {
   }
 }
 
+/** Hidden note for the model. The student hears greetingFor, not this text. */
 function bootstrapMessage(
   mode,
   mindMap,
@@ -2075,6 +2137,7 @@ function bootstrapMessage(
   );
 }
 
+/** First line Sage says: why she came, or a stretch / celebration for strong farm play. */
 function greetingFor(
   reason,
   mode,
@@ -2103,6 +2166,7 @@ function greetingFor(
   return `I came over because ${why}. Let's talk about ${concept}. What part still feels fuzzy?`;
 }
 
+/** One-line reason under the chat, in words a student can read. */
 function reasonCopy(reason, mode, focus = null) {
   if (focus?.friendly_why || focus?.problem_statement_friendly) {
     const why = focus.friendly_why || focus.problem_statement_friendly;

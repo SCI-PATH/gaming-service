@@ -2,6 +2,7 @@
 
 const FONT = 'Inter, Segoe UI, system-ui, sans-serif';
 
+/** Small purple label above the title. */
 export const brandKickerStyle = {
   fontFamily: FONT,
   fontSize: '13px',
@@ -10,6 +11,7 @@ export const brandKickerStyle = {
   align: 'center',
 };
 
+/** Large dark title. */
 export const brandTitleStyle = {
   fontFamily: FONT,
   fontSize: '52px',
@@ -18,6 +20,7 @@ export const brandTitleStyle = {
   align: 'center',
 };
 
+/** Title word drawn in the brand blue. */
 export const brandTitleAccentStyle = {
   fontFamily: FONT,
   fontSize: '52px',
@@ -26,6 +29,7 @@ export const brandTitleAccentStyle = {
   align: 'center',
 };
 
+/** Gray subtitle under the title. */
 export const brandTaglineStyle = {
   fontFamily: FONT,
   fontSize: '17px',
@@ -35,6 +39,7 @@ export const brandTaglineStyle = {
   wordWrap: { width: 620 },
 };
 
+/** Pulsing Enter label on menu screens. */
 export const enterPromptStyle = {
   fontFamily: FONT,
   fontSize: '26px',
@@ -43,6 +48,7 @@ export const enterPromptStyle = {
   align: 'center',
 };
 
+/** Section title. */
 export const titleStyle = {
   fontFamily: FONT,
   fontSize: '36px',
@@ -51,6 +57,7 @@ export const titleStyle = {
   align: 'center',
 };
 
+/** Slightly smaller heading. */
 export const headingStyle = {
   fontFamily: FONT,
   fontSize: '30px',
@@ -59,6 +66,7 @@ export const headingStyle = {
   align: 'center',
 };
 
+/** Gray body copy. */
 export const bodyStyle = {
   fontFamily: FONT,
   fontSize: '18px',
@@ -66,6 +74,7 @@ export const bodyStyle = {
   align: 'center',
 };
 
+/** Bold body copy. */
 export const bodyStrongStyle = {
   fontFamily: FONT,
   fontSize: '18px',
@@ -74,6 +83,7 @@ export const bodyStrongStyle = {
   align: 'center',
 };
 
+/** Small gray caption. */
 export const captionStyle = {
   fontFamily: FONT,
   fontSize: '15px',
@@ -81,6 +91,7 @@ export const captionStyle = {
   align: 'center',
 };
 
+/** Quiet menu hint. */
 export const menuStyle = {
   fontFamily: FONT,
   fontSize: '16px',
@@ -88,6 +99,7 @@ export const menuStyle = {
   align: 'center',
 };
 
+/** Tiny in-world HUD label. */
 export const hudStyle = {
   fontFamily: FONT,
   fontSize: '8px',
@@ -96,6 +108,7 @@ export const hudStyle = {
   align: 'center',
 };
 
+/** One leaderboard row. */
 export const leaderboardRowStyle = {
   fontFamily: FONT,
   fontSize: '22px',

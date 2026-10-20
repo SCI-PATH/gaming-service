@@ -26,10 +26,12 @@ const STATE_TO_SITUATION = {
   healthy: 'wilted_flower',
 };
 
+/** Bed look for a story situation. Unknown ids wilt. */
 export function plotStateForSituation(situationId) {
   return SITUATION_TO_STATE[String(situationId || '')] || 'wilted';
 }
 
+/** Story id for a bed state. Healthy beds reuse the wilted-flower situation. */
 export function situationForPlotState(state) {
   return STATE_TO_SITUATION[String(state || '')] || 'wilted_flower';
 }
@@ -53,6 +55,7 @@ export function farmConditionFromPerformance(input = {}) {
   );
   const fr = input.frustrationLevel;
 
+  // Weak play, or high / very-high frustration: most beds look in trouble.
   if (band === 'weak' || highFrustration(fr)) {
     return {
       id: 'struggling_farm',
@@ -71,6 +74,7 @@ export function farmConditionFromPerformance(input = {}) {
     };
   }
 
+  // Strong play with low frustration, or no score yet: one or two beds still need work.
   if (band === 'smart' && (lowFrustration(fr) || !fr)) {
     return {
       id: 'thriving_farm',
@@ -89,6 +93,7 @@ export function farmConditionFromPerformance(input = {}) {
     };
   }
 
+  // Medium band, or smart play that is not calm: half the beds stay healthy.
   return {
     id: 'split_farm',
     band: 'medium',

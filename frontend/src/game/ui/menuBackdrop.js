@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { enterPromptStyle } from './textStyles.js';
 
+/** SCI-PATH colors shared by menus and the load bar. */
 export const BRAND = Object.freeze({
   primary: 0x00a8e8,
   secondary: 0x70e000,

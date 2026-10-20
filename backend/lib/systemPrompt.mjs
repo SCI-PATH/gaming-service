@@ -19,6 +19,7 @@ import {
 } from '../../frontend/src/avatar/sageSpokenVoice.js';
 import { sanitizeKidSpeech } from '../../frontend/src/avatar/kidFriendlySpeech.js';
 
+/** Why Sage opened: help a miss, stretch a strong run, or celebrate and move on. */
 export const INTERVENTION_MODES = {
   SUPPORT_AND_SCAFFOLD: 'SUPPORT_AND_SCAFFOLD',
   ENRICHMENT_AND_CHALLENGE: 'ENRICHMENT_AND_CHALLENGE',
@@ -92,6 +93,7 @@ const CONGRATS = `${SHARED}
 
 MODE: cheerful celebrate. Praise specific work from their words, then one next goal on the same farm science idea.`;
 
+/** Base spoken prompt for this intervention. Unknown modes stay on gentle help. */
 export function getSystemPromptForMode(mode) {
   const m = String(mode || '').toUpperCase();
   if (m === INTERVENTION_MODES.ENRICHMENT_AND_CHALLENGE) return ENRICH;
@@ -99,6 +101,7 @@ export function getSystemPromptForMode(mode) {
   return SUPPORT;
 }
 
+/** True when the farm opened Sage, so the text is a signal and not the student's words. */
 export function isAutoCoachMessage(studentMessage = '') {
   const s = String(studentMessage || '').trim();
   if (!s) return true;
@@ -263,6 +266,7 @@ function asPlain(raw) {
   return s;
 }
 
+/** Per-turn add-on: farm question lock, frustration voice, and whether a mind map is open. */
 export function getDynamicSystemAddon(context = {}, opts = {}) {
   const rawName =
     context?.student_profile?.display_name ||
@@ -383,4 +387,5 @@ export function getDynamicSystemAddon(context = {}, opts = {}) {
   return lines.join(' ');
 }
 
+/** Default Sage prompt when a caller does not pick an intervention mode. */
 export const AVATAR_SYSTEM_PROMPT = SUPPORT;

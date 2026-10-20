@@ -9,8 +9,13 @@ const STATUS = {
   LEFT: 'LEFT',
 };
 
+/** Happy and waiting are the same calm band — those flips are not HUD alerts. */
 const SKIP_PAIRS = new Set(['happy|waiting', 'waiting|happy', 'happy|happy']);
 
+/**
+ * Mood from queue status and remaining patience (patience / maxPatience).
+ * Left and served come from status; the rest use 18% / 35% / 65% cutoffs.
+ */
 export function customerMoodState(customer) {
   if (!customer) {
     return { key: 'none', rank: 0, face: '🙂', label: '—', reason: '', action: '' };
@@ -76,11 +81,13 @@ export function customerMoodState(customer) {
   };
 }
 
+/** Alert when mood enters unhappy, angry, or left, or clearly recovers from those. */
 export function meaningfulMoodAlert(prev, next, customer) {
   if (!next || next.key === 'none') return null;
   const from = prev?.key || 'none';
   if (from === next.key) return null;
   if (SKIP_PAIRS.has(`${from}|${next.key}`)) return null;
+  // Quiet waiting changes stay local. Unload prompts only fire on these crossings.
   const important =
     next.key === 'unhappy' ||
     next.key === 'angry' ||
@@ -107,6 +114,7 @@ export function meaningfulMoodAlert(prev, next, customer) {
   };
 }
 
+/** Diff the previous and next queues into mood alerts for the shop HUD. */
 export function collectCustomerAlerts(prevCustomers = [], nextCustomers = []) {
   const prevMap = new Map((prevCustomers || []).map((c) => [c.id, customerMoodState(c)]));
   const alerts = [];

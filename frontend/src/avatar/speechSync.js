@@ -1,6 +1,7 @@
 /**
  * Speech → mind-map highlight: only the word(s) currently being spoken.
  * No durable "read trail" and no lighting every match of a vocabulary word.
+ * Follows Sage's voice across the in-game farm map, one word at a time.
  */
 
 /**

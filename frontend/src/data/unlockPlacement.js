@@ -4,6 +4,7 @@
  * Learning Path rewards with availableAtLevel can appear on the granting chapter.
  */
 
+/** Lesson ids end in _N. That N is the learning-path chapter order. */
 export function chapterOrdinalFromId(lessonId) {
   const match = String(lessonId || '')
     .trim()
@@ -12,6 +13,10 @@ export function chapterOrdinalFromId(lessonId) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * Whether a bought unlock or a learning-path reward should appear on this farm.
+ * Shop buys wait until a later level or a later chapter.
+ */
 export function shouldPlaceOwnedUnlock(
   meta = {},
   { levelId = 1, chapterOrdinal = 0 } = {},

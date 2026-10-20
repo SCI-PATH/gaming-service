@@ -1,5 +1,6 @@
 /**
  * Keyword concept tree — short labels, dashed links, details on select.
+ * Draws one farm-science idea from the in-game Sage graph.
  */
 import { useMemo, useState } from 'react';
 import { layoutConceptTree } from './conceptGraph.js';
@@ -34,6 +35,7 @@ function NodeBlock({ node, selectedId, onSelect, compact }) {
   );
 }
 
+/** Drop mix-up nodes so the tree teaches the correct farm idea only. */
 function teachOnlyGraph(graph) {
   if (!graph) return graph;
   const nodes = (graph.nodes || []).filter((n) => n.kind !== 'mixup');
@@ -63,6 +65,7 @@ export default function ConceptGraphTree({ graph = null, compact = false, onNode
     <div className={`cg${compact ? ' is-compact' : ''}`}>
       <div className="cg-tree" role="tree">
         <NodeBlock node={layout.tree} selectedId={selectedId} onSelect={pick} compact={compact} />
+        {/* Nodes with no parent edge still appear, so nothing scored is hidden. */}
         {layout.leftover.length ? (
           <div className="cg-leftover">
             {layout.leftover.map((n) => (

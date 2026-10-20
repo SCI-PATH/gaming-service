@@ -1,3 +1,7 @@
+/**
+ * Quest-scroll coach for the live farm.
+ * One next action: open quiz, unlock shop, unload, crop, animal, yard, then story or unlock pins.
+ */
 import { FARM_SHOP_ZONE, PLANT_PLOTS } from './plantPlots.js';
 import { sageLineForStep } from './sageGuide.js';
 import { ANIMAL_PADDOCK } from './animalChallenges.js';
@@ -35,6 +39,7 @@ function incompleteCrops(list) {
 function pickActiveCrop(list) {
   const open = incompleteCrops(list);
   if (open.length === 0) return null;
+  // Prefer a crop the student already started planting, harvesting, or selling.
   return (
     open.find(
       (crop) =>
@@ -51,6 +56,7 @@ function cropStep(crop, carriedCount) {
   const harvested = Number(crop.cropsHarvestedTotal) || 0;
   const sold = Number(crop.cropsSoldThisChallenge) || 0;
 
+  // Plant quiz has not been answered on this bed yet.
   if (!crop.plantDone) {
     return {
       id: `plant-${crop.cropId || crop.id || name}`,
@@ -61,6 +67,7 @@ function cropStep(crop, carriedCount) {
     };
   }
 
+  // Still short of this crop’s harvest count.
   if (harvested < target) {
     return {
       id: `harvest-${crop.cropId || name}`,
@@ -71,6 +78,7 @@ function cropStep(crop, carriedCount) {
     };
   }
 
+  // Carrying produce, or the shop has not sold enough of this crop yet.
   if (carriedCount > 0 || sold < target) {
     return {
       id: `sell-${crop.cropId || name}`,
@@ -89,6 +97,7 @@ function cropStep(crop, carriedCount) {
 
 function animalStep(farm) {
   const target = Math.max(0, Number(farm.animalCollectTarget) || 0);
+  // No animal job on this level, or the pen challenge is already finished.
   if (target <= 0 || !farm.animalName || farm.levelAnimalComplete) return null;
   const sold = Number(farm.animalSoldThisChallenge) || 0;
   if (sold >= target) return null;
@@ -98,6 +107,7 @@ function animalStep(farm) {
   const verb = farm.animalAction === 'shear' ? 'Shear' : 'Feed';
   const collected = Number(farm.animalCollectedTotal) || 0;
 
+  // Tend quiz first, then collect in the pen, then unload at the shop.
   if (!farm.animalTended) {
     return {
       id: 'animal-tend',
@@ -129,6 +139,7 @@ function animalStep(farm) {
 
 function cleanStep(farm) {
   const target = Math.max(0, Number(farm.cleanSweepTarget) || 0);
+  // No yard job, or this level’s cleaning challenge is already finished.
   if (target <= 0 || farm.levelCleanComplete) return null;
   const sold = Number(farm.cleanSoldThisChallenge) || 0;
   if (sold >= target) return null;
@@ -138,6 +149,7 @@ function cleanStep(farm) {
   const verb = farm.cleanVerb || 'Clean';
   const swept = Number(farm.cleanSweptTotal) || 0;
 
+  // Start quiz, then sweep, then sell the waste at the shop.
   if (!farm.cleanStarted) {
     return {
       id: 'clean-start',
@@ -172,6 +184,7 @@ function challengeStep(challenges) {
   const open = challenges.find((c) => {
     if (!c || c.done) return false;
     const id = String(c.itemId || '');
+    // Agent stations and world clusters use their own prompts.
     if (c.source === 'agent' || id.startsWith('agent_station_')) return false;
     if (c.source === 'world') return false;
     return true;
@@ -184,6 +197,7 @@ function challengeStep(challenges) {
     String(open.itemId || '').startsWith('house_') ||
     String(open.itemId || '').startsWith('storyline_');
 
+  // House and storyline beats, separate from bought unlock quizzes.
   if (isStory) {
     return {
       id: `story-${open.itemId}`,
@@ -249,9 +263,11 @@ export function resolvePlayWizard({
   carriedCount = 0,
   frustrationLevel = null,
 } = {}) {
+  // An open science question outranks every farm pin.
   const quizGuide = quizStep(quiz);
   if (quizGuide) return withSageVoice(quizGuide, frustrationLevel);
 
+  // Unlock shop is on screen — buying is the only next step.
   if (shopOpen) {
     return withSageVoice({
       id: 'unlock-shop',
@@ -263,6 +279,7 @@ export function resolvePlayWizard({
     }, frustrationLevel);
   }
 
+  // Harvest on the player’s back must reach the stall before new jobs.
   if (carriedCount > 0) {
     return withSageVoice({
       id: 'carry-shop',
@@ -278,6 +295,7 @@ export function resolvePlayWizard({
     const next = cropStep(crop, carriedCount);
     if (next) return withSageVoice(next, frustrationLevel);
   } else if (
+    // Older single-crop levels have no cropChallengeList.
     Number(farm.harvestTarget) > 0 &&
     !farm.levelCropComplete &&
     !(farm.cropChallengeList?.length > 0)
@@ -304,6 +322,7 @@ export function resolvePlayWizard({
   const extra = challengeStep(challenges);
   if (extra) return withSageVoice(extra, frustrationLevel);
 
+  // Forest path only after this level’s farm jobs are done.
   if (farm.forestUnlocked) {
     return withSageVoice({
       id: 'forest',

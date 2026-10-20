@@ -33,6 +33,7 @@ function addNode(nodes, id, label, extra = {}) {
   return true;
 }
 
+/** RAG paragraph fields become the node graph the farm mind-map component draws. */
 export function ragMindMapToConceptGraph(mindMap = {}) {
   const nodes = [];
   const relationships = [];
@@ -118,9 +119,11 @@ export function ragMindMapToConceptGraph(mindMap = {}) {
   };
 }
 
+/** Small graph when retrieval or the model cannot teach this miss yet. */
 export function insufficientConceptGraph(message, question) {
   const nodes = [];
   const relationships = [];
+  // A down model is a retry. Missing chunks means the textbooks do not cover this question.
   const grokFail = /temporarily unavailable|timed out|not configured|empty mind map|generation failed/i.test(
     message || '',
   );

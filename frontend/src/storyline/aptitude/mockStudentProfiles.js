@@ -128,6 +128,7 @@ export const MOCK_APTITUDE_DATA = Object.freeze({
   }),
 });
 
+/** Login card for one mock storyline student (Alex, Jordan, or Sam). */
 export function getMockStorylineStudent(id) {
   return MOCK_STORYLINE_STUDENTS.find((s) => s.id === id) || null;
 }

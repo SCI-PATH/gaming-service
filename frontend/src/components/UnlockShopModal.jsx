@@ -5,6 +5,7 @@ import {
 } from '../data/unlockShop.js';
 import { emitPurchaseUnlock } from './ForestRPGCanvas.jsx';
 import { ForestGameBridge, FARM_EVENTS } from './ForestGameBridge.js';
+import { pickDemoUnlockPurchases } from '../data/demoAutoplay.js';
 
 /**
  * Post-level unlock shop — spend farm cash on animals & props.
@@ -25,20 +26,37 @@ export default function UnlockShopModal({
   nextChapterTitle = '',
   /** Read-only price check. Does not finish the level or save a purchase. */
   preview = false,
+  /** Recording: click Buy on affordable unlocks, then continue to the next level. */
+  demoPurchase = false,
 }) {
   const [owned, setOwned] = useState(() => getOwnedUnlockIds());
   const [message, setMessage] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [demoPickId, setDemoPickId] = useState(null);
   const buyingRef = useRef(false);
+  const buyQueueRef = useRef([]);
+  const demoContinueOnce = useRef(false);
+  const handleBuyRef = useRef(null);
+  const continueRef = useRef(onContinueNext);
+  const demoBuyStarted = useRef(false);
+  const catalogRef = useRef(null);
+  const cashRef = useRef(cash);
+  continueRef.current = onContinueNext;
+  cashRef.current = cash;
 
   useEffect(() => {
     if (!open) return;
     setOwned(getOwnedUnlockIds());
     setMessage(null);
     setBusyId(null);
+    setDemoPickId(null);
     buyingRef.current = false;
+    buyQueueRef.current = [];
+    demoContinueOnce.current = false;
+    demoBuyStarted.current = false;
   }, [open]);
 
+  /** Phaser confirms the buy on INTERACTION. A demo recording then buys the next affordable item. */
   useEffect(() => {
     if (!open) return undefined;
     const onInteraction = (detail = {}) => {
@@ -48,6 +66,23 @@ export default function UnlockShopModal({
         setOwned(getOwnedUnlockIds());
         const label = detail.itemName || detail.itemId;
         setMessage(`Unlocked ${label} for $${detail.price}. Cash left: $${detail.currentMoney ?? detail.earnings ?? ''}`);
+        if (demoPurchase) {
+          const rest = buyQueueRef.current.filter((item) => item.id !== detail.itemId);
+          buyQueueRef.current = rest;
+          if (rest.length) {
+            const next = rest[0];
+            setDemoPickId(next.id);
+            window.setTimeout(() => {
+              document
+                .querySelector(`[data-unlock-id="${next.id}"]`)
+                ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+              handleBuyRef.current?.(next);
+            }, 1600);
+          } else if (!demoContinueOnce.current) {
+            demoContinueOnce.current = true;
+            window.setTimeout(() => continueRef.current?.(), 2400);
+          }
+        }
       }
       if (detail.type === 'unlock_blocked') {
         buyingRef.current = false;
@@ -62,22 +97,60 @@ export default function UnlockShopModal({
             `That purchase was not saved (${detail.reason || 'save_failed'}). Your cash was restored — try Buy again.`,
           );
         }
+        if (demoPurchase && !demoContinueOnce.current) {
+          buyQueueRef.current = [];
+          demoContinueOnce.current = true;
+          window.setTimeout(() => continueRef.current?.(), 2400);
+        }
       }
     };
     ForestGameBridge.on(FARM_EVENTS.INTERACTION, onInteraction);
     return () => ForestGameBridge.off(FARM_EVENTS.INTERACTION, onInteraction);
-  }, [open]);
+  }, [open, demoPurchase]);
 
   const catalog = useMemo(
     () => buildShopCatalog(performance ?? {}, owned),
     [performance, owned],
   );
+  catalogRef.current = catalog;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    if (!demoPurchase || preview || demoBuyStarted.current) return undefined;
+    const timer = window.setTimeout(() => {
+      if (demoBuyStarted.current) return;
+      demoBuyStarted.current = true;
+      const picks = pickDemoUnlockPurchases(
+        catalogRef.current?.items,
+        cashRef.current,
+        2,
+      );
+      if (!picks.length) {
+        setMessage('Not enough cash for an unlock. Continuing to the next level.');
+        if (!demoContinueOnce.current) {
+          demoContinueOnce.current = true;
+          window.setTimeout(() => continueRef.current?.(), 2800);
+        }
+        return;
+      }
+      buyQueueRef.current = picks;
+      setDemoPickId(picks[0].id);
+      window.setTimeout(() => {
+        document
+          .querySelector(`[data-unlock-id="${picks[0].id}"]`)
+          ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        handleBuyRef.current?.(picks[0]);
+      }, 1400);
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [open, demoPurchase, preview]);
 
   if (!open) return null;
 
+  /** Ask Phaser to spend cash and update the wallet. */
   const handleBuy = (item) => {
     if (preview || item.owned || busyId || buyingRef.current) return;
-    if (cash < item.price) {
+    if (!demoPurchase && cash < item.price) {
       setMessage(`Need $${item.price - cash} more for ${item.name}.`);
       return;
     }
@@ -93,6 +166,7 @@ export default function UnlockShopModal({
       category: item.category,
     });
   };
+  handleBuyRef.current = handleBuy;
 
   return (
     <div
@@ -149,9 +223,10 @@ export default function UnlockShopModal({
           {catalog.items.map((item) => (
             <article
               key={item.id}
+              data-unlock-id={item.id}
               className={`unlock-shop-item${item.featured ? ' is-featured' : ''}${
                 item.owned ? ' is-owned' : ''
-              }`}
+              }${demoPickId === item.id ? ' is-demo-pick' : ''}`}
             >
               <ShopThumb item={item} />
               <div className="unlock-shop-item-body">
@@ -168,6 +243,7 @@ export default function UnlockShopModal({
                   </span>
                   <button
                     type="button"
+                    className={demoPickId === item.id ? 'is-demo-pick' : undefined}
                     disabled={
                       preview || item.owned || cash < item.price || busyId != null
                     }

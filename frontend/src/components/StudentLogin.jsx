@@ -7,6 +7,7 @@ export default function StudentLogin({ onLogin }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
+  /** loginStudent stores the name; App then mounts the canvas under that student id. */
   const handleSubmit = (event) => {
     event.preventDefault();
     const student = loginStudent(name);

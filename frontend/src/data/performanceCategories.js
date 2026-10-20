@@ -39,6 +39,7 @@ export function normalizePerformanceCategory(raw) {
   return ALIASES[key] || PERFORMANCE_CATEGORIES.MEDIUM;
 }
 
+/** Display label after aliases (emerging, strong, …) fold into Weak / Medium / Smart. */
 export function performanceLabel(raw) {
   const cat = normalizePerformanceCategory(raw);
   return PERFORMANCE_LABELS[cat];
@@ -59,11 +60,13 @@ export function classifyPerformanceCategory({
 } = {}) {
   const total = (Number(correct) || 0) + (Number(incorrect) || 0);
   const acc = Number.isFinite(Number(accuracyPct)) ? Number(accuracyPct) : 100;
+  // Much slower than this student’s recent baseline counts toward Weak.
   const slower =
     baselineAnswerTimeMs > 0 &&
     avgAnswerTimeMs > baselineAnswerTimeMs * 1.45;
 
   if (total < 3) {
+    // Too few answers to leave Medium, unless misses or retries already look weak.
     if (consecutiveIncorrect >= 2 || retries >= 3) return PERFORMANCE_CATEGORIES.WEAK;
     return PERFORMANCE_CATEGORIES.MEDIUM;
   }

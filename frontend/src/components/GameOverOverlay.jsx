@@ -23,6 +23,7 @@ export default function GameOverOverlay({
     onContinue?.();
   }, [onContinue]);
 
+  /** Enter or Space continues. App then unlocks the farm and returns to the menu. */
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {

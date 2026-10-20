@@ -156,28 +156,38 @@ const NAME_MATCHES = [
   ...CREATURE_IDS.map((id) => [id, id]),
 ].sort((a, b) => b[0].length - a[0].length);
 
+/** Catalog creature by id, or null. Used when a story names a farm animal. */
 export function getCreature(id) {
   return CREATURE_BY_ID.get(String(id || '')) || null;
 }
 
+/** Catalog prop by id, or null. */
 export function getProp(id) {
   return PROP_BY_ID.get(String(id || '')) || null;
 }
 
+/** True when id is a library creature, not a Kenney farm tile. */
 export function isCreatureId(id) {
   return CREATURE_BY_ID.has(String(id || ''));
 }
 
+/** True when id is a library prop such as hay or a fence. */
 export function isPropId(id) {
   return PROP_BY_ID.has(String(id || ''));
 }
 
+/** True for investigate, discover, tend, obstacle, or climax story beats. */
 export function isChallengeType(value) {
   return CHALLENGE_TYPES.includes(String(value || ''));
 }
 
+/**
+ * Story cast for the current frustration band.
+ * High frustration uses a smaller, familiar helper. Low frustration uses a wider scene.
+ */
 export function visualsForFrustration(frustrationLevel) {
   const lv = String(frustrationLevel || '').toUpperCase();
+  // High frustration: chicken helper and a single corn row, not a crowded climax.
   if (lv === 'HIGH' || lv === 'VERY_HIGH') {
     return {
       guide: 'owl',
@@ -187,6 +197,7 @@ export function visualsForFrustration(frustrationLevel) {
       settingProp: 'corn_S',
     };
   }
+  // Low frustration: a wider corn scene and a moose climax.
   if (lv === 'LOW' || lv === 'MILD') {
     return {
       guide: 'owl',

@@ -2,6 +2,8 @@
  * Behavior monitor — detects trigger scenarios for focused avatar intervention.
  * Single incorrect answers alone never open the mentor.
  * Returns the highest-priority focused problem (trigger reason).
+ * Watches farm play that is slow, hint-heavy, or paused, plus repeated misses,
+ * so Sage opens for a named problem rather than a generic chat.
  */
 
 import {
@@ -47,6 +49,8 @@ export const DEFAULT_NON_WRONG_THRESHOLDS = {
 };
 
 /**
+ * Highest-priority farm behavior in the recent window.
+ * A forced escalation skips the scan and reopens stronger scaffolding.
  * @param {object[]} events - chronological, newest last
  * @param {object} [opts]
  */
@@ -423,6 +427,7 @@ function detectPerformanceDrop(events, t) {
   return recentWrong >= 2 && (recentSlow >= 1 || recentWrong >= 3);
 }
 
+/** Plain-language name for a known behavior code. */
 export function labelNonWrongScenario(code) {
   const map = {
     [NON_WRONG_SCENARIOS.REPEATED_SLOW_ANSWERS]:
@@ -450,6 +455,7 @@ export function labelNonWrongScenario(code) {
   return map[code] || code || 'Focused learning support';
 }
 
+/** True when the string is one of the farm behavior codes above. */
 export function isNonWrongScenarioCode(code) {
   const u = String(code || '').toUpperCase();
   return Object.values(NON_WRONG_SCENARIOS).includes(u);

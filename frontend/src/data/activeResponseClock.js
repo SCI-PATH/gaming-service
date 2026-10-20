@@ -4,6 +4,7 @@
  * hidden is not added. There is no deadline and the clock never auto-submits.
  */
 
+/** Pause/resume timer for one on-screen science question. Callers pause it while the tab is hidden. */
 export function createActiveResponseClock(now = Date.now()) {
   let startedAt = now;
   let accumulated = 0;
@@ -12,21 +13,25 @@ export function createActiveResponseClock(now = Date.now()) {
   let stoppedMs = null;
 
   return {
+    /** Add the open interval, then stop counting. A second pause is ignored. */
     pause(at = Date.now()) {
       if (stopped || paused) return;
       accumulated += Math.max(0, at - startedAt);
       paused = true;
     },
+    /** Begin a new interval. Ignored unless the clock is paused and not stopped. */
     resume(at = Date.now()) {
       if (stopped || !paused) return;
       paused = false;
       startedAt = at;
     },
+    /** Milliseconds on screen so far. A stopped clock keeps returning its frozen total. */
     elapsed(at = Date.now()) {
       if (stoppedMs != null) return stoppedMs;
       const live = paused ? 0 : Math.max(0, at - startedAt);
       return accumulated + live;
     },
+    /** Freeze the total for a submit. Later elapsed() calls return this same number. */
     stop(at = Date.now()) {
       if (stopped) return stoppedMs;
       const live = paused ? 0 : Math.max(0, at - startedAt);

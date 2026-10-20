@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 /**
  * Vintage parchment quest scroll for the current farm level.
@@ -47,9 +47,13 @@ export default function LevelQuestScroll({
   levelCleanComplete = false,
   questionsAnswered = 0,
   maxQuestions = 10,
+  autoTour = false,
   onClose,
 }) {
   const titleId = useId();
+  const listRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [unfurled, setUnfurled] = useState(false);
   const [noted, setNoted] = useState(() => new Set());
 
@@ -329,6 +333,24 @@ export default function LevelQuestScroll({
     return () => window.cancelAnimationFrame(id);
   }, [open, levelId]);
 
+  /** Demo recordings scroll the parchment, then close it so the scripted farm can continue. */
+  useEffect(() => {
+    if (!open || !autoTour) return undefined;
+    let frame = 0;
+    const id = window.setInterval(() => {
+      frame += 1;
+      const list = listRef.current;
+      if (list) {
+        const max = Math.max(0, list.scrollHeight - list.clientHeight);
+        list.scrollTop = Math.min(max, frame * 36);
+      }
+      if (frame < 14) return;
+      window.clearInterval(id);
+      window.setTimeout(() => onCloseRef.current?.(), 600);
+    }, 260);
+    return () => window.clearInterval(id);
+  }, [open, autoTour, levelId]);
+
   if (!open) return null;
 
   const toggleNoted = (taskId, done) => {
@@ -370,7 +392,7 @@ export default function LevelQuestScroll({
             </header>
 
             {tasks.length > 0 ? (
-              <ul className="quest-todo-list">
+              <ul className="quest-todo-list" ref={listRef}>
                 {tasks.map((task) => {
                   const checked = task.done || noted.has(task.id);
                   const locked = Boolean(task.locked);

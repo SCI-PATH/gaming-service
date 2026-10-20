@@ -68,12 +68,14 @@ function loadSession() {
   }
 }
 
+/** Active student for this tab: memory first, then the saved session. */
 export function getCurrentStudent() {
   if (currentStudent) return currentStudent;
   currentStudent = loadSession();
   return currentStudent;
 }
 
+/** Free-form name login (at least two characters). Not a platform student id. */
 export function loginStudent(displayName) {
   const name = String(displayName || '').trim();
   if (name.length < 2) return null;
@@ -126,6 +128,7 @@ export function loginStudentFromPlatform({
   return currentStudent;
 }
 
+/** Log in one of the three aptitude prototypes (Alex, Jordan, Sam) for the storyline. */
 export function loginMockStorylineStudent(studentId) {
   const profile = getMockStorylineStudent(studentId);
   if (!profile) return null;
@@ -200,6 +203,7 @@ export function restoreHeldStudent() {
     writeSession(currentStudent);
     return currentStudent;
   }
+  // Demo ended with nobody to restore — drop the demo session.
   if (currentStudent?.isDemoSession) {
     currentStudent = null;
     writeSession(null);
@@ -207,10 +211,12 @@ export function restoreHeldStudent() {
   return getCurrentStudent();
 }
 
+/** Demo flag, or an id that starts with demo_. */
 export function isDemoStudent(student = getCurrentStudent()) {
   return Boolean(student?.isDemoSession) || String(student?.id || '').startsWith('demo_');
 }
 
+/** Clear the active session. A student held for a demo stays until restore. */
 export function logoutStudent() {
   currentStudent = null;
   try {
@@ -237,6 +243,7 @@ export function resetAllStudentProgress() {
       const key = localStorage.key(i);
       if (!key) continue;
       if (key === PROGRESS_GEN_KEY) continue;
+      // Any other scipath_ cache in this browser goes too.
       if (key.startsWith('scipath_')) doomed.push(key);
     }
     for (const key of doomed) localStorage.removeItem(key);

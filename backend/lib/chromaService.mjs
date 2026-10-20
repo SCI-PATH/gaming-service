@@ -12,6 +12,7 @@ const BACKEND_ROOT = resolve(HERE, '..');
 const REPO_ROOT = process.env.GAMING_ROOT || resolve(BACKEND_ROOT, '..');
 const SCRIPT = resolve(BACKEND_ROOT, 'python/chroma_ops.py');
 
+/** Prefer the repo venv so chromadb imports match the worker that was installed. */
 function venvPython() {
   const candidate =
     process.platform === 'win32'
@@ -113,6 +114,7 @@ function startWorker() {
   return starting;
 }
 
+/** One JSON line to the Python Chroma worker, one JSON line back. */
 export async function chromaCall(op, payload = {}, timeoutMs = 120000) {
   await startWorker();
   if (!worker) throw new Error('Chroma worker is not running');
@@ -138,18 +140,22 @@ export async function chromaCall(op, payload = {}, timeoutMs = 120000) {
   return result;
 }
 
+/** Textbooks already chunked, optionally for one grade. */
 export function listTextbooks(grade) {
   return chromaCall('list', grade != null ? { grade: Number(grade) } : {});
 }
 
+/** Index one Science PDF. Ingest can take many minutes, so the timeout is long. */
 export function ingestTextbook(body) {
   return chromaCall('ingest', body, 15 * 60 * 1000);
 }
 
+/** Retrieve chapter chunks for a missed farm question. */
 export function queryChunks(body) {
   return chromaCall('query', body, 60000);
 }
 
+/** Index the bundled Grade 6–9 PDFs. force replaces chunks that are already stored. */
 export function ingestDefaultTextbooks(force = false) {
   return chromaCall('ingest_defaults', { force: Boolean(force) }, 60 * 60 * 1000);
 }

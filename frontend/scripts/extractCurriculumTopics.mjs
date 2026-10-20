@@ -1,9 +1,14 @@
+/**
+ * One-off copy of Grade 6–9 topic ids from the curriculum app into this farm repo.
+ * The written module is what quizzes, the tutor, and farm launch use as canonical ids.
+ */
 import fs from "fs";
 
 const src = fs.readFileSync(
   "D:/RP/frontend-app/src/lib/curriculum/topics.ts",
   "utf8",
 );
+// One topic object in the source file: id, grade, chapter, titles, and skill label.
 const re =
   /"topicId":\s*"([^"]+)"[\s\S]*?"grade":\s*(\d+)[\s\S]*?"chapter":\s*(\d+)[\s\S]*?"chapterTitle":\s*"([^"]+)"[\s\S]*?"skillLabel":\s*"([^"]+)"[\s\S]*?"curriculumTitle":\s*"([^"]+)"/g;
 
@@ -59,5 +64,6 @@ export function compactTopicLabel(topicId) {
 }
 `;
 
+// Overwrites the farm catalog. Run only when the curriculum source changes.
 fs.writeFileSync(outPath, body);
 console.log(`wrote ${rows.length} topics to ${outPath}`);

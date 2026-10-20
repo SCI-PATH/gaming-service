@@ -13,6 +13,7 @@ export function resolveCropInteractPrompt({
   onPlantableBed = false,
   canPlant = false,
 } = {}) {
+  // Overlays hide the prompt. E is only for the shop or an empty bed.
   if (farmInputLocked || quizOpen) return null;
 
   if (nearShop) {

@@ -1,6 +1,9 @@
 /**
  * Mind maps from official EduPub textbook sentences, tagged with the
  * same chapter_id / topic_id the assessment engine uses.
+ * Sentences explain farm-quiz keys on the in-game Sage map.
+ * Chapter ids line up with the assessment engine. This is not the
+ * learning-path engine's retrieval map.
  */
 import { compactText, scoredConceptList, blankRolesFromQuestion } from './assessmentMiss.js';
 import { PLACEHOLDER_NODE, phraseLabel } from './conceptLessons.js';
@@ -18,15 +21,18 @@ function normalizeTitle(value) {
 
 let digestOverride = null;
 
+/** Test hook: swap the bundled chapter digest without touching the JSON file. */
 export function setTextbookDigest(rows) {
   digestOverride = rows == null ? null : Array.isArray(rows) ? rows : [];
 }
 
+/** Bundled textbook sentences used when the live chapter fetch is empty. */
 export function loadTextbookDigest() {
   if (digestOverride !== null) return digestOverride;
   return Array.isArray(digestJson) ? digestJson : digestJson.chapters || [];
 }
 
+/** Split a chapter into sentences Sage can speak, dropping headings and blanks. */
 export function extractTextbookSentences(text) {
   const blob = String(text || '')
     .replace(/\s+/g, ' ')
@@ -108,6 +114,7 @@ function queryBlob(miss = {}) {
     .join(' ');
 }
 
+/** Rank chapter sentences by overlap with this farm miss. */
 export function rankSentences(sentences, miss = {}, limit = 5) {
   const q = new Set(tokens(queryBlob(miss)));
   const concepts = scoredConceptList(miss);
@@ -345,6 +352,7 @@ export function graphFromTextbookSentences(miss = {}, sentences = [], chapterMet
   };
 }
 
+/** Graph for one miss, or null when this chapter has no teachable sentences. */
 export function buildTextbookGraph(miss = {}) {
   const matched = matchDigestChapter(miss);
   const sentences = matched?.row?.sentences || [];
