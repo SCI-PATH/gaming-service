@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { assembleMapMarkers, bedLabelForCrop } from './levelMapLabels.js';
+import { buildLevelMapMarkers } from './levelMapMarkers.js';
 
 const zones = {
   plots: [
@@ -58,5 +59,13 @@ describe('level map markers', () => {
     assert.equal(markers.beds[0].status, 'completed');
     assert.equal(markers.beds[1].status, 'active');
     assert.equal(markers.beds.length, 2);
+  });
+
+  it('uses the same grade plan as the farm', () => {
+    const grade6 = buildLevelMapMarkers(1, { grade: 6 });
+    const grade9 = buildLevelMapMarkers(1, { grade: 9 });
+    assert.equal(grade6.beds[0].label, 'Tomato Bed');
+    assert.equal(grade9.beds[0].label, 'Pumpkin Patch');
+    assert.notEqual(grade6.places[0].label, grade9.places[0].label);
   });
 });

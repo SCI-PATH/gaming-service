@@ -120,6 +120,20 @@ Code: [`backend/lib/mindMapGenerator.mjs`](backend/lib/mindMapGenerator.mjs).
 
 Sage speech is paced the same way (private score → warmer / slower / shorter sentences) and **must never say the number**.
 
+### Two different mind maps
+
+The farm demonstration uses only the **in-game Sage map**.
+
+| | In-game Sage map | Learning-path map |
+| --- | --- | --- |
+| Where it appears | Sage, after a miss on the farm | Learning-path engine, separate service |
+| Code | `backend/lib/mindMapGenerator.mjs`, `frontend/src/avatar/buildMindMap.js` | `learning-path-engine/backend/app/mindmap/` |
+| Score bands | 0–30 low, 31–60 moderate, 61–80 high, 81–100 very high | 0–20 very low, 21–40 low, 41–60 moderate, 61–80 high, 81–100 very high |
+| What changes | Up to 8, 5, 3, then 2 branches. Tone moves from challenge to support. | Up to 5 hubs, then fewer. Very high still allows about 3 hubs. Tone and label length change. Facts stay the same. |
+| Score source | Live farm CSF, or a labeled demo pin | Reads gaming-service `GET /api/engagement/frustration`. It does not recompute the score. |
+
+Do not describe these as one map. A farm video should show the Sage map.
+
 ---
 
 ## 3. Enemies

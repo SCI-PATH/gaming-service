@@ -10,6 +10,9 @@ import {
 } from '../storyline/aptitude/mockStudentProfiles.js';
 
 const SESSION_KEY = 'scipath_session_student';
+const HELD_SESSION_KEY = 'scipath_session_student_held';
+/** In-memory copy so a demo can restore the real student even if storage fails. */
+let heldStudent = null;
 /** Bump to wipe all student progress on next app load. */
 const PROGRESS_GEN_KEY = 'scipath_progress_generation';
 export const STUDENT_PROGRESS_GENERATION = '6';
@@ -53,8 +56,12 @@ function loadSession() {
       performanceLabel: data.performanceLabel || null,
       grade: data.grade ?? null,
       topicId: data.topicId ?? null,
+      chapterId: data.chapterId ?? null,
+      chapterTitle: data.chapterTitle ?? null,
       sessionId: data.sessionId ?? null,
       fromPlatform: Boolean(data.fromPlatform || data.sessionId),
+      isDemoSession: Boolean(data.isDemoSession),
+      demoProfile: data.demoProfile || null,
     };
   } catch {
     return null;
@@ -140,6 +147,69 @@ export function loginMockStorylineStudent(studentId) {
 }
 
 export { MOCK_STORYLINE_STUDENTS };
+
+function writeSession(student) {
+  try {
+    if (!student) localStorage.removeItem(SESSION_KEY);
+    else localStorage.setItem(SESSION_KEY, JSON.stringify(student));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/**
+ * Switch the active session to an isolated demo student.
+ * The previous real student is held and is not overwritten.
+ */
+export function beginDemoStudent(next) {
+  const existing = currentStudent || loadSession();
+  if (existing && !existing.isDemoSession) {
+    heldStudent = existing;
+    try {
+      localStorage.setItem(HELD_SESSION_KEY, JSON.stringify(existing));
+    } catch {
+      // memory hold still restores this tab
+    }
+  }
+  currentStudent = {
+    ...next,
+    isDemoSession: true,
+  };
+  writeSession(currentStudent);
+  return currentStudent;
+}
+
+/** Leave a demo session and return the student that was active before it. */
+export function restoreHeldStudent() {
+  let held = heldStudent;
+  if (!held?.id) {
+    try {
+      held = JSON.parse(localStorage.getItem(HELD_SESSION_KEY) || 'null');
+    } catch {
+      held = null;
+    }
+  }
+  heldStudent = null;
+  try {
+    localStorage.removeItem(HELD_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+  if (held?.id && !held.isDemoSession) {
+    currentStudent = held;
+    writeSession(currentStudent);
+    return currentStudent;
+  }
+  if (currentStudent?.isDemoSession) {
+    currentStudent = null;
+    writeSession(null);
+  }
+  return getCurrentStudent();
+}
+
+export function isDemoStudent(student = getCurrentStudent()) {
+  return Boolean(student?.isDemoSession) || String(student?.id || '').startsWith('demo_');
+}
 
 export function logoutStudent() {
   currentStudent = null;

@@ -13,6 +13,7 @@ import {
   trendFromDelta,
 } from './avatarConstants.js';
 import { calculateFrustrationScore, shouldOpenFrustrationAgent } from '../data/frustrationModel.js';
+import { readDemoAdaptationSeed } from '../data/demoScenarios.js';
 import {
   appendFrustrationSample,
   recordFrustrationSample,
@@ -385,6 +386,16 @@ export function useBehavioralTelemetry({
     };
     next.evaluated_tier = classifyPerformanceTier(next);
     next.frustration = calculateFrustrationScore(next);
+    const demoSeed = readDemoAdaptationSeed();
+    if (demoSeed?.pinned) {
+      next.frustration = {
+        ...next.frustration,
+        score: demoSeed.frustrationScore,
+        level: demoSeed.frustrationLevel,
+        demoOverride: true,
+        measuredScore: next.frustration.score,
+      };
+    }
     next.frustration_score = next.frustration.score;
     next.frustration_level = next.frustration.level;
     next.frustration_signals = next.frustration.signals;
@@ -423,6 +434,7 @@ export function useBehavioralTelemetry({
 
   const recordFrustrationPoint = useCallback(
     (snapshot, isCorrect, topicId = null) => {
+      if (readDemoAdaptationSeed()?.pinned) return;
       const fr = snapshot?.frustration || {};
       const answered =
         (Number(snapshot?.correct_answers) || 0) +
@@ -446,6 +458,11 @@ export function useBehavioralTelemetry({
   const raiseFromEval = useCallback(
     (evaluation, snapshot, reasonExtra = null) => {
       if (!enabled || !evaluation) return false;
+      const answered =
+        (Number(snapshot?.correct_answers) || 0) +
+        (Number(snapshot?.incorrect_answers) || 0);
+      // Hovering choices is not an answer. Sage stays closed until one is submitted.
+      if (answered < 1 && evaluation.reason !== 'manual') return false;
       const now = Date.now();
 
       const isEscalation =
@@ -1037,7 +1054,7 @@ export function useBehavioralTelemetry({
         lastWrongRef.current = null;
         // Always refresh frustration after every answer (correct included)
         const snapCorrect = syncMetrics();
-        recordFrustrationSample({
+        if (!readDemoAdaptationSeed()?.pinned) recordFrustrationSample({
           score: snapCorrect.frustration_score,
           level: snapCorrect.frustration_level,
           topic,
@@ -1182,7 +1199,7 @@ export function useBehavioralTelemetry({
       }
 
       const snap = syncMetrics();
-      recordFrustrationSample({
+      if (!readDemoAdaptationSeed()?.pinned) recordFrustrationSample({
         score: snap.frustration_score,
         level: snap.frustration_level,
         topic,

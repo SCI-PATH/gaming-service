@@ -85,7 +85,12 @@ import {
   levelSaveNeedsWarning,
   shopPerformanceFromLevelPayload,
 } from './data/levelCompletionFlow.js';
-import { readDemoLaunch } from './data/demoScenarios.js';
+import {
+  demoShopPerformance,
+  installDemoLaunch,
+  readDemoAdaptationSeed,
+  readDemoLaunch,
+} from './data/demoScenarios.js';
 import { normalizeStudentGrade } from './data/gradeChallengeLibraries.js';
 import {
   getChapterLaunch,
@@ -111,6 +116,13 @@ ensureFreshStudentProgress();
 
 const platformLaunchRef =
   typeof window !== 'undefined' ? resolvePlatformLaunch() : null;
+
+const demoBoot =
+  typeof window !== 'undefined'
+    ? installDemoLaunch(window.location.search)
+    : { launch: readDemoLaunch(''), seed: null, student: null };
+
+if (demoBoot.launch?.isolated) clearAssessmentSession();
 
 const DEFAULT_LEVEL = getFarmLevel(1);
 const DEFAULT_TIME_TARGET_MS = DDA_CONFIG.midTargetMs;
@@ -167,26 +179,42 @@ function createInitialFarm() {
  * Phaser canvas stays clean — all HUD lives in React overlays.
  */
 export default function App() {
-  const demoLaunchRef = useRef(
-    typeof window !== 'undefined'
-      ? readDemoLaunch(window.location.search)
-      : readDemoLaunch(''),
-  );
-  const [student, setStudent] = useState(() => {
-    const base = platformLaunchRef?.student || getCurrentStudent();
-    const demoGrade = demoLaunchRef.current?.grade;
-    if (!base) return base;
-    if (demoGrade != null && normalizeStudentGrade(base.grade) == null) {
-      return { ...base, grade: demoGrade };
-    }
-    return base;
-  });
+  const demoLaunchRef = useRef(demoBoot.launch || readDemoLaunch(''));
+  const [student, setStudent] = useState(() => demoBoot.student || getCurrentStudent());
   const [researchOverlayOpen] = useState(
     () => Boolean(demoLaunchRef.current?.researchOverlay),
   );
   const [lastQuizAttempt, setLastQuizAttempt] = useState(null);
 
   useEffect(() => {
+    const current = getCurrentStudent();
+    if (current?.isDemoSession) {
+      const seed = readDemoAdaptationSeed();
+      syncStudentLogin(current, {
+        freshSession: true,
+        startLevel: 1,
+      });
+      if (seed?.pinned) {
+        syncFrustration(
+          {
+            frustrationScore: seed.frustrationScore,
+            frustrationLevel: seed.frustrationLevel,
+            levelNumber: 1,
+            source: 'demo',
+            signals: {
+              demoOverride: true,
+              origin: 'question_pipeline',
+              researchEligible: false,
+              profile: seed.profileId,
+              performanceCategory: seed.performanceCategory,
+            },
+            dominantIndicators: ['demo_override'],
+          },
+          current,
+        );
+      }
+      return;
+    }
     if (platformLaunchRef?.student?.id) {
       const startLevel = Math.max(
         1,
@@ -318,6 +346,7 @@ export default function App() {
   const prevFrustrationLevelRef = useRef(null);
   const [quizPayload, setQuizPayload] = useState(null);
   const [shopOpen, setShopOpen] = useState(false);
+  const [shopPreview, setShopPreview] = useState(false);
   const [shopPerformance, setShopPerformance] = useState(null);
   const [motivationOpen, setMotivationOpen] = useState(false);
   const [remediation, setRemediation] = useState(null);
@@ -434,7 +463,6 @@ export default function App() {
     captureSessionSnapshot: captureAvatarTelemetry,
     recordAnswer: recordAvatarAnswer,
     recordHintUsed: recordAvatarHint,
-    recordSelectionSwitch: recordAvatarOptionSwitch,
     requestHelp: openAvatarHelp,
     updateLearningPreferences,
     showMindMapForTopic,
@@ -2279,18 +2307,33 @@ export default function App() {
               }
               onAnswerAttempt={handleQuizAnswerAttempt}
               onHintUsed={handleQuizHint}
-              onOptionSwitch={recordAvatarOptionSwitch}
               onClose={handleQuizClose}
             />
           )}
 
           <UnlockShopModal
-            open={shopOpen}
+            open={shopOpen || shopPreview}
+            preview={shopPreview && !shopOpen}
             cash={farm.earnings}
-            performance={shopPerformance}
-            onClose={handleShopClose}
-            onContinueNext={handleShopContinueNext}
-            onRetryLesson={handleShopRetryLesson}
+            performance={
+              shopPreview && !shopOpen
+                ? demoShopPerformance(readDemoAdaptationSeed(), {
+                    frustrationScore: telemetrySession.frustrationScore,
+                    frustrationLevel: telemetrySession.frustrationLevel,
+                    performanceBand: farm.performanceBand || gameplay.band,
+                  })
+                : shopPerformance
+            }
+            onClose={() => {
+              if (shopPreview && !shopOpen) {
+                setShopPreview(false);
+                emitUiInputLock(false);
+                return;
+              }
+              handleShopClose();
+            }}
+            onContinueNext={shopPreview && !shopOpen ? null : handleShopContinueNext}
+            onRetryLesson={shopPreview && !shopOpen ? null : handleShopRetryLesson}
             returnToLearningPath={pathLinked}
             retryLesson={
               shopPerformance?.retryLesson === true ||
@@ -2345,6 +2388,11 @@ export default function App() {
               null
             }
             demoProfile={demoLaunchRef.current?.profile || null}
+            demoPinned={Boolean(readDemoAdaptationSeed()?.pinned)}
+            onPreviewShop={() => {
+              setShopPreview(true);
+              emitUiInputLock(true, { freezeCombat: true });
+            }}
             farm={{
               ...farm,
               frustrationScore: telemetrySession.frustrationScore,
@@ -2417,6 +2465,7 @@ export default function App() {
               performanceBand={farm.performanceBand}
               cropName={farm.cropName || 'crops'}
               levelId={farm.levelId || 1}
+              grade={normalizeStudentGrade(student?.grade)}
               activeCropIndex={farm.levelCropSlot || 0}
               challenges={challenges}
               questStep={wizardStep?.pin || null}

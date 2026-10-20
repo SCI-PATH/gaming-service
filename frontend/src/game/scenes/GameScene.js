@@ -30,6 +30,7 @@ import { getFarmLevel } from '../../data/farmLevels';
 import {
   clearAssessmentSession,
   exportAssessmentSession,
+  getLastQuizResolveFailure,
   isRenderableQuizQuestion,
   resolveScienceQuestion,
   restoreAssessmentSession,
@@ -53,6 +54,7 @@ import {
 import { loadFarmProgress, saveFarmProgress } from '../../data/farmProgress.js';
 import { isLearningPathLinked } from '../../data/chapterPath.js';
 import { getCurrentStudent } from '../../data/mockStudents.js';
+import { readDemoAdaptationSeed } from '../../data/demoScenarios.js';
 import { normalizeStudentGrade } from '../../data/gradeChallengeLibraries.js';
 import {
   applyFrustrationToGameplaySettings,
@@ -1433,14 +1435,18 @@ export default class GameScene extends Phaser.Scene {
     };
     this._onStudentState = (payload) => {
       if (!this.sys?.isActive()) return;
-      const incoming = Number(payload?.frustrationScore) || 0;
-      this._smoothedFrustration = smoothFrustration(this._smoothedFrustration, incoming);
-      this.frustrationScore = this._smoothedFrustration;
-      this.frustrationLevel =
-        frustrationLevelFromScore(this.frustrationScore) ||
-        payload?.frustrationLevel ||
-        'low';
-      this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
+      if (this.applyPinnedDemoAdaptation()) {
+        this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
+      } else {
+        const incoming = Number(payload?.frustrationScore) || 0;
+        this._smoothedFrustration = smoothFrustration(this._smoothedFrustration, incoming);
+        this.frustrationScore = this._smoothedFrustration;
+        this.frustrationLevel =
+          frustrationLevelFromScore(this.frustrationScore) ||
+          payload?.frustrationLevel ||
+          'low';
+        this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
+      }
       if (this.worldShop && !this.worldShop.closed) {
         adaptWorldShopFrustration(
           this.worldShop,
@@ -2055,9 +2061,11 @@ export default class GameScene extends Phaser.Scene {
     this.levelAttempts.push(attempt);
     this.questionFrustrationScores = this.questionFrustrationScores || [];
     this.questionFrustrationScores.push(scored.score);
-    this._smoothedFrustration = scored.smoothedScore;
-    this.frustrationScore = scored.smoothedScore;
-    this.frustrationLevel = scored.smoothedLevel;
+    if (!this.applyPinnedDemoAdaptation()) {
+      this._smoothedFrustration = scored.smoothedScore;
+      this.frustrationScore = scored.smoothedScore;
+      this.frustrationLevel = scored.smoothedLevel;
+    }
     this.applyFrustrationGamePersonalization({ respawnSpeedOnly: true });
     if (this.worldShop && !this.worldShop.closed) {
       adaptWorldShopFrustration(
@@ -2276,8 +2284,8 @@ export default class GameScene extends Phaser.Scene {
       if (!isRenderableQuizQuestion(question)) {
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'quiz_blocked',
-          reason: 'assessment_unavailable',
-          hint: 'Science quiz is unavailable right now. Check Assessment Engine and try again.',
+          reason: getLastQuizResolveFailure()?.reason || 'assessment_unavailable',
+          hint: this.quizBlockedHint(),
         });
         this.resumeAfterQuiz();
         return false;
@@ -2307,13 +2315,47 @@ export default class GameScene extends Phaser.Scene {
       if (this.sys?.isActive() && quizGen === this._scienceQuizGen) {
         ForestGameBridge.emit(FARM_EVENTS.INTERACTION, {
           type: 'quiz_blocked',
-          reason: 'assessment_unavailable',
-          hint: 'Science quiz is unavailable right now. Check Assessment Engine and try again.',
+          reason: getLastQuizResolveFailure()?.reason || 'assessment_unavailable',
+          hint: this.quizBlockedHint(),
         });
         this.resumeAfterQuiz();
       }
       return false;
     }
+  }
+
+  quizBlockedHint() {
+    const failure = getLastQuizResolveFailure();
+    const grade = this.studentGrade || getCurrentStudent()?.grade;
+    if (failure?.reason === 'grade_mismatch') {
+      return `No Grade ${failure.expected} question was shown. Assessment Engine returned a Grade ${failure.actual} item.`;
+    }
+    if (grade) {
+      return `No Grade ${grade} science question is available. Check Assessment Engine and try again.`;
+    }
+    return 'Science quiz is unavailable right now. Check Assessment Engine and try again.';
+  }
+
+  /**
+   * Demo profiles pin the world to the scored pipeline.
+   * Normal play leaves this unset and keeps live adaptation.
+   */
+  applyPinnedDemoAdaptation() {
+    const seed = readDemoAdaptationSeed();
+    if (!seed?.pinned) {
+      this.demoOverridePinned = false;
+      return false;
+    }
+    this.demoOverridePinned = true;
+    this.frustrationScore = seed.frustrationScore;
+    this.frustrationLevel = seed.frustrationLevel;
+    this._smoothedFrustration = seed.frustrationScore;
+    const settings = getGameplaySettings(seed.performanceCategory);
+    this.gameplayBand = seed.performanceCategory;
+    this.performanceBand = seed.performanceCategory;
+    this.gameplaySettings = settings;
+    this.gameplaySettingsBase = { ...settings };
+    return true;
   }
 
   /** Attach gameplay-assist fields to science quiz payloads (not question pick). */
@@ -2325,6 +2367,7 @@ export default class GameScene extends Phaser.Scene {
         this.frustrationScore || 0,
         this.frustrationLevel || 'low',
       );
+    const student = getCurrentStudent();
     const answerTimerMs = live.answerTimerMs || this.answerTimerMs;
     const hintLevel = live.hintLevel || this.hintLevel || 'limited';
     const maxRetries =
@@ -2344,6 +2387,10 @@ export default class GameScene extends Phaser.Scene {
         frustrationLevel: this.frustrationLevel || 'low',
         personalizedLabel: live.frustrationGameplayLabel || null,
       },
+      gradeNumber: payload.gradeNumber ?? student?.grade ?? this.studentGrade ?? null,
+      chapterId: payload.chapterId || student?.chapterId || null,
+      chapterTitle: payload.chapterTitle || payload.chapter || student?.chapterTitle || null,
+      demoOverride: Boolean(this.demoOverridePinned),
       cropId: payload.cropId || this.farmLevel?.cropId,
       cropName: payload.cropName || this.farmLevel?.cropName,
       animalName: this.animalChallenge?.animalName,
@@ -4721,30 +4768,13 @@ export default class GameScene extends Phaser.Scene {
     }
     this.pendingQuizMode = 'practice';
     this.lockPlayerForAnswer();
-    const question = pickScienceQuestion(
-      this.farmLevel,
-      this.lastQuestionId,
-      'plant',
-    );
-    this.lastQuestionId = question.id;
     this.quizOpenedAt = Date.now();
-    const remaining = DDA_CONFIG.maxQuestions - this.questionsAnswered();
-    ForestGameBridge.emit(
-      FARM_EVENTS.TRIGGER_SCIENCE_QUIZ,
-      this.withGameplayQuizMeta({
-        mode: 'practice',
-        challenge: 'practice',
-        cropName: bedDef.cropName || this.farmLevel?.cropName,
-        cropType: bedDef.cropId || this.farmLevel?.cropId,
-        question,
-        questionData: question,
-        rp: question.rp,
-        levelId: this.farmLevel.id,
-        openedAt: this.quizOpenedAt,
-        questionsRemaining: remaining,
-      }),
-    );
-    this.emitFarmState();
+    void this.emitScienceQuizFromEngine('practice', 'plant', () => ({
+      challenge: 'practice',
+      cropName: bedDef.cropName || this.farmLevel?.cropName,
+      cropType: bedDef.cropId || this.farmLevel?.cropId,
+      questionsRemaining: DDA_CONFIG.maxQuestions - this.questionsAnswered(),
+    }));
   }
 
   /** Spawn the pending patch after a correct plant quiz (once per crop type). */
@@ -5877,6 +5907,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   populateEnemies() {
+    this.applyPinnedDemoAdaptation();
     this.applyFrustrationGamePersonalization({ respawnSpeedOnly: false });
     this.spawnEnemiesByGid(MOLE_GID, true, 'idle/mole-idle-front');
     this.spawnEnemiesByGid(TREANT_GID, false, 'idle/treant-idle-front');

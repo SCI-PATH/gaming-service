@@ -104,10 +104,11 @@ export function rankLeaderboardEntries(rawEntries, opts = {}) {
   const dayStart = utcDayStartIso(opts.now);
   const list = Array.isArray(rawEntries) ? rawEntries : Object.values(rawEntries || {});
 
+  const eligible = list.filter((row) => !String(row?.studentId || '').startsWith('demo_'));
   const filtered =
     period === 'today'
-      ? list.filter((row) => String(row?.updatedAt || '') >= dayStart)
-      : list.slice();
+      ? eligible.filter((row) => String(row?.updatedAt || '') >= dayStart)
+      : eligible.slice();
 
   filtered.sort((a, b) => {
     const score = (Number(b?.score) || 0) - (Number(a?.score) || 0);

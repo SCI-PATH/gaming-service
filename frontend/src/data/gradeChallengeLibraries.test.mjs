@@ -48,4 +48,12 @@ describe('grade challenge libraries', () => {
     assert.ok(!GRADE_LIBRARY_DEFS[6].cropIds.includes('cabbage'));
     assert.ok(GRADE_LIBRARY_DEFS[8].cropIds.includes('cabbage'));
   });
+
+  it('gives grade 9 more than one animal and one cleaning job', () => {
+    assert.ok(GRADE_LIBRARY_DEFS[9].animalIds.length >= 3);
+    assert.ok(GRADE_LIBRARY_DEFS[9].cleanIds.length >= 3);
+    assert.ok(GRADE_LIBRARY_DEFS[9].animalIds.includes('owl'));
+    assert.ok(GRADE_LIBRARY_DEFS[9].cleanIds.includes('compost'));
+    assert.ok(!GRADE_LIBRARY_DEFS[6].animalIds.includes('owl'));
+  });
 });

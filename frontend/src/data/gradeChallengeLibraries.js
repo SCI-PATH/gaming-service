@@ -58,8 +58,8 @@ export const GRADE_LIBRARY_DEFS = Object.freeze({
       'rose',
       'daisy',
     ]),
-    animalIds: Object.freeze(['horse']),
-    cleanIds: Object.freeze(['trough']),
+    animalIds: Object.freeze(['horse', 'buffalo', 'owl', 'parrot']),
+    cleanIds: Object.freeze(['trough', 'compost', 'puddle']),
   }),
 });
 
@@ -220,18 +220,24 @@ export function assertChallengeBelongsToGrade(challengeId, grade) {
   return { ok: true, grade: g };
 }
 
-export function librariesAreGradeExclusive() {
-  const cropSets = SUPPORTED_GRADES.map(
-    (g) => new Set(GRADE_LIBRARY_DEFS[g].cropIds),
-  );
-  for (let i = 0; i < cropSets.length; i += 1) {
-    for (let j = i + 1; j < cropSets.length; j += 1) {
-      for (const id of cropSets[i]) {
-        if (cropSets[j].has(id)) return false;
+function setsAreExclusive(pickIds) {
+  const sets = SUPPORTED_GRADES.map((g) => new Set(pickIds(GRADE_LIBRARY_DEFS[g])));
+  for (let i = 0; i < sets.length; i += 1) {
+    for (let j = i + 1; j < sets.length; j += 1) {
+      for (const id of sets[i]) {
+        if (sets[j].has(id)) return false;
       }
     }
   }
   return true;
+}
+
+export function librariesAreGradeExclusive() {
+  return (
+    setsAreExclusive((def) => def.cropIds) &&
+    setsAreExclusive((def) => def.animalIds) &&
+    setsAreExclusive((def) => def.cleanIds)
+  );
 }
 
 export function describeGradeLibrary(grade) {

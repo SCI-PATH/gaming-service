@@ -97,6 +97,22 @@ const CLEANING_TYPES = [
     messKeys: ['kf_crate', 'kf_barrel'],
     wasteKey: 'kf_crate',
   },
+  {
+    id: 'compost',
+    name: 'compost heaps',
+    verb: 'Turn',
+    wasteName: 'compost',
+    messKeys: ['kf_soil', 'kf_sack'],
+    wasteKey: 'kf_soil',
+  },
+  {
+    id: 'puddle',
+    name: 'stagnant puddles',
+    verb: 'Drain',
+    wasteName: 'water',
+    messKeys: ['kf_bucket_water', 'kf_bucket'],
+    wasteKey: 'kf_bucket',
+  },
 ];
 
 const ROUND_COUNTS = [4, 5, 6, 7, 8];

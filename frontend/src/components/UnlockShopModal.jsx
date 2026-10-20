@@ -23,6 +23,8 @@ export default function UnlockShopModal({
   retryLesson = false,
   chapterTitle = '',
   nextChapterTitle = '',
+  /** Read-only price check. Does not finish the level or save a purchase. */
+  preview = false,
 }) {
   const [owned, setOwned] = useState(() => getOwnedUnlockIds());
   const [message, setMessage] = useState(null);
@@ -74,7 +76,7 @@ export default function UnlockShopModal({
   if (!open) return null;
 
   const handleBuy = (item) => {
-    if (item.owned || busyId || buyingRef.current) return;
+    if (preview || item.owned || busyId || buyingRef.current) return;
     if (cash < item.price) {
       setMessage(`Need $${item.price - cash} more for ${item.name}.`);
       return;
@@ -103,7 +105,9 @@ export default function UnlockShopModal({
         <header className="unlock-shop-head">
           <div>
             <p className="unlock-shop-kicker">
-              {retryLesson
+              {preview
+                ? 'Price preview · level still in progress'
+                : retryLesson
                 ? chapterTitle
                   ? `Try this chapter again · ${chapterTitle}`
                   : 'Try this lesson again'
@@ -111,7 +115,7 @@ export default function UnlockShopModal({
                 ? `Chapter complete · ${chapterTitle}`
                 : 'Level complete'}
             </p>
-            <h2 id="unlock-shop-title">Unlock Shop</h2>
+            <h2 id="unlock-shop-title">{preview ? 'Shop price preview' : 'Unlock Shop'}</h2>
             <p className="unlock-shop-sub">{catalog.bandLabel}</p>
             {catalog.frustrationLabel ? (
               <p className="unlock-shop-sub unlock-shop-frust">
@@ -126,7 +130,9 @@ export default function UnlockShopModal({
         </header>
 
         <p className="unlock-shop-hint">
-          {returnToLearningPath && retryLesson
+          {preview
+            ? 'These prices use the same shop formula as a finished level. This preview does not complete the 15-question level and purchases stay off. Demo prices are not saved as a student result.'
+            : returnToLearningPath && retryLesson
             ? 'Frustration or mastery on this farm means you should learn this lesson again before the next one unlocks. Bought items still appear on your next farm.'
             : returnToLearningPath
             ? `Bought items will appear on your next farm. After this shop you return to the learning path${
@@ -163,11 +169,17 @@ export default function UnlockShopModal({
                   <button
                     type="button"
                     disabled={
-                      item.owned || cash < item.price || busyId != null
+                      preview || item.owned || cash < item.price || busyId != null
                     }
                     onClick={() => handleBuy(item)}
                   >
-                    {item.owned ? 'Unlocked' : cash < item.price ? 'Not enough cash' : 'Buy'}
+                    {preview
+                      ? 'Preview only'
+                      : item.owned
+                        ? 'Unlocked'
+                        : cash < item.price
+                          ? 'Not enough cash'
+                          : 'Buy'}
                   </button>
                   {!item.owned && cash < item.price ? (
                     <span className="unlock-price">Need ${item.price - cash} more</span>
@@ -195,7 +207,9 @@ export default function UnlockShopModal({
               className="unlock-shop-continue"
               onClick={() => (onContinueNext || onClose)?.()}
             >
-              {returnToLearningPath
+              {preview
+                ? 'Close preview'
+                : returnToLearningPath
                 ? nextChapterTitle
                   ? `Go to ${nextChapterTitle}`
                   : 'Go to the next lesson'

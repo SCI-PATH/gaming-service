@@ -10119,6 +10119,17 @@ button.farm-map-bed {
   color: #b7c8ba;
   line-height: 1.35;
 }
+.dda-research-preview {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border: 1px solid #8fb59a;
+  border-radius: 6px;
+  background: transparent;
+  color: #e7f5ea;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
 .dda-research-list {
   list-style: none;
   margin: 0;

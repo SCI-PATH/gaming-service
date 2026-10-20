@@ -19,7 +19,7 @@ import {
   scoreAttempt,
   averageScore,
   formatResponseTime,
-} from './dda';
+} from './dda.js';
 import { studentStorageKey, getCurrentStudent } from './mockStudents.js';
 import { syncLevelPerformance } from './engagementSync.js';
 import { markLevelCompleted } from './farmProgress.js';

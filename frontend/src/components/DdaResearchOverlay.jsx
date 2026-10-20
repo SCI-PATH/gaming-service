@@ -12,6 +12,8 @@ export default function DdaResearchOverlay({
   open = false,
   grade = null,
   demoProfile = null,
+  demoPinned = false,
+  onPreviewShop = null,
   farm = {},
   shopPerformance = null,
   lastAttempt = null,
@@ -44,16 +46,14 @@ export default function DdaResearchOverlay({
     shopPerformance?.avgFrustrationScore ??
     farm.avgFrustrationScore ??
     null;
-  const frScore =
-    lastAttempt?.frustrationScore ??
-    ddaLive?.frustrationScore ??
-    farm.frustrationScore ??
-    null;
-  const frLevel =
-    lastAttempt?.frustrationLevel ??
-    ddaLive?.frustrationLevel ??
-    farm.frustrationLevel ??
-    null;
+  const worldScore = ddaLive?.frustrationScore ?? farm.frustrationScore ?? null;
+  const worldLevel = ddaLive?.frustrationLevel ?? farm.frustrationLevel ?? null;
+  const frScore = demoPinned
+    ? worldScore
+    : lastAttempt?.frustrationScore ?? worldScore;
+  const frLevel = demoPinned
+    ? worldLevel
+    : lastAttempt?.frustrationLevel ?? worldLevel;
   const sampleItem = 'sheep';
   const basePrice = SHOP_BASE_PRICES[sampleItem];
   const frozenPrice = shopPerformance?.frozenPrices?.[sampleItem] ?? null;
@@ -62,6 +62,11 @@ export default function DdaResearchOverlay({
     () => [
       { label: 'Grade', value: grade ?? '—', kind: 'config' },
       { label: 'Demo profile', value: demoProfile || 'off', kind: 'config' },
+      {
+        label: 'World source',
+        value: demoPinned ? 'Demo override (not a student result)' : 'Live play',
+        kind: 'config',
+      },
       { label: 'Level', value: farm.levelId ?? '—', kind: 'measured' },
       {
         label: 'Challenge summary',
@@ -84,10 +89,19 @@ export default function DdaResearchOverlay({
         kind: 'measured',
       },
       {
-        label: 'Question frustration',
-        value: frScore == null ? '—' : `${Math.round(frScore)}`,
+        label: demoPinned ? 'World frustration' : 'Question frustration',
+        value: frScore == null ? '—' : `${Math.round(Number(frScore))}`,
         kind: 'derived',
       },
+      ...(demoPinned && lastAttempt?.frustrationScore != null
+        ? [
+            {
+              label: 'Measured answer (not applied)',
+              value: `${Math.round(Number(lastAttempt.frustrationScore))}`,
+              kind: 'measured',
+            },
+          ]
+        : []),
       {
         label: 'Frustration band',
         value: frLevel ? frustrationLevelLabel(frLevel) : '—',
@@ -150,6 +164,7 @@ export default function DdaResearchOverlay({
     [
       grade,
       demoProfile,
+      demoPinned,
       farm,
       lastAttempt,
       frScore,
@@ -171,10 +186,16 @@ export default function DdaResearchOverlay({
         <p className="dda-research-kicker">Research overlay</p>
         <h2>Frustration → DDA</h2>
         <p className="dda-research-note">
-          Measured values come from live gameplay. Derived values use the real
-          CSF / shop formulas. Demo profile only scripts answer inputs.
+          {demoPinned
+            ? 'This recording is pinned to a demo profile. The world uses that scored profile. It is stored separately and is not a real student result. Remove demoProfile to return to live adaptation.'
+            : 'Measured values come from live gameplay. Derived values use the real CSF and shop formulas.'}
         </p>
       </header>
+      {onPreviewShop ? (
+        <button type="button" className="dda-research-preview" onClick={onPreviewShop}>
+          Preview shop prices
+        </button>
+      ) : null}
       <ul className="dda-research-list">
         {rows.map((row) => (
           <li key={row.label} data-kind={row.kind}>

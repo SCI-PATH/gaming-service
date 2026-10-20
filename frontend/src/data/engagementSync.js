@@ -163,6 +163,8 @@ export async function syncStudentLogin(student, options = {}) {
     clientVersion: 'gaming-service-web',
     deviceInfo: {
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      demoSession: Boolean(student.isDemoSession),
+      demoProfile: student.demoProfile || null,
     },
   });
 
@@ -269,14 +271,19 @@ export async function syncQuizAttempt(attempt = {}, student = null) {
   if (saved?.ok === false && !saved?.skipped) return saved;
   const score = saved?.frustrationScore;
   if (score == null) return saved;
+  const demoSession =
+    Boolean(student?.isDemoSession) || String(studentId).startsWith('demo_');
   await trackPending(
     syncFrustration(
       {
         frustrationScore: score,
         frustrationLevel: saved.frustrationLevel || 'low',
         levelNumber: Number(attempt.levelNumber) || 1,
-        signals: saved.frustrationAudit || attempt.frustrationAudit || {},
-        source: 'quiz',
+        signals: {
+          ...(saved.frustrationAudit || attempt.frustrationAudit || {}),
+          ...(demoSession ? { demoOverride: true, researchEligible: false } : {}),
+        },
+        source: demoSession ? 'demo' : 'quiz',
         snapshotId: saved.attemptId ? `fr_${saved.attemptId}` : undefined,
       },
       student,

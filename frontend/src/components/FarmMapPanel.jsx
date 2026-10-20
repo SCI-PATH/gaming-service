@@ -25,6 +25,7 @@ export default function FarmMapPanel({
   performanceBand = 'medium',
   cropName = 'crops',
   levelId = 1,
+  grade = null,
   activeCropIndex = 0,
   compact = false,
   questStep = null,
@@ -48,6 +49,7 @@ export default function FarmMapPanel({
   const mapMarkers = buildLevelMapMarkers(levelId, {
     activeCropIndex,
     activeCropId: cropName,
+    grade,
   });
   const bedById = Object.fromEntries(mapMarkers.beds.map((bed) => [bed.id, bed]));
   const placeById = Object.fromEntries(mapMarkers.places.map((place) => [place.id, place]));

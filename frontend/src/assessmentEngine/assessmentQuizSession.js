@@ -15,6 +15,7 @@ import {
   pickCanonicalTopicId,
 } from '../data/curriculumTopics.js';
 import { readGradeIsCorrect } from './gradeFlag.js';
+import { assessQuestionGradeScope } from './questionGradeScope.js';
 
 const FETCH_TIMEOUT_MS = 15000;
 /** Short answers wait on Groq; keep under the Vite proxy 60s cap. */
@@ -510,6 +511,12 @@ function clearRuntime({ keepUnavailable = false } = {}) {
   }
 }
 
+let lastResolveFailure = null;
+
+export function getLastQuizResolveFailure() {
+  return lastResolveFailure;
+}
+
 /** Clear session_id (level restart / after terminate). */
 export function clearAssessmentSession() {
   clearRuntime();
@@ -830,8 +837,24 @@ async function takeEngineQuestion() {
  * Resolve the next science question from Assessment Engine /next.
  * One post-lesson per session; new post-lesson only when session ended or lost.
  */
+function acceptScopedQuestion(remote) {
+  if (!remote) return null;
+  const scope = assessQuestionGradeScope(remote, getCurrentStudent());
+  if (!scope.ok) {
+    lastResolveFailure = scope;
+    aeWarn('rejected question outside the student grade', scope);
+    return null;
+  }
+  return {
+    ...remote,
+    gradeScope: scope.scope,
+    requestedGrade: scope.expected,
+  };
+}
+
 export async function resolveScienceQuestion(_level, _avoidId, _mode = 'plant') {
   fetchGeneration += 1;
+  lastResolveFailure = null;
 
   if (nextStopped || sessionComplete) {
     aeLog('Assessment Engine session ended — starting a new post-lesson session');
@@ -839,24 +862,38 @@ export async function resolveScienceQuestion(_level, _avoidId, _mode = 'plant') 
   }
 
   try {
-    const remote = await takeEngineQuestion();
+    const remote = acceptScopedQuestion(await takeEngineQuestion());
     if (remote) {
       aeLog('quiz will show Assessment Engine question', {
         id: remote.id,
         prompt: remote.prompt,
         questionType: remote.questionType,
+        gradeScope: remote.gradeScope,
+        requestedGrade: remote.requestedGrade,
       });
       return remote;
     }
+    if (lastResolveFailure?.reason === 'grade_mismatch') return null;
     // Session may have been cleared by /next 404 inside fetchNextOnce — one retry only.
     if (!sessionId && !assessmentUnavailable && !nextStopped && !sessionComplete) {
       aeLog('session lost — one recovery post-lesson');
-      const recovered = await takeEngineQuestion();
+      const recovered = acceptScopedQuestion(await takeEngineQuestion());
       if (recovered) return recovered;
+      if (lastResolveFailure?.reason === 'grade_mismatch') return null;
     }
-    aeWarn('Assessment Engine returned no usable question');
+    lastResolveFailure = lastResolveFailure || {
+      ok: false,
+      reason: 'assessment_unavailable',
+      expected: normalizeGrade(getCurrentStudent()),
+    };
+    aeWarn('Assessment Engine returned no usable question', lastResolveFailure);
     return null;
   } catch (err) {
+    lastResolveFailure = {
+      ok: false,
+      reason: 'assessment_unavailable',
+      expected: normalizeGrade(getCurrentStudent()),
+    };
     aeWarn('resolveScienceQuestion threw', err);
     return null;
   }

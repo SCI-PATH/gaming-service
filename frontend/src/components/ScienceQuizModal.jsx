@@ -218,7 +218,6 @@ export default function ScienceQuizModal({
   onClose,
   onAnswerAttempt,
   onHintUsed = null,
-  onOptionSwitch = null,
 }) {
   const clockRef = useRef(null);
   const finishedRef = useRef(false);
@@ -794,6 +793,12 @@ export default function ScienceQuizModal({
           {TYPE_LABELS[questionType] && (
             <p className="science-quiz-type">{TYPE_LABELS[questionType]}</p>
           )}
+          {(questionData.gradeNumber || questionData.chapterTitle) && (
+            <p className="science-quiz-type">
+              {questionData.gradeNumber ? `Grade ${questionData.gradeNumber}` : 'Science'}
+              {questionData.chapterTitle ? ` · ${questionData.chapterTitle}` : ''}
+            </p>
+          )}
           {questionData.rp != null && (
             <p className="escape-quiz-topic">+{questionData.rp} RP</p>
           )}
@@ -861,8 +866,6 @@ export default function ScienceQuizModal({
                   type="button"
                   className={`science-quiz-option ${tone}`}
                   disabled={Boolean(result) || busy}
-                  onPointerEnter={() => onOptionSwitch?.(idx)}
-                  onFocus={() => onOptionSwitch?.(idx)}
                   onClick={() => handleChoice(idx)}
                 >
                   {showMcqKeys && (

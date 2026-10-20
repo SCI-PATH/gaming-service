@@ -1344,6 +1344,7 @@ const FRUSTRATION_SOURCES = new Set([
   'mentor',
   'level_end',
   'manual',
+  'demo',
 ]);
 
 export async function insertFrustrationSnapshot(body = {}) {
@@ -1724,6 +1725,7 @@ async function getNeonLeaderboard({ period, limit, studentId }) {
        FROM engagement_gaming.quiz_attempts qa
        JOIN engagement_gaming.students s ON s.student_id = qa.student_id
        WHERE qa.answered_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
+         AND LEFT(s.student_id, 5) <> 'demo_'
        GROUP BY s.student_id, s.display_name, s.student_name
        HAVING COUNT(*) > 0
        ORDER BY score DESC, quiz_correct DESC, display_name ASC
@@ -1752,6 +1754,7 @@ async function getNeonLeaderboard({ period, limit, studentId }) {
          GROUP BY student_id
        ) stats ON stats.student_id = s.student_id
        WHERE s.last_seen_at IS NOT NULL
+         AND LEFT(s.student_id, 5) <> 'demo_'
        ORDER BY score DESC, current_level DESC, s.last_seen_at DESC
        LIMIT $1`,
       [limit],
@@ -1798,6 +1801,7 @@ async function getStudentLeaderboardRank(studentId, period = 'all') {
          FROM engagement_gaming.quiz_attempts qa
          JOIN engagement_gaming.students s ON s.student_id = qa.student_id
          WHERE qa.answered_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')
+           AND LEFT(s.student_id, 5) <> 'demo_'
          GROUP BY s.student_id, s.display_name, s.student_name
        )
        SELECT * FROM ranked WHERE student_id = $1`,
@@ -1833,6 +1837,7 @@ async function getStudentLeaderboardRank(studentId, period = 'all') {
          GROUP BY student_id
        ) stats ON stats.student_id = s.student_id
        WHERE s.last_seen_at IS NOT NULL
+         AND LEFT(s.student_id, 5) <> 'demo_'
      )
      SELECT * FROM ranked WHERE student_id = $1`,
     [studentId],
@@ -1845,6 +1850,9 @@ async function getStudentLeaderboardRank(studentId, period = 'all') {
 export async function submitLeaderboardScore(body = {}) {
   const studentId = String(body.studentId || body.student_id || '').trim();
   if (!studentId) throw new Error('studentId required');
+  if (studentId.startsWith('demo_')) {
+    return { studentId, skipped: true, reason: 'demo_session' };
+  }
 
   const score = Math.max(0, Math.round(Number(body.score) || 0));
   const quizCorrect = Math.max(0, Number(body.quizCorrect ?? body.quiz_correct) || 0);

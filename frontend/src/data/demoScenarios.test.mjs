@@ -5,10 +5,21 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDemoRecordingPlan,
+  buildDemoStudent,
+  demoAdaptationSeed,
+  demoShopPerformance,
+  installDemoLaunch,
+  readDemoAdaptationSeed,
   readDemoLaunch,
   simulateDemoProfilePipeline,
 } from './demoScenarios.js';
 import { FRUSTRATION_LEVELS } from './frustrationModel.js';
+import { priceForItem } from './unlockShop.js';
+import {
+  getCurrentStudent,
+  loginMockStorylineStudent,
+  restoreHeldStudent,
+} from './mockStudents.js';
 
 describe('demo scenarios', () => {
   it('parses demo URL params without inventing scores', () => {
@@ -16,9 +27,36 @@ describe('demo scenarios', () => {
       '?demoProfile=weak&demoGrade=8&researchOverlay=1',
     );
     assert.equal(launch.enabled, true);
+    assert.equal(launch.isolated, true);
     assert.equal(launch.profile, 'weak');
     assert.equal(launch.grade, 8);
     assert.equal(launch.researchOverlay, true);
+  });
+
+  it('does not treat a platform grade param as a demo session', () => {
+    const launch = readDemoLaunch('?grade=7&studentId=abc');
+    assert.equal(launch.isolated, false);
+    assert.equal(launch.enabled, false);
+  });
+
+  it('holds a saved grade-7 student and applies demoGrade 9', () => {
+    loginMockStorylineStudent('mock_student_1');
+    const before = getCurrentStudent();
+    assert.equal(before.grade, 7);
+    const boot = installDemoLaunch('?demoProfile=weak&demoGrade=9');
+    assert.equal(boot.student.grade, 9);
+    assert.equal(boot.student.isDemoSession, true);
+    assert.equal(String(boot.student.id).startsWith('demo_'), true);
+    assert.equal(boot.student.chapterId.startsWith('G9_'), true);
+    assert.equal(getCurrentStudent().id, boot.student.id);
+    assert.notEqual(getCurrentStudent().id, before.id);
+    assert.ok(boot.seed?.pinned);
+    assert.equal(readDemoAdaptationSeed()?.profileId, 'weak');
+    const restored = installDemoLaunch('');
+    assert.equal(restored.student?.id, before.id);
+    assert.equal(restored.student?.grade, 7);
+    assert.equal(readDemoAdaptationSeed(), null);
+    restoreHeldStudent();
   });
 
   it('runs smart / intermediate / weak inputs through the real scorer', () => {
@@ -31,6 +69,18 @@ describe('demo scenarios', () => {
     assert.ok(smart.avgFrustrationScore < mid.avgFrustrationScore);
     assert.ok(mid.avgFrustrationScore < weak.avgFrustrationScore);
     assert.ok(smart.shopOffer.prices.sheep > weak.shopOffer.prices.sheep);
+    const smartSeed = demoAdaptationSeed('smart');
+    const weakSeed = demoAdaptationSeed('weak');
+    const smartPrice = priceForItem(
+      { basePrice: 280 },
+      demoShopPerformance(smartSeed),
+    );
+    const weakPrice = priceForItem(
+      { basePrice: 280 },
+      demoShopPerformance(weakSeed),
+    );
+    assert.ok(smartPrice > weakPrice);
+    assert.equal(buildDemoStudent({ grade: 6, profile: 'smart' }).grade, 6);
     assert.ok(
       [FRUSTRATION_LEVELS.LOW, FRUSTRATION_LEVELS.MODERATE].includes(
         smart.rows.at(-1).smoothedLevel,

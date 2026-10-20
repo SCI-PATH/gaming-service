@@ -107,6 +107,33 @@ const ANIMAL_TYPES = [
     produceKey: 'kf_pouch',
     count: 8,
   },
+  {
+    id: 'buffalo',
+    name: 'buffalo',
+    action: 'feed',
+    produceName: 'milk',
+    animalKeys: ['lib_creature_buffalo', 'kf_cow', 'hm_cow'],
+    produceKey: 'kf_milk',
+    count: 4,
+  },
+  {
+    id: 'owl',
+    name: 'owls',
+    action: 'watch',
+    produceName: 'feathers',
+    animalKeys: ['lib_creature_owl', 'lib_creature_parrot', 'kf_chicken'],
+    produceKey: 'kf_sack',
+    count: 3,
+  },
+  {
+    id: 'parrot',
+    name: 'parrots',
+    action: 'feed',
+    produceName: 'feathers',
+    animalKeys: ['lib_creature_parrot', 'lib_creature_owl', 'kf_chicken'],
+    produceKey: 'kf_sack',
+    count: 4,
+  },
 ];
 
 const ROUND_COUNTS = [4, 5, 6, 7, 8];

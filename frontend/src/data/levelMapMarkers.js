@@ -4,6 +4,7 @@
  */
 
 import { getLevelChallengePlan } from './challengeLibrary.js';
+import { normalizeStudentGrade } from './gradeChallengeLibraries.js';
 import { PLANT_PLOTS, FARM_SHOP_ZONE } from './plantPlots.js';
 import { ANIMAL_PADDOCK } from './animalChallenges.js';
 import { CLEANING_YARD } from './cleaningChallenges.js';
@@ -20,7 +21,8 @@ export {
  * @param {{ activeCropIndex?: number, activeCropId?: string, activeCropName?: string }} [progress]
  */
 export function buildLevelMapMarkers(levelId = 1, progress = {}) {
-  const plan = getLevelChallengePlan(levelId);
+  const grade = normalizeStudentGrade(progress.grade);
+  const plan = getLevelChallengePlan(levelId, grade);
   return assembleMapMarkers(
     plan,
     {

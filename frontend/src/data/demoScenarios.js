@@ -10,11 +10,22 @@
  */
 
 import { PERFORMANCE_CATEGORIES } from './performanceCategories.js';
-import { FRUSTRATION_LEVELS } from './frustrationModel.js';
-import { featuredChallengesForGrade, normalizeStudentGrade } from './gradeChallengeLibraries.js';
+import { FRUSTRATION_LEVELS, frustrationLevelFromScore } from './frustrationModel.js';
+import {
+  featuredChallengesForGrade,
+  getGradeChallengeLibrary,
+  normalizeStudentGrade,
+} from './gradeChallengeLibraries.js';
 import { scoreQuestionAttempt } from './questionFrustration.js';
 import { averageLevelFrustration } from './shopPricePolicy.js';
 import { freezeShopOffer } from './questionFrustration.js';
+import { chapterIdFromTopicId } from './curriculumTopics.js';
+import {
+  beginDemoStudent,
+  getCurrentStudent,
+  isDemoStudent,
+  restoreHeldStudent,
+} from './mockStudents.js';
 
 export const DEMO_PROFILES = Object.freeze({
   smart: Object.freeze({
@@ -92,19 +103,121 @@ export function readDemoLaunch(search = '') {
       ? new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
       : search;
   const profile = normalizeDemoProfile(params.get('demoProfile') || params.get('profile'));
-  const grade = normalizeStudentGrade(params.get('demoGrade') || params.get('grade'));
+  const hasDemoGrade = params.has('demoGrade');
+  const explicitDemoGrade = normalizeStudentGrade(params.get('demoGrade'));
+  const isolated = Boolean(profile) || hasDemoGrade;
+  const grade = explicitDemoGrade ?? (isolated ? normalizeStudentGrade(params.get('grade')) : null);
   const researchOverlay =
     params.get('researchOverlay') === '1' ||
     params.get('ddaOverlay') === '1' ||
-    Boolean(profile);
+    isolated;
   const demoSessionId = String(params.get('demoSession') || '').trim() || null;
   return {
     enabled: Boolean(profile),
+    isolated,
     profile,
-    grade: grade ?? 6,
+    grade: isolated ? grade ?? 6 : explicitDemoGrade,
     researchOverlay,
     demoSessionId,
     label: profile ? DEMO_PROFILES[profile].label : null,
+  };
+}
+
+function scienceTopicForGrade(grade) {
+  const lib = getGradeChallengeLibrary(grade);
+  return lib?.scienceChallenges?.[0] || null;
+}
+
+/** Isolated student for a demo URL. Does not reuse a saved student's id or grade. */
+export function buildDemoStudent(launch) {
+  const grade = normalizeStudentGrade(launch?.grade) ?? 6;
+  const profile = normalizeDemoProfile(launch?.profile);
+  const topic = scienceTopicForGrade(grade);
+  const chapterId = chapterIdFromTopicId(topic?.topicId) || null;
+  return {
+    id: `demo_g${grade}_${profile || 'live'}`,
+    username: `demo_g${grade}_${profile || 'live'}`,
+    displayName: profile ? `Demo ${profile} · Grade ${grade}` : `Demo Grade ${grade}`,
+    grade,
+    topicId: topic?.topicId || null,
+    chapterId,
+    chapterTitle: topic?.chapterTitle || topic?.subject || null,
+    isDemoSession: true,
+    demoProfile: profile,
+  };
+}
+
+/**
+ * World seed from the real question scorer. Not a hardcoded DDA result.
+ * Present only while a demo profile is pinning the recording.
+ */
+export function demoAdaptationSeed(profileId) {
+  const pipeline = simulateDemoProfilePipeline(profileId);
+  if (!pipeline) return null;
+  const score = Number(pipeline.finalSmoothedScore);
+  const level =
+    pipeline.rows?.at?.(-1)?.smoothedLevel ||
+    (Number.isFinite(score) ? frustrationLevelFromScore(score) : FRUSTRATION_LEVELS.MODERATE);
+  return {
+    pinned: true,
+    profileId: pipeline.profileId,
+    frustrationScore: Number.isFinite(score) ? score : 0,
+    frustrationLevel: level,
+    performanceCategory: pipeline.targetPerformanceCategory,
+    shopOffer: pipeline.shopOffer,
+    source: 'demo_pipeline',
+    researchEligible: false,
+  };
+}
+
+let activeLaunch = null;
+let activeSeed = null;
+
+export function readDemoAdaptationSeed() {
+  return activeSeed;
+}
+
+export function readActiveDemoLaunch() {
+  return activeLaunch;
+}
+
+/**
+ * Apply demoGrade / demoProfile for this page load.
+ * A real saved student is held aside and restored when the URL is not a demo.
+ */
+export function installDemoLaunch(search = '') {
+  const launch = readDemoLaunch(search);
+  activeLaunch = launch;
+  if (!launch.isolated) {
+    activeSeed = null;
+    if (isDemoStudent()) restoreHeldStudent();
+    return { launch, seed: null, student: getCurrentStudent() };
+  }
+  const student = beginDemoStudent(buildDemoStudent(launch));
+  activeSeed = launch.profile ? demoAdaptationSeed(launch.profile) : null;
+  return { launch, seed: activeSeed, student };
+}
+
+/** Performance object for the real unlock-shop price function. Purchases stay disabled. */
+export function demoShopPerformance(seed, live = {}) {
+  const pinned = seed?.pinned ? seed : null;
+  const frustrationScore = pinned
+    ? pinned.frustrationScore
+    : Number(live.frustrationScore) || 0;
+  const frustrationLevel = pinned
+    ? pinned.frustrationLevel
+    : live.frustrationLevel || frustrationLevelFromScore(frustrationScore);
+  const band = pinned
+    ? pinned.performanceCategory
+    : live.performanceBand || live.band || PERFORMANCE_CATEGORIES.MEDIUM;
+  return {
+    frustrationScore,
+    frustrationLevel,
+    band,
+    performanceCategory: band,
+    gameplayBand: band,
+    preview: true,
+    demoOverride: Boolean(pinned),
   };
 }
 
